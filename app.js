@@ -9306,6 +9306,88 @@ async function readBackupFileText(file) {
   throw new Error("이 브라우저에서는 선택한 백업 파일을 읽을 수 없습니다.");
 }
 
+
+function confirmBackupRestoreInApp(recordCount, managerCount) {
+  return new Promise((resolve) => {
+    const old = document.getElementById("backupRestoreConfirmOverlay");
+    if (old) old.remove();
+
+    const overlay = document.createElement("div");
+    overlay.id = "backupRestoreConfirmOverlay";
+    overlay.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "z-index:30000",
+      "display:flex",
+      "align-items:center",
+      "justify-content:center",
+      "padding:24px",
+      "background:rgba(15,23,42,.42)",
+      "backdrop-filter:blur(2px)"
+    ].join(";");
+
+    const box = document.createElement("div");
+    box.style.cssText = [
+      "width:min(460px,calc(100vw - 48px))",
+      "background:#fff",
+      "border-radius:18px",
+      "box-shadow:0 22px 70px rgba(15,23,42,.28)",
+      "padding:26px",
+      "font-family:inherit",
+      "color:#172033"
+    ].join(";");
+
+    box.innerHTML = `
+      <div style="font-size:20px;font-weight:800;margin-bottom:10px;">전체 백업 복원</div>
+      <div style="font-size:14px;line-height:1.65;color:#526071;margin-bottom:18px;">
+        선택한 백업 파일을 정상적으로 확인했습니다.<br>
+        현재 웹 프로그램의 모든 데이터가 백업 내용으로 교체됩니다.
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:20px;">
+        <div style="background:#f4f7fb;border:1px solid #e4eaf2;border-radius:12px;padding:14px;text-align:center;">
+          <div style="font-size:12px;color:#738094;margin-bottom:4px;">접수내역</div>
+          <strong style="font-size:22px;">${Number(recordCount || 0).toLocaleString()}건</strong>
+        </div>
+        <div style="background:#f4f7fb;border:1px solid #e4eaf2;border-radius:12px;padding:14px;text-align:center;">
+          <div style="font-size:12px;color:#738094;margin-bottom:4px;">매니저</div>
+          <strong style="font-size:22px;">${Number(managerCount || 0).toLocaleString()}명</strong>
+        </div>
+      </div>
+      <div style="font-size:13px;line-height:1.55;color:#b42318;background:#fff4f2;border:1px solid #ffd6d2;border-radius:10px;padding:11px 12px;margin-bottom:18px;">
+        복원하면 현재 Google Drive 데이터도 이 백업 데이터로 저장됩니다.
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;">
+        <button type="button" data-action="cancel"
+          style="border:1px solid #d7dde7;background:#fff;color:#344054;border-radius:10px;padding:10px 18px;font-weight:700;cursor:pointer;">취소</button>
+        <button type="button" data-action="restore"
+          style="border:0;background:#174c3b;color:#fff;border-radius:10px;padding:10px 20px;font-weight:800;cursor:pointer;">복원하기</button>
+      </div>
+    `;
+
+    overlay.appendChild(box);
+    document.body.appendChild(overlay);
+
+    const finish = (result) => {
+      overlay.remove();
+      resolve(result);
+    };
+
+    box.querySelector('[data-action="cancel"]')?.addEventListener("click", () => finish(false), { once: true });
+    box.querySelector('[data-action="restore"]')?.addEventListener("click", () => finish(true), { once: true });
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) finish(false);
+    }, { once: true });
+
+    const onKey = (event) => {
+      if (event.key === "Escape") {
+        document.removeEventListener("keydown", onKey);
+        finish(false);
+      }
+    };
+    document.addEventListener("keydown", onKey);
+  });
+}
+
 async function importFullBackupFile(file) {
   if (!file) return false;
 
@@ -9334,14 +9416,19 @@ async function importFullBackupFile(file) {
 
   const recordCount = Array.isArray(data.records) ? data.records.length : 0;
   const managerCount = Array.isArray(data.managers) ? data.managers.length : 0;
-  const ok = window.confirm(
-    `백업 파일을 확인했습니다.\n\n접수내역: ${recordCount}건\n매니저: ${managerCount}명\n\n현재 웹 프로그램의 모든 데이터가 이 백업 내용으로 교체됩니다.\n복원할까요?`
-  );
-  if (!ok) return false;
+
+  showToast(`백업 파일 확인 완료 · 접수내역 ${recordCount}건 · 매니저 ${managerCount}명`);
+  const ok = await confirmBackupRestoreInApp(recordCount, managerCount);
+  if (!ok) {
+    showToast("전체 백업 복원을 취소했습니다.");
+    return false;
+  }
 
   try {
+    showToast("백업 데이터 적용 중...");
     state = normalizeState(data);
     invalidateManagerCaches();
+    showToast(`백업 데이터 적용 완료 · 접수내역 ${Array.isArray(state.records) ? state.records.length : 0}건`);
 
     showToast("전체 백업 복원 중 · Google Drive에 저장하고 있습니다...");
     await persistState({ ensureManagers: true, immediateServer: true });
@@ -10058,11 +10145,35 @@ function fillPromoForm(promo) {
   renderPromotionDetail();
 }
 
+let toastHideTimer = null;
+
 function showToast(message) {
   const toast = $("#toast");
+  if (!toast) return;
+
   toast.textContent = message;
+
+  // WEB: 오른쪽 하단 대신 화면 중앙에 표시
+  toast.style.position = "fixed";
+  toast.style.left = "50%";
+  toast.style.top = "50%";
+  toast.style.right = "auto";
+  toast.style.bottom = "auto";
+  toast.style.transform = "translate(-50%, -50%)";
+  toast.style.zIndex = "32000";
+  toast.style.maxWidth = "min(560px, calc(100vw - 40px))";
+  toast.style.width = "max-content";
+  toast.style.padding = "14px 20px";
+  toast.style.borderRadius = "12px";
+  toast.style.textAlign = "center";
+  toast.style.fontWeight = "700";
+  toast.style.lineHeight = "1.45";
+  toast.style.boxShadow = "0 14px 45px rgba(15,23,42,.22)";
+
   toast.classList.add("show");
-  window.setTimeout(() => toast.classList.remove("show"), 1800);
+
+  window.clearTimeout(toastHideTimer);
+  toastHideTimer = window.setTimeout(() => toast.classList.remove("show"), 2600);
 }
 
 function downloadFile(filename, mime, content) {
