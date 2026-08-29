@@ -3,14 +3,17 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>MJ_Sales_Manager</title>
+  <title>영업관리 시스템</title>
   <link rel="stylesheet" href="./styles.css?v=20260813-v994-base">
   <link rel="stylesheet" href="./settings-v994.css?v=20260817-v999-top-layout">
+  <link rel="icon" type="image/png" href="./assets/sales_manager_icon.png">
+  <link rel="manifest" href="./manifest.webmanifest">
+  <meta name="theme-color" content="#174c3b">
 </head>
 <body>
   <div id="startupIntro" class="startup-intro" aria-hidden="false">
   <div class="startup-intro-card">
-    <div class="startup-intro-icon"><img src="././assets/sales_manager_icon.png" alt="영업관리 시스템"></div>
+    <div class="startup-intro-icon"><img src="./assets/sales_manager_icon.png" alt="영업관리 시스템"></div>
     <div class="startup-intro-kicker">SALES MANAGEMENT</div>
     <h1>영업관리시스템</h1>
     <p>체계적인 영업관리, 더 나은 성과의 시작</p>
@@ -1629,7 +1632,10 @@
 
 
 
-  <script src="./app.js?v=20260813-v994-code"></script>
+  <!-- 중요: Google Drive 연결 어댑터가 app.js보다 먼저 실행되어야 합니다. -->
+  <script src="./web-adapter.js?v=20260829-google-drive-1"></script>
+  <script src="./app.js?v=20260829-web-1"></script>
+  <script src="./web-init.js?v=20260829-web-1"></script>
 
     </body>
 </html>
