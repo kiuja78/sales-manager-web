@@ -9276,21 +9276,34 @@ function looksLikeBackupData(data) {
     || data.managerMonthlyGoals;
 }
 
-function readBackupFileText(file) {
-  return new Promise((resolve, reject) => {
-    if (!file) {
-      reject(new Error("백업 파일이 선택되지 않았습니다."));
-      return;
-    }
-    try {
-      const reader = new FileReader();
-      reader.onload = () => resolve(String(reader.result || ""));
-      reader.onerror = () => reject(reader.error || new Error("백업 파일 읽기 실패"));
-      reader.readAsText(file, "utf-8");
-    } catch (error) {
-      reject(error);
-    }
+async function readBackupFileText(file) {
+  if (!file) {
+    throw new Error("백업 파일이 선택되지 않았습니다.");
+  }
+
+  console.log("[BACKUP IMPORT] selected file", {
+    name: file.name,
+    size: file.size,
+    type: file.type
   });
+
+  // 1차: 최신 브라우저 기본 API
+  if (typeof file.text === "function") {
+    try {
+      const text = await file.text();
+      if (text) return text;
+    } catch (error) {
+      console.warn("[BACKUP IMPORT] file.text() failed, fallback to arrayBuffer()", error);
+    }
+  }
+
+  // 2차: ArrayBuffer + TextDecoder 폴백
+  if (typeof file.arrayBuffer === "function") {
+    const buffer = await file.arrayBuffer();
+    return new TextDecoder("utf-8").decode(buffer);
+  }
+
+  throw new Error("이 브라우저에서는 선택한 백업 파일을 읽을 수 없습니다.");
 }
 
 async function importFullBackupFile(file) {
@@ -9301,7 +9314,9 @@ async function importFullBackupFile(file) {
   let parsed;
   try {
     const text = await readBackupFileText(file);
+    showToast(`백업 파일 읽기 완료 · ${Math.round((file.size || 0) / 1024)}KB · JSON 확인 중...`);
     parsed = JSON.parse(text);
+    showToast("백업 JSON 확인 완료 · 데이터 구조를 검사하고 있습니다...");
   } catch (error) {
     console.error("[BACKUP IMPORT] read/parse failed", error);
     showToast("백업 파일을 읽지 못했습니다.");
