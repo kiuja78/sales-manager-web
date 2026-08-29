@@ -19,7 +19,7 @@
     <p>체계적인 영업관리, 더 나은 성과의 시작</p>
     <div class="startup-intro-status"><span></span><span id="startupIntroStatus">업무 화면을 구성하고 있습니다</span></div>
     <div class="startup-intro-progress"><i id="startupIntroProgress"></i></div>
-    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.25</span></div>
+    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.26</span></div>
   </div>
 </div>
 
@@ -28,7 +28,7 @@
       <div class="brand" id="sidebarRefreshBtn" role="button" tabindex="0" title="새로고침">
         <div class="brand-mark brand-program-icon"><img src="./assets/sales_manager_icon.png" alt="영업관리 시스템"></div>
         <div class="brand-text">
-          <strong id="sidebarAppTitle">영업관리 시스템 V10.25</strong>
+          <strong id="sidebarAppTitle">영업관리 시스템 V10.26</strong>
           <em id="sidebarManagerLine">김건일 마스터</em>
         </div>
       </div>
@@ -552,6 +552,7 @@
                 <label>매니저<select id="managerInput" required></select></label>
                 <label>건수<input id="countInput" type="number" step="0.5" min="0" value="1" required></label>
                 <label>판매종류<select id="categoryInput" required></select></label>
+                <label>구분<select id="activityTypeInput" aria-label="컨스 또는 지원 구분"></select></label>
               </div>
 
               <div class="record-form-row row-customer-no">
@@ -612,7 +613,8 @@
                     <th class="date-col">접수일<br><span>설치요청일</span></th>
                     <th class="status-col"><select id="recordStatusFilter" class="header-filter header-title-filter" aria-label="상태 필터"></select></th>
                     <th class="manager-col"><select id="recordManagerFilter" class="header-filter header-title-filter" aria-label="매니저 필터"></select></th>
-                    <th class="category-col"><select id="recordCategoryFilter" class="header-filter header-title-filter" aria-label="구분 필터"></select></th>
+                    <th class="category-col"><select id="recordCategoryFilter" class="header-filter header-title-filter" aria-label="판매종류 필터"></select></th>
+                    <th class="activity-col">구분</th>
                     <th class="count-col">건수</th>
                     <th class="customer-no-col">기존고객번호<br><span>신규고객번호</span></th>
                     <th class="customer-col">고객명<br><span>연락처</span></th>
@@ -1636,7 +1638,7 @@
 
   <!-- 중요: Google Drive 연결 어댑터가 app.js보다 먼저 실행되어야 합니다. -->
   <script src="./web-adapter.js?v=20260829-google-drive-1"></script>
-  <script src="./app.js?v=20260829-web-5-backup-modal-center-fix"></script>
+  <script src="./app.js?v=20260829-web-6-v1026-distinction"></script>
   <script src="./web-init.js?v=20260829-web-1"></script>
 
     </body>

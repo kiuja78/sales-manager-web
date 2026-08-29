@@ -19795,3 +19795,71 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
     display: none !important;
   }
 }
+
+
+/* =========================================================
+   V10.26 접수등록/접수내역 - 컨스·지원 '구분' 필드
+   - 판매종류 자체 의미는 변경하지 않음
+   - 구분은 기존 기타내용의 컨스/지원 표기를 별도 필드로 분리
+   ========================================================= */
+body[data-view="records"] .record-form-row.row-basic {
+  grid-template-columns: 96px 116px 116px 112px 70px 110px 88px !important;
+}
+
+.record-table th.activity-col {
+  background: linear-gradient(180deg, #fff3d8 0%, #ffe6ac 100%) !important;
+  color: #6e4700 !important;
+  border-bottom: 2px solid #e5bf65 !important;
+  font-weight: 900 !important;
+}
+
+.record-table td.activity-col {
+  text-align: center !important;
+  white-space: nowrap !important;
+}
+
+.activity-type-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 42px;
+  min-height: 25px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
+  border: 1px solid transparent;
+}
+
+.activity-type-chip.activity-cons {
+  background: #ede9fe;
+  color: #5b21b6;
+  border-color: #c4b5fd;
+}
+
+.activity-type-chip.activity-support {
+  background: #e0f2fe;
+  color: #075985;
+  border-color: #7dd3fc;
+}
+
+.activity-type-chip.activity-none {
+  background: #f3f4f6;
+  color: #9ca3af;
+  border-color: #e5e7eb;
+}
+
+/* 12열 접수표: 기존 가로폭 안에서 구분 열을 추가 */
+.record-table .seq-col { width: 3.8% !important; }
+.record-table .date-col { width: 7.6% !important; }
+.record-table .status-col { width: 7.4% !important; }
+.record-table .manager-col { width: 8% !important; }
+.record-table .category-col { width: 7.2% !important; }
+.record-table .activity-col { width: 5.7% !important; }
+.record-table .count-col { width: 4% !important; }
+.record-table .customer-no-col { width: 13% !important; }
+.record-table .customer-col { width: 10.5% !important; }
+.record-table .product-col { width: 17.2% !important; }
+.record-table .seller-col { width: 7.6% !important; }
+.record-table .memo-col { width: 8% !important; }

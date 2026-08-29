@@ -4,6 +4,7 @@ const DEFAULT_MOBILE_SYNC_URL = "https://script.google.com/macros/s/AKfycbyL8EOE
 
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
+const activityTypes = ["", "컨스", "지원"];
 const sellerRoles = ["", "지국장", "팀장"];
 const membershipContactRoles = ["", "매니저", "지국장", "팀장", "고객센터"];
 const statuses = ["접수", "요청", "확인", "완료", "보류", "취소"];
@@ -645,7 +646,8 @@ function normalizeState(loaded) {
     payrollArchives: Array.isArray(loaded.payrollArchives) ? loaded.payrollArchives.map(normalizePayrollArchive) : []
   };
   next.records = next.records.map((record) => {
-    const normalizedRecord = { cashAmount: 0, ...record };
+    const normalizedRecord = { cashAmount: 0, activityType: "", ...record };
+    normalizedRecord.activityType = normalizeActivityType(normalizedRecord.activityType);
     normalizedRecord.phone = typeof formatPhoneNumber === "function" ? formatPhoneNumber(normalizedRecord.phone) : normalizedRecord.phone;
     return normalizedRecord;
   });
@@ -1331,7 +1333,11 @@ function memoKeywordCount(records, keyword) {
   if (!needle) return 0;
   return (records || [])
     .filter((record) => record && record.status !== "취소")
-    .filter((record) => String(record.memo || "").toLowerCase().includes(needle))
+    .filter((record) => {
+      if (needle === "지원") return analyticsActivityFlags(record).support;
+      if (needle === "컨스" || needle === "콘스") return analyticsActivityFlags(record).cons;
+      return String(record.memo || "").toLowerCase().includes(needle);
+    })
     .reduce((sum, record) => {
       const count = toNumber(record.count);
       return sum + (count > 0 ? count : 1);
@@ -3328,6 +3334,40 @@ function analyticsResolveAliasName(value, month) {
     name = target;
   }
   return analyticsCanonicalPersonName(name);
+}
+
+function normalizeActivityType(value) {
+  const text = String(value || "").trim().normalize("NFKC");
+  if (!text) return "";
+  const compact = text.replace(/[\s._\-\/]+/g, "").toLowerCase();
+  if (compact.includes("지원")) return "지원";
+  if (compact.includes("오다컨스") || compact.includes("컨스") || compact.includes("콘스")) return "컨스";
+  return "";
+}
+
+function recordActivityType(record) {
+  const explicit = normalizeActivityType(
+    record?.activityType ?? record?.distinction ?? record?.supportType ?? record?.consType ?? ""
+  );
+  if (explicit) return explicit;
+
+  // 기존 데이터 호환: 예전에는 기타내용에 '컨스' 또는 '지원'을 직접 입력했습니다.
+  // 새 '구분' 필드가 비어 있을 때만 기존 기타내용을 그대로 해석합니다.
+  const legacy = String(record?.memo || "").normalize("NFKC").toLowerCase();
+  const compact = legacy.replace(/[\s._\-\/]+/g, "");
+  const hasCons = compact.includes("오다컨스") || compact.includes("컨스") || compact.includes("콘스");
+  const hasSupport = compact.includes("지원");
+  if (hasCons && !hasSupport) return "컨스";
+  if (hasSupport && !hasCons) return "지원";
+  if (hasCons && hasSupport) return "컨스/지원";
+  return "";
+}
+
+function activityTypeChipClass(value) {
+  const type = normalizeActivityType(value);
+  if (type === "컨스") return "activity-cons";
+  if (type === "지원") return "activity-support";
+  return "activity-none";
 }
 
 function analyticsActivityText(record) {
@@ -7236,6 +7276,8 @@ function renderCommonControls() {
   }
 
   setOptions($("#categoryInput"), categories, $("#categoryInput").value);
+  const activityTypeInput = $("#activityTypeInput");
+  if (activityTypeInput) setOptions(activityTypeInput, activityTypes.map((value) => ({ value, label: value || "선택" })), activityTypeInput.value);
   setOptions($("#statusInput"), statuses, $("#statusInput").value);
   updateSellerInputOptions($("#sellerInput")?.value || "");
 
@@ -8163,6 +8205,7 @@ function filteredRecordSetForList() {
         record.installDate,
         record.manager,
         record.category,
+        recordActivityType(record),
         record.count,
         record.previousCustomer,
         record.customerNo,
@@ -8423,6 +8466,7 @@ function recordPrintHtml(records) {
         <td class="status">${escapeHtml(compactValue(record.status))}</td>
         <td class="manager">${escapeHtml(compactValue(record.manager))}</td>
         <td class="category">${escapeHtml(compactValue(record.category))}</td>
+        <td class="activity">${escapeHtml(recordActivityType(record) || "-")}</td>
         <td class="count">${formatNumber(record.count)}</td>
         <td class="customer-no">${record.previousCustomer ? `<span>${escapeHtml(record.previousCustomer)}</span><br>` : ""}<strong>${escapeHtml(compactValue(record.customerNo))}</strong></td>
         <td class="customer"><strong>${escapeHtml(compactValue(record.customerName))}</strong>${phone ? `<br><span>${escapeHtml(phone)}</span>` : ""}</td>
@@ -8484,6 +8528,7 @@ function recordPrintHtml(records) {
   .status { width: 34px; }
   .manager { width: 44px; font-weight: 800; }
   .category { width: 46px; }
+  .activity { width: 42px; font-weight: 800; }
   .count { width: 28px; font-weight: 900; }
   .customer-no { width: 118px; }
   .customer { width: 74px; }
@@ -8491,7 +8536,7 @@ function recordPrintHtml(records) {
   .seller { width: 38px; text-align: center; }
   .memo { width: 120px; text-align: left; line-height: 1.25; }
   th.product, th.product-col { text-align: center; }
-  .seq, .status, .manager, .category, .count, .customer, .seller {
+  .seq, .status, .manager, .category, .activity, .count, .customer, .seller {
     white-space: nowrap;
     word-break: keep-all;
     overflow-wrap: normal;
@@ -8524,7 +8569,7 @@ function recordPrintHtml(records) {
     <table>
       <thead>
         <tr class="repeat-title-row">
-          <th colspan="11">
+          <th colspan="12">
             ${escapeHtml(meta.branchName || "명장지국")} ${escapeHtml(meta.masterName || "김건일")} ${escapeHtml(meta.masterRole || "마스터")} 접수내역 · 기간 ${escapeHtml(periodText)} · 최근 접수일 우선 · 순번은 누적순번
           </th>
         </tr>
@@ -8534,6 +8579,7 @@ function recordPrintHtml(records) {
           <th class="status">상태</th>
           <th class="manager">매니저</th>
           <th class="category">판매종류</th>
+          <th class="activity">구분</th>
           <th class="count">건수</th>
           <th class="customer-no">기존/신규 고객번호</th>
           <th class="customer">고객명<br><span>연락처</span></th>
@@ -8542,7 +8588,7 @@ function recordPrintHtml(records) {
           <th class="memo">기타내용</th>
         </tr>
       </thead>
-      <tbody>${rows || `<tr><td colspan="11">출력할 접수내역이 없습니다.</td></tr>`}</tbody>
+      <tbody>${rows || `<tr><td colspan="12">출력할 접수내역이 없습니다.</td></tr>`}</tbody>
     </table>
     <div class="page-number-fallback">페이지 번호는 인쇄 미리보기 하단에 표시됩니다.</div>
   </div>
@@ -8631,6 +8677,7 @@ function renderRecords() {
         <td class="status-col" data-edit-type="status"><span class="status-pill ${statusClass(record.status)} ${typeof statusColorClass === "function" ? statusColorClass(record.status) : ""}">${escapeHtml(compactValue(record.status))}</span></td>
         <td class="manager-col" data-edit-type="manager"><strong>${escapeHtml(compactValue(record.manager))}</strong></td>
         <td class="category-col" data-edit-type="category"><span class="category-chip ${typeof categoryColorClass === "function" ? categoryColorClass(record.category) : ""}">${escapeHtml(compactValue(record.category))}</span></td>
+        <td class="activity-col" data-edit-type="activity-type"><span class="activity-type-chip ${activityTypeChipClass(recordActivityType(record))}">${escapeHtml(recordActivityType(record) || "-")}</span></td>
         <td class="count-col" data-edit-type="count"><strong>${formatNumber(record.count)}</strong></td>
         <td class="customer-no-col" data-edit-type="customer-no-pair">
           ${previousNo ? `<span class="old-no">${escapeHtml(previousNo)}</span>` : `<span class="old-no muted-text">기존 없음</span>`}
@@ -8646,7 +8693,7 @@ function renderRecords() {
       </tr>
     `;
     }).join("")
-    : `<tr><td colspan="11" class="empty">조건에 맞는 접수 내역이 없습니다.</td></tr>`;
+    : `<tr><td colspan="12" class="empty">조건에 맞는 접수 내역이 없습니다.</td></tr>`;
 }
 
 
@@ -9235,7 +9282,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.25",
+    version: "V10.26",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -9990,6 +10037,7 @@ function resetRecordForm() {
   $("#receivedDateInput").value = todayIso();
   $("#countInput").value = "1";
   renderCommonControls();
+  if ($("#activityTypeInput")) $("#activityTypeInput").value = "";
   refreshRecordManagerOptions(goalMonthForDate($("#receivedDateInput").value || "", $("#monthFilter")?.value || monthIso()));
   updateSellerInputOptions("");
 }
@@ -10005,6 +10053,10 @@ function fillRecordForm(record) {
   $("#managerInput").value = record.manager;
   $("#countInput").value = record.count;
   $("#categoryInput").value = record.category;
+  if ($("#activityTypeInput")) {
+    const existingActivityType = recordActivityType(record);
+    $("#activityTypeInput").value = activityTypes.includes(existingActivityType) ? existingActivityType : "";
+  }
   $("#previousCustomerInput").value = record.previousCustomer || "";
   $("#customerInput").value = record.customerNo || "";
   $("#phoneInput").value = formatPhoneNumber(record.phone);
@@ -10029,6 +10081,7 @@ function updateRecordState(recordId, patch, message = "접수내역을 수정했
   // 수정 시에는 updatedAt만 기록하고, 접수일 정렬 순서는 변경하지 않습니다.
   record.updatedAt = new Date().toISOString();
   if (patch.category) record.category = normalizeCategory(record.category);
+  if (patch.activityType !== undefined) record.activityType = normalizeActivityType(record.activityType);
   selectedRecordId = recordId;
   persistState();
   renderRecords();
@@ -10049,6 +10102,7 @@ function buildInlineEditor(type, record) {
   if (type === "status") return selectMarkup("status", record.status, statuses);
   if (type === "manager") return selectMarkup("manager", record.manager, managers);
   if (type === "category") return selectMarkup("category", normalizeCategory(record.category), categories);
+  if (type === "activity-type") return selectMarkup("activityType", activityTypes.includes(recordActivityType(record)) ? recordActivityType(record) : "", activityTypes);
   if (type === "count") return `<input class="cell-input" data-field="count" type="number" min="0" step="0.5" value="${escapeHtml(record.count ?? 0)}">`;
   if (type === "customer-no-pair") return `
     <div class="cell-editor-stack">
@@ -10196,11 +10250,11 @@ function exportCsv() {
 }
 
 function exportExcel() {
-  const header = ["완료여부", "접수날짜", "설치날짜", "매니저", "건수", "전 고객번호", "신규 고객번호", "연락처", "고객명", "판매종류", "일시불QR", "일시불금액", "제품명", "실판매자", "기타내용"];
+  const header = ["완료여부", "접수날짜", "설치날짜", "매니저", "건수", "전 고객번호", "신규 고객번호", "연락처", "고객명", "판매종류", "구분", "일시불QR", "일시불금액", "제품명", "실판매자", "기타내용"];
   const rows = state.records.map((record) => [
     record.status, record.receivedDate, record.installDate, record.manager, record.count,
     record.previousCustomer, record.customerNo, record.phone, record.customerName,
-    record.category, record.qr, record.cashAmount, record.product, record.seller, record.memo
+    record.category, recordActivityType(record), record.qr, record.cashAmount, record.product, record.seller, record.memo
   ]);
   const blob = createXlsxBlob("접수내역", [header, ...rows]);
   downloadBlob(`sales-records-${todayIso()}.xlsx`, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", blob);
@@ -11734,7 +11788,12 @@ function recordFromDelimitedRow(row, header) {
   const receivedDate = normalizeImportedDate(value("접수날짜", "접수일자", "접수일")) || firstDateFromText(combinedDateCell, 0);
   const installDate = normalizeImportedDate(value("설치날짜", "설치요청일", "설치일", "설치예정일")) || firstDateFromText(combinedDateCell, 1);
   const manager = String(value("매니저", "담당매니저", "담당자") || "").trim();
-  const category = normalizeCategory(value("판매종류", "판매유형", "판매구분", "제품군", "구분"));
+  const explicitCategoryValue = value("판매종류", "판매유형", "판매구분", "제품군");
+  const genericDistinctionValue = value("구분");
+  const category = normalizeCategory(explicitCategoryValue || genericDistinctionValue);
+  const activityType = normalizeActivityType(
+    value("컨스/지원", "활동구분", "지원구분", "영업구분") || (explicitCategoryValue ? genericDistinctionValue : "")
+  );
   const product = String(value("제품명", "상품명", "모델명", "제품") || "").trim();
   const customerName = String(value("고객명", "고객이름", "성명") || "").trim();
   const customerNo = String(value("신규 고객번호", "신규고객번호", "고객번호", "신규번호") || "").trim();
@@ -11753,6 +11812,7 @@ function recordFromDelimitedRow(row, header) {
     phone: String(value("연락처", "전화번호", "휴대폰", "핸드폰", "휴대폰번호") || "").trim(),
     customerName,
     category: category || "기타",
+    activityType,
     qr: String(qrValue || "").trim(),
     cashAmount: cashAmount > 999 ? cashAmount : 0,
     product,
@@ -12018,6 +12078,7 @@ function recordFromExcelRow(row, header, sheetMonth, headerKind = "legacy") {
       phone: "",
       customerName,
       category: category || "기타",
+      activityType: "",
       qr: "",
       cashAmount: 0,
       product,
@@ -12029,7 +12090,12 @@ function recordFromExcelRow(row, header, sheetMonth, headerKind = "legacy") {
 
   const receivedDate = excelDate(cellByHeader(row, header, "접수날짜"));
   const manager = cleanImportedManager(cellByHeader(row, header, "매니저"));
-  const category = normalizeCategory(cellByHeader(row, header, "판매종류") || cellByHeader(row, header, "구분"));
+  const explicitCategoryValue = cellByHeader(row, header, "판매종류");
+  const genericDistinctionValue = cellByHeader(row, header, "구분");
+  const category = normalizeCategory(explicitCategoryValue || genericDistinctionValue);
+  const activityType = normalizeActivityType(
+    cellByHeader(row, header, "컨스/지원") || cellByHeader(row, header, "활동구분") || cellByHeader(row, header, "지원구분") || (explicitCategoryValue ? genericDistinctionValue : "")
+  );
   const product = String(cellByHeader(row, header, "제품명") || "").trim();
   const customerName = String(cellByHeader(row, header, "고객명") || cellByHeader(row, header, "설치자명") || "").trim();
   const customerNo = String(cellByHeader(row, header, "신규 고객번호") || cellByHeader(row, header, "고객번호") || "").trim();
@@ -12049,6 +12115,7 @@ function recordFromExcelRow(row, header, sheetMonth, headerKind = "legacy") {
     phone: String(cellByHeader(row, header, "연락처") || "").trim(),
     customerName,
     category: category || "기타",
+    activityType,
     qr: String(qrValue || "").trim(),
     cashAmount: numericQr > 999 ? numericQr : 0,
     product,
@@ -13104,6 +13171,7 @@ function attachEvents() {
       phone: formatPhoneNumber($("#phoneInput").value),
       customerName: $("#customerNameInput").value.trim(),
       category: $("#categoryInput").value,
+      activityType: normalizeActivityType($("#activityTypeInput")?.value || ""),
       qr: $("#qrInput").value.trim(),
       cashAmount: toNumber($("#cashAmountInput").value),
       product: $("#productInput").value.trim(),
@@ -13605,7 +13673,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.25";
+const APP_VERSION = "v10.26";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";
@@ -13865,6 +13933,7 @@ function mobileSyncSnapshotForMonth(month) {
     status: record.status || "",
     manager: record.manager || "",
     category: record.category || "",
+    activityType: recordActivityType(record),
     count: toNumber(record.count),
     customerName: record.customerName || "",
     customerNo: record.customerNo || "",
