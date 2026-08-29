@@ -573,30 +573,34 @@ function persistState(options = {}) {
   window.clearTimeout(serverPersistTimer);
 
   const sendToServer = () => {
-    if (!serverPersistData) return;
+    if (!serverPersistData) return Promise.resolve({ ok: true, skipped: true });
     serverPersistController?.abort();
     serverPersistController = typeof AbortController === "function" ? new AbortController() : null;
     const body = serverPersistData;
     serverPersistData = "";
 
-    fetch(STATE_API_URL, {
+    return fetch(STATE_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json;charset=utf-8" },
       body,
       signal: serverPersistController?.signal
-    }).then(() => {
+    }).then((response) => {
+      if (!response.ok) throw new Error(`state save failed (${response.status})`);
       persistFailureToastShown = false;
+      return response;
     }).catch((error) => {
-      if (error?.name === "AbortError") return;
+      if (error?.name === "AbortError") return { ok: false, aborted: true };
       if (!persistFailureToastShown) {
         persistFailureToastShown = true;
-        showToast("컴퓨터 저장 파일 연결 실패: 임시로 브라우저에 저장했습니다.");
+        showToast("저장 연결 실패: 임시로 브라우저에 저장했습니다.");
       }
+      throw error;
     });
   };
 
-  if (immediateServer) sendToServer();
-  else serverPersistTimer = window.setTimeout(sendToServer, 280);
+  if (immediateServer) return sendToServer();
+  serverPersistTimer = window.setTimeout(sendToServer, 280);
+  return Promise.resolve({ ok: true, queued: true });
 }
 
 
@@ -9296,7 +9300,8 @@ async function importFullBackupFile(file) {
   try {
     state = normalizeState(data);
     invalidateManagerCaches();
-    persistState({ ensureManagers: true, immediateServer: true });
+    showToast("전체 백업을 복원하고 Google Drive에 저장 중입니다...");
+    await persistState({ ensureManagers: true, immediateServer: true });
     selectedRecordId = "";
     selectedChecklistId = "";
     selectedContactNoteId = "";
@@ -9304,10 +9309,11 @@ async function importFullBackupFile(file) {
     recordSequenceSort = "desc";
     renderNow();
     setMobileSyncStatus("백업에서 모바일 동기화 설정까지 복원되었습니다.", "success");
-    showToast("전체 백업 파일을 불러와 모든 메뉴 데이터를 복원했습니다.");
+    showToast("전체 백업 복원 완료 · Google Drive 저장까지 완료했습니다.");
   } catch (error) {
     console.error(error);
-    showToast("백업 복원 중 오류가 발생했습니다.");
+    showToast("백업 복원 또는 Google Drive 저장 중 오류가 발생했습니다.");
+    window.alert("백업 파일은 읽었지만 저장 중 오류가 발생했습니다. 인터넷 연결과 Google Drive 연결 상태를 확인해주세요.");
   }
 }
 
@@ -12661,8 +12667,19 @@ function attachEvents() {
   $("#completeResetBackupConfirm")?.addEventListener("change", (event) => { const btn = $("#completeResetExecuteBtn"); if (btn) btn.disabled = !event.target.checked; });
   $("#completeResetExecuteBtn")?.addEventListener("click", executeCompleteReset);
   $("#completeResetModal")?.addEventListener("click", (event) => { if (event.target.id === "completeResetModal") closeCompleteResetModal(); });
-  $("#importBackupInput")?.addEventListener("change", async (event) => {
+  const importBackupBtn = $("#importBackupBtn");
+  const importBackupInput = $("#importBackupInput");
+  importBackupBtn?.addEventListener("click", () => {
+    if (!importBackupInput) {
+      showToast("백업 파일 선택창을 열 수 없습니다.");
+      return;
+    }
+    importBackupInput.value = "";
+    importBackupInput.click();
+  });
+  importBackupInput?.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
+    if (!file) return;
     await importFullBackupFile(file);
     event.target.value = "";
   });
