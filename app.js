@@ -9276,46 +9276,103 @@ function looksLikeBackupData(data) {
     || data.managerMonthlyGoals;
 }
 
+function readBackupFileText(file) {
+  return new Promise((resolve, reject) => {
+    if (!file) {
+      reject(new Error("백업 파일이 선택되지 않았습니다."));
+      return;
+    }
+    try {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(reader.error || new Error("백업 파일 읽기 실패"));
+      reader.readAsText(file, "utf-8");
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
 async function importFullBackupFile(file) {
-  if (!file) return;
+  if (!file) return false;
+
+  showToast("백업 파일을 확인하고 있습니다...");
+
   let parsed;
   try {
-    const text = await file.text();
+    const text = await readBackupFileText(file);
     parsed = JSON.parse(text);
   } catch (error) {
-    console.error(error);
-    showToast("백업 파일을 읽지 못했습니다. JSON 백업 파일인지 확인해 주세요.");
-    return;
+    console.error("[BACKUP IMPORT] read/parse failed", error);
+    showToast("백업 파일을 읽지 못했습니다.");
+    window.alert("백업 파일을 읽지 못했습니다.\nV10.25에서 내보낸 JSON 전체 백업 파일인지 확인해주세요.");
+    return false;
   }
 
   const data = extractBackupData(parsed);
   if (!looksLikeBackupData(data)) {
-    showToast("MJ Sales 백업 파일 형식이 아닙니다.");
-    return;
+    console.error("[BACKUP IMPORT] invalid backup format", parsed);
+    showToast("MJ Sales 전체 백업 파일 형식이 아닙니다.");
+    window.alert("전체 백업 파일 형식이 아닙니다.\n'전체 백업 내보내기'로 생성한 JSON 파일을 선택해주세요.");
+    return false;
   }
 
-  const ok = window.confirm("현재 프로그램의 모든 데이터가 백업 파일 내용으로 교체됩니다. 복원할까요?");
-  if (!ok) return;
+  const recordCount = Array.isArray(data.records) ? data.records.length : 0;
+  const managerCount = Array.isArray(data.managers) ? data.managers.length : 0;
+  const ok = window.confirm(
+    `백업 파일을 확인했습니다.\n\n접수내역: ${recordCount}건\n매니저: ${managerCount}명\n\n현재 웹 프로그램의 모든 데이터가 이 백업 내용으로 교체됩니다.\n복원할까요?`
+  );
+  if (!ok) return false;
 
   try {
     state = normalizeState(data);
     invalidateManagerCaches();
-    showToast("전체 백업을 복원하고 Google Drive에 저장 중입니다...");
+
+    showToast("전체 백업 복원 중 · Google Drive에 저장하고 있습니다...");
     await persistState({ ensureManagers: true, immediateServer: true });
+
+    const verifyResponse = await fetch(STATE_API_URL, { cache: "no-store" });
+    if (!verifyResponse.ok) {
+      throw new Error(`Google Drive 저장 확인 실패 (${verifyResponse.status})`);
+    }
+    const verifyData = await verifyResponse.json();
+    const verifyRecordCount = Array.isArray(verifyData.records) ? verifyData.records.length : 0;
+    const expectedRecordCount = Array.isArray(state.records) ? state.records.length : 0;
+    if (verifyRecordCount !== expectedRecordCount) {
+      throw new Error(`저장 검증 불일치: expected=${expectedRecordCount}, actual=${verifyRecordCount}`);
+    }
+
     selectedRecordId = "";
     selectedChecklistId = "";
     selectedContactNoteId = "";
     selectedContactRequestId = "";
     recordSequenceSort = "desc";
+
     renderNow();
     setMobileSyncStatus("백업에서 모바일 동기화 설정까지 복원되었습니다.", "success");
-    showToast("전체 백업 복원 완료 · Google Drive 저장까지 완료했습니다.");
+    showToast(`전체 백업 복원 완료 · 접수내역 ${verifyRecordCount}건`);
+    window.alert(`전체 백업 복원이 완료되었습니다.\n\n접수내역 ${verifyRecordCount}건이 Google Drive에 저장되었습니다.`);
+    return true;
   } catch (error) {
-    console.error(error);
+    console.error("[BACKUP IMPORT] restore/save failed", error);
     showToast("백업 복원 또는 Google Drive 저장 중 오류가 발생했습니다.");
-    window.alert("백업 파일은 읽었지만 저장 중 오류가 발생했습니다. 인터넷 연결과 Google Drive 연결 상태를 확인해주세요.");
+    window.alert("백업 파일은 읽었지만 복원 또는 Google Drive 저장 중 오류가 발생했습니다.\n\n인터넷 연결과 Google Drive 연결 상태를 확인해주세요.");
+    return false;
   }
 }
+
+window.MJ_IMPORT_FULL_BACKUP_FROM_INPUT = async function(input) {
+  try {
+    const file = input?.files?.[0];
+    if (!file) return;
+    await importFullBackupFile(file);
+  } catch (error) {
+    console.error("[BACKUP IMPORT] input handler failed", error);
+    window.alert("백업 불러오기 처리 중 오류가 발생했습니다.\nF12 콘솔의 [BACKUP IMPORT] 내용을 확인해주세요.");
+  } finally {
+    if (input) input.value = "";
+  }
+};
 
 
 
@@ -12667,23 +12724,7 @@ function attachEvents() {
   $("#completeResetBackupConfirm")?.addEventListener("change", (event) => { const btn = $("#completeResetExecuteBtn"); if (btn) btn.disabled = !event.target.checked; });
   $("#completeResetExecuteBtn")?.addEventListener("click", executeCompleteReset);
   $("#completeResetModal")?.addEventListener("click", (event) => { if (event.target.id === "completeResetModal") closeCompleteResetModal(); });
-  const importBackupBtn = $("#importBackupBtn");
-  const importBackupInput = $("#importBackupInput");
-  importBackupBtn?.addEventListener("click", () => {
-    if (!importBackupInput) {
-      showToast("백업 파일 선택창을 열 수 없습니다.");
-      return;
-    }
-    importBackupInput.value = "";
-    importBackupInput.click();
-  });
-  importBackupInput?.addEventListener("change", async (event) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    await importFullBackupFile(file);
-    event.target.value = "";
-  });
-
+  // 전체 백업 불러오기는 native label/input 방식으로 처리합니다.\n
   $("#addTodoBtn")?.addEventListener("click", addTodoFromInput);
   $("#todoInput")?.addEventListener("keydown", (event) => {
     if (event.key === "Enter") {
