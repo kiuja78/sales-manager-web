@@ -19798,7 +19798,7 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 
 
 /* =========================================================
-   V10.26 접수등록/접수내역 - 컨스·지원 '구분' 필드
+   V10.28 접수등록/접수내역 - 컨스·지원 '구분' 필드
    - 판매종류 자체 의미는 변경하지 않음
    - 구분은 기존 기타내용의 컨스/지원 표기를 별도 필드로 분리
    ========================================================= */
@@ -19863,3 +19863,417 @@ body[data-view="records"] .record-form-row.row-basic {
 .record-table .product-col { width: 17.2% !important; }
 .record-table .seller-col { width: 7.6% !important; }
 .record-table .memo-col { width: 8% !important; }
+
+
+/* =========================================================
+   V10.28 / WEB V1.7
+   모바일 반응형 UI 최종 보정
+   - PC 화면 영향 없음
+   - 850px 이하에서 상단 브랜드 + 가로 스크롤 메뉴
+   - 세로로 찌그러지는 메뉴 방지
+   - 모바일 화면에서 본문이 바로 보이도록 사이드바 높이 해제
+   ========================================================= */
+@media (max-width: 850px) {
+  html,
+  body {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    overflow-x: hidden !important;
+  }
+
+  body {
+    min-height: 100dvh !important;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  .app-shell {
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 100dvh !important;
+    overflow: visible !important;
+  }
+
+  /* 기존 PC용 왼쪽 사이드바 → 모바일 상단 헤더 */
+  .sidebar {
+    position: sticky !important;
+    top: 0 !important;
+    z-index: 1000 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    padding: calc(10px + env(safe-area-inset-top)) 12px 10px !important;
+    margin: 0 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+    box-shadow: 0 6px 22px rgba(12, 28, 24, 0.18) !important;
+  }
+
+  .brand {
+    width: 100% !important;
+    min-width: 0 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 10px !important;
+    padding: 0 2px !important;
+  }
+
+  .brand-mark,
+  .brand-program-icon {
+    width: 40px !important;
+    height: 40px !important;
+    min-width: 40px !important;
+    flex: 0 0 40px !important;
+    border-radius: 11px !important;
+  }
+
+  .brand-program-icon img {
+    width: 100% !important;
+    height: 100% !important;
+    object-fit: contain !important;
+  }
+
+  .brand-text {
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+  }
+
+  .brand-text strong,
+  #sidebarAppTitle {
+    display: block !important;
+    width: 100% !important;
+    font-size: 15px !important;
+    line-height: 1.25 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    word-break: keep-all !important;
+  }
+
+  .brand-text em,
+  #sidebarManagerLine {
+    display: block !important;
+    margin-top: 3px !important;
+    font-size: 12px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+  }
+
+  /* 메뉴는 세로 글자가 아니라 가로 버튼으로 */
+  .nav {
+    width: 100% !important;
+    max-width: 100% !important;
+    display: flex !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    align-items: center !important;
+    gap: 6px !important;
+    padding: 0 0 3px !important;
+    margin: 0 !important;
+    overflow-x: auto !important;
+    overflow-y: hidden !important;
+    -webkit-overflow-scrolling: touch !important;
+    scrollbar-width: none !important;
+    scroll-snap-type: x proximity;
+  }
+
+  .nav::-webkit-scrollbar {
+    display: none !important;
+  }
+
+  .nav-item {
+    flex: 0 0 auto !important;
+    width: auto !important;
+    min-width: max-content !important;
+    max-width: none !important;
+    min-height: 40px !important;
+    padding: 9px 13px !important;
+    border-radius: 10px !important;
+    text-align: center !important;
+    font-size: 13px !important;
+    line-height: 1.2 !important;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+    overflow-wrap: normal !important;
+    writing-mode: horizontal-tb !important;
+    text-orientation: mixed !important;
+    scroll-snap-align: start;
+  }
+
+  .nav-item.active {
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,.08) !important;
+  }
+
+  /* 모바일에선 큰 시계 영역을 숨겨 본문을 바로 표시 */
+  .sidebar-bottom-area,
+  .sidebar-clock-card,
+  .sidebar-credit {
+    display: none !important;
+  }
+
+  .workspace {
+    width: 100% !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: 100% !important;
+    padding: 12px !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    box-sizing: border-box !important;
+  }
+
+  .topbar {
+    width: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    margin: 0 0 12px !important;
+  }
+
+  .topbar-info {
+    min-width: 0 !important;
+  }
+
+  .topbar-info .eyebrow {
+    display: none !important;
+  }
+
+  .topbar h1,
+  #viewTitle {
+    font-size: 22px !important;
+    line-height: 1.25 !important;
+  }
+
+  .master-line,
+  #masterLine {
+    margin-top: 3px !important;
+    font-size: 13px !important;
+  }
+
+  .dashboard-top-control,
+  .dashboard-top-filters,
+  .summary-filter-row {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  .dashboard-top-filters,
+  .summary-filter-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+  }
+
+  .dashboard-top-filters label:first-child,
+  .summary-filter-row label:first-child {
+    grid-column: 1 / -1 !important;
+  }
+
+  .top-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .top-actions button,
+  .primary-button,
+  .ghost-button,
+  .danger-button,
+  .file-button {
+    min-height: 42px;
+    touch-action: manipulation;
+  }
+
+  /* 대시보드 */
+  .dashboard-overview,
+  .dashboard-grid,
+  .summary-panel,
+  .split-layout,
+  .records-layout,
+  .settings-grid,
+  .settings-grid-main,
+  .form-grid,
+  .record-form-grid {
+    width: 100% !important;
+    max-width: 100% !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  .summary-hero-grid,
+  .dashboard-stack-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  .summary-chip-grid,
+  .custom-condition-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  .goal-card {
+    min-width: 0 !important;
+    min-height: 105px !important;
+    padding: 11px !important;
+  }
+
+  .goal-value {
+    font-size: 24px !important;
+  }
+
+  .date-panel,
+  .calendar-box,
+  .summary-panel,
+  .panel,
+  .form-panel,
+  .list-panel {
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  /* 접수등록은 핸드폰에서 한 줄 한 항목 */
+  body[data-view="records"] .record-form-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+  }
+
+  body[data-view="records"] .record-form-grid > label,
+  body[data-view="records"] .record-form-grid label:nth-child(n) {
+    grid-column: 1 / -1 !important;
+    min-width: 0 !important;
+  }
+
+  .record-filter-row {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 8px !important;
+    padding: 12px !important;
+  }
+
+  .record-filter-row > * {
+    min-width: 0 !important;
+  }
+
+  /* 표는 억지로 찌그러뜨리지 않고 손가락으로 좌우 스크롤 */
+  .table-wrap,
+  .records-table-wrap,
+  .manager-table-wrap,
+  .payroll-table-wrap,
+  .analytics-table-wrap {
+    width: 100% !important;
+    max-width: 100% !important;
+    overflow-x: auto !important;
+    overflow-y: visible !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  .table-wrap table,
+  .records-table,
+  .manager-table {
+    width: max-content !important;
+    min-width: 760px !important;
+    table-layout: auto !important;
+  }
+
+  th,
+  td {
+    white-space: nowrap;
+  }
+
+  input,
+  select,
+  textarea,
+  button {
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  input,
+  select,
+  textarea {
+    font-size: 16px !important; /* iOS 입력 시 자동 확대 방지 */
+  }
+
+  textarea {
+    min-height: 88px;
+  }
+
+  .panel-head,
+  .form-actions,
+  .section-save-row,
+  .data-tools {
+    flex-wrap: wrap !important;
+  }
+
+  .form-actions,
+  .section-save-row {
+    gap: 8px !important;
+  }
+
+  .form-actions > button,
+  .section-save-row > button,
+  .section-save-row > .file-button {
+    flex: 1 1 140px !important;
+  }
+
+  /* 중앙 알림은 모바일 폭에 맞춤 */
+  #toast,
+  .toast {
+    max-width: calc(100vw - 32px) !important;
+    width: auto !important;
+    font-size: 14px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .workspace {
+    padding: 10px !important;
+  }
+
+  .sidebar {
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+  }
+
+  .summary-hero-grid,
+  .dashboard-stack-grid,
+  .summary-chip-grid,
+  .custom-condition-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .record-filter-row,
+  .dashboard-top-filters,
+  .summary-filter-row,
+  .top-actions {
+    grid-template-columns: 1fr !important;
+  }
+
+  .dashboard-top-filters label:first-child,
+  .summary-filter-row label:first-child {
+    grid-column: auto !important;
+  }
+
+  .nav-item {
+    min-height: 38px !important;
+    padding: 8px 11px !important;
+    font-size: 12px !important;
+  }
+
+  .brand-text strong,
+  #sidebarAppTitle {
+    font-size: 14px !important;
+  }
+}
