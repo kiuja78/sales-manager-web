@@ -19798,7 +19798,7 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 
 
 /* =========================================================
-   V10.28 접수등록/접수내역 - 컨스·지원 '구분' 필드
+   V10.29 접수등록/접수내역 - 컨스·지원 '구분' 필드
    - 판매종류 자체 의미는 변경하지 않음
    - 구분은 기존 기타내용의 컨스/지원 표기를 별도 필드로 분리
    ========================================================= */
@@ -19866,7 +19866,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* =========================================================
-   V10.28 / WEB V1.7
+   V10.29 / WEB V1.8
    모바일 반응형 UI 최종 보정
    - PC 화면 영향 없음
    - 850px 이하에서 상단 브랜드 + 가로 스크롤 메뉴
@@ -20275,5 +20275,526 @@ body[data-view="records"] .record-form-row.row-basic {
   .brand-text strong,
   #sidebarAppTitle {
     font-size: 14px !important;
+  }
+}
+
+
+/* =========================================================
+   V10.29 / WEB V1.8
+   모바일 실사용 2차 보정
+   첨부 아이폰 화면 기준:
+   - 대시보드 상단 컨트롤 압축
+   - 접수등록 가로 잘림 제거
+   - 업무체크리스트 제목 세로 깨짐 제거
+   - 프로모션 입력영역 모바일 폭 최적화
+   - 경영평가 카드/입력영역 폭 정리
+   - Safari 하단바에 가려지는 영역 여백 확보
+   ========================================================= */
+@media (max-width: 850px) {
+  .workspace {
+    padding-bottom: calc(120px + env(safe-area-inset-bottom)) !important;
+  }
+
+  /* ---------- 대시보드 ---------- */
+  .dashboard-top-control {
+    width: 100% !important;
+    display: grid !important;
+    gap: 8px !important;
+  }
+
+  .topbar .dashboard-top-filters {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+    padding: 10px !important;
+  }
+
+  .topbar .dashboard-top-filters > label:first-child {
+    grid-column: 1 / -1 !important;
+  }
+
+  .topbar .dashboard-top-filters label {
+    min-width: 0 !important;
+    font-size: 12px !important;
+    gap: 5px !important;
+  }
+
+  .topbar .dashboard-top-filters input {
+    min-height: 42px !important;
+    padding: 8px 10px !important;
+    font-size: 15px !important;
+    text-align: center !important;
+  }
+
+  .topbar .top-actions {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  .topbar .top-actions .dashboard-action {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 40px !important;
+    padding: 8px 5px !important;
+    font-size: 12px !important;
+    white-space: nowrap !important;
+  }
+
+  #dashboardView .dashboard-stack-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  #dashboardView .dashboard-card-stack,
+  #dashboardView .goal-card,
+  #dashboardView .package-goal-card {
+    width: 100% !important;
+    max-width: none !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+  }
+
+  #dashboardView .summary-chip-grid,
+  #dashboardView .custom-condition-grid,
+  #dashboardView .original-summary-chip-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  #dashboardView .summary-meta {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 6px 12px !important;
+    padding: 10px 12px !important;
+  }
+
+  #dashboardView .summary-meta > div {
+    min-width: 0 !important;
+  }
+
+  /* ---------- 접수리스트 ---------- */
+  #recordsView {
+    overflow-x: hidden !important;
+  }
+
+  #recordsView .records-page-head {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 16px !important;
+  }
+
+  #recordsView .records-page-head > div:first-child {
+    min-width: 0 !important;
+  }
+
+  #recordsView .records-page-head .eyebrow {
+    font-size: 11px !important;
+    line-height: 1.2 !important;
+  }
+
+  #recordsView .records-page-head h2 {
+    margin: 4px 0 0 !important;
+    font-size: 28px !important;
+    line-height: 1.15 !important;
+    white-space: nowrap !important;
+    word-break: keep-all !important;
+  }
+
+  #recordsView .records-page-actions,
+  #recordsView .records-import-only,
+  #recordsView .record-page-action {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
+
+  #recordsView .record-page-action {
+    justify-content: center !important;
+  }
+
+  #recordsView .records-layout {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  #recordsView .record-form-panel,
+  #recordsView .record-form-rows,
+  #recordsView .record-form-row {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important;
+  }
+
+  #recordsView .record-form-rows {
+    display: grid !important;
+    gap: 10px !important;
+  }
+
+  #recordsView .record-form-row {
+    display: grid !important;
+    gap: 9px !important;
+  }
+
+  #recordsView .record-form-row.row-basic {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #recordsView .record-form-row.row-customer-no,
+  #recordsView .record-form-row.row-product,
+  #recordsView .record-form-row.row-memo {
+    grid-template-columns: 1fr !important;
+  }
+
+  #recordsView .record-form-row > label {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    grid-column: auto !important;
+  }
+
+  #recordsView .record-form-row input,
+  #recordsView .record-form-row select,
+  #recordsView .record-form-row textarea {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  #recordsView .row-memo textarea {
+    min-height: 105px !important;
+  }
+
+  #recordsView .record-filter-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  #recordsView .record-period-picker {
+    display: grid !important;
+    grid-template-columns: 1fr 18px 1fr !important;
+    gap: 5px !important;
+    align-items: end !important;
+    width: 100% !important;
+  }
+
+  #recordsView .record-period-title {
+    grid-column: 1 / -1 !important;
+  }
+
+  #recordsView .record-period-picker input {
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  /* 접수/멤버십 표는 모바일에서 좌우 스와이프 */
+  #recordsView .table-wrap {
+    position: relative !important;
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+
+  #recordsView .record-table {
+    min-width: 920px !important;
+    width: max-content !important;
+  }
+
+  /* ---------- 업무체크리스트 ---------- */
+  #checklistView .checklist-month-nav {
+    display: grid !important;
+    grid-template-columns: auto minmax(0, 1fr) auto !important;
+    gap: 6px !important;
+  }
+
+  #checklistView .checklist-month-nav button {
+    min-width: 0 !important;
+    padding: 7px 9px !important;
+    font-size: 12px !important;
+  }
+
+  #checklistView .checklist-summary-grid {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  #checklistView .checklist-main-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  #checklistView .checklist-form-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  #checklistView .checklist-form-grid > label,
+  #checklistView .checklist-form-grid > label.full {
+    grid-column: 1 / -1 !important;
+    width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  #checklistView .checklist-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #checklistView .checklist-compact-item {
+    width: 100% !important;
+    min-width: 0 !important;
+    overflow: hidden !important;
+  }
+
+  #checklistView .checklist-compact-row {
+    display: grid !important;
+    grid-template-columns: minmax(0, 1fr) auto auto !important;
+    grid-template-areas:
+      "meta status status"
+      "title title expand"
+      "edit complete complete" !important;
+    gap: 8px !important;
+    align-items: center !important;
+    min-height: 0 !important;
+    padding: 12px !important;
+  }
+
+  #checklistView .checklist-meta-stack {
+    grid-area: meta !important;
+    min-width: 0 !important;
+  }
+
+  #checklistView .checklist-compact-title {
+    grid-area: title !important;
+    min-width: 0 !important;
+    white-space: normal !important;
+    word-break: keep-all !important;
+    overflow-wrap: anywhere !important;
+    text-overflow: clip !important;
+    overflow: visible !important;
+    font-size: 15px !important;
+    line-height: 1.45 !important;
+  }
+
+  #checklistView .checklist-expand-mark {
+    grid-area: expand !important;
+  }
+
+  #checklistView .checklist-status-select {
+    grid-area: status !important;
+    width: auto !important;
+    min-width: 90px !important;
+  }
+
+  #checklistView [data-checklist-edit] {
+    grid-area: edit !important;
+    width: 100% !important;
+  }
+
+  #checklistView [data-checklist-complete],
+  #checklistView .checklist-complete-spacer {
+    grid-area: complete !important;
+  }
+
+  #checklistView [data-checklist-complete] {
+    width: 100% !important;
+  }
+
+  #checklistView .checklist-compact-detail {
+    padding: 10px 12px 12px !important;
+  }
+
+  #checklistView .checklist-rollover-info {
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+
+  /* ---------- 프로모션 ---------- */
+  #promotionsView {
+    overflow-x: hidden !important;
+  }
+
+  #promotionsView .promo-stable-head {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+  }
+
+  #promotionsView .promo-stable-head .primary-button {
+    width: 100% !important;
+  }
+
+  #promotionsView .promo-stable-tabs {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  #promotionsView .promo-stable-tabs > * {
+    min-width: 0 !important;
+    width: 100% !important;
+    white-space: normal !important;
+  }
+
+  #promotionsView .promo-stable-main-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+
+  #promotionsView .promo-stable-form-panel,
+  #promotionsView .promo-stable-form-grid,
+  #promotionsView .promo-condition-editor {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+
+  #promotionsView .promo-stable-form-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  #promotionsView .promo-stable-form-grid .full,
+  #promotionsView .promo-stable-form-grid > label {
+    grid-column: 1 / -1 !important;
+  }
+
+  #promotionsView .promo-type-buttons {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+    gap: 6px !important;
+  }
+
+  #promotionsView .promo-date-mode {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+    white-space: normal !important;
+  }
+
+  #promotionsView .promo-date-mode > span,
+  #promotionsView .promo-date-mode label {
+    width: 100% !important;
+    white-space: normal !important;
+  }
+
+  #promotionsView .promo-rule-editor-head,
+  #promotionsView .promo-rule-row {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  #promotionsView .count-rule-grid {
+    grid-template-columns: 58px minmax(0, 1fr) 48px 34px !important;
+  }
+
+  #promotionsView .score-rule-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #promotionsView .score-rule-grid > :nth-child(5) {
+    grid-column: 2 !important;
+    justify-self: end !important;
+  }
+
+  #promotionsView .product-rule-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #promotionsView .product-rule-grid > :nth-child(5) {
+    grid-column: 2 !important;
+    justify-self: end !important;
+  }
+
+  #promotionsView .promo-rule-editor-head.score-rule-grid,
+  #promotionsView .promo-rule-editor-head.product-rule-grid {
+    display: none !important;
+  }
+
+  /* ---------- 경영평가 ---------- */
+  #evaluationView .evaluation-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #evaluationView .evaluation-toolbar > * {
+    width: 100% !important;
+  }
+
+  #evaluationView .evaluation-summary-grid {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 8px !important;
+  }
+
+  #evaluationView .evaluation-input-groups {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    padding: 10px !important;
+    gap: 10px !important;
+  }
+
+  #evaluationView .evaluation-input-group,
+  #evaluationView .evaluation-input-group-wide {
+    grid-column: 1 / -1 !important;
+    min-width: 0 !important;
+  }
+
+  #evaluationView .evaluation-group-fields,
+  #evaluationView .evaluation-group-fields.compact,
+  #evaluationView .evaluation-group-fields.service,
+  #evaluationView .evaluation-policy-input-layout {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  #evaluationView .evaluation-mini-preview-grid,
+  #evaluationView .evaluation-policy-previews {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+    gap: 7px !important;
+  }
+
+  #evaluationView .evaluation-input-group input {
+    min-height: 44px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  #recordsView .record-form-row.row-basic {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #recordsView .record-form-row.row-basic > label:nth-child(7) {
+    grid-column: 1 / -1 !important;
+  }
+
+  #dashboardView .summary-chip-grid,
+  #dashboardView .custom-condition-grid,
+  #dashboardView .original-summary-chip-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  #evaluationView .evaluation-summary-grid {
+    grid-template-columns: 1fr !important;
   }
 }
