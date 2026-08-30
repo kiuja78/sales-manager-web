@@ -19798,7 +19798,7 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 
 
 /* =========================================================
-   V10.29 접수등록/접수내역 - 컨스·지원 '구분' 필드
+   V10.30 접수등록/접수내역 - 컨스·지원 '구분' 필드
    - 판매종류 자체 의미는 변경하지 않음
    - 구분은 기존 기타내용의 컨스/지원 표기를 별도 필드로 분리
    ========================================================= */
@@ -19866,7 +19866,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* =========================================================
-   V10.29 / WEB V1.8
+   V10.30 / WEB V1.9
    모바일 반응형 UI 최종 보정
    - PC 화면 영향 없음
    - 850px 이하에서 상단 브랜드 + 가로 스크롤 메뉴
@@ -20280,7 +20280,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* =========================================================
-   V10.29 / WEB V1.8
+   V10.30 / WEB V1.9
    모바일 실사용 2차 보정
    첨부 아이폰 화면 기준:
    - 대시보드 상단 컨트롤 압축
@@ -20796,5 +20796,704 @@ body[data-view="records"] .record-form-row.row-basic {
 
   #evaluationView .evaluation-summary-grid {
     grid-template-columns: 1fr !important;
+  }
+}
+
+
+/* ============================================================
+   V10.30 / WEB V1.9
+   모바일 전용 앱 UI 1차
+   - PC UI는 기존 그대로 유지
+   - 모바일: 하단 4메뉴 + 더보기 바텀시트
+   - 접수리스트: 표 대신 카드형 목록
+   - 접수등록: 필요할 때만 펼침
+   - 접수/멤버십 탭 분리
+   - 모바일 접수필터 전용 UI
+   ============================================================ */
+
+.mobile-app-nav,
+.mobile-more-sheet,
+.mobile-more-backdrop,
+.mobile-records-app-head,
+.mobile-record-controls,
+.mobile-record-list {
+  display: none;
+}
+
+@media (max-width: 850px) {
+  :root {
+    --mobile-app-bottom-safe: calc(76px + env(safe-area-inset-bottom));
+  }
+
+  body {
+    padding-bottom: var(--mobile-app-bottom-safe) !important;
+  }
+
+  /* 모바일에서는 기존 긴 상단 메뉴를 숨기고 브랜드만 남김 */
+  .sidebar .nav {
+    display: none !important;
+  }
+
+  .sidebar {
+    gap: 0 !important;
+    padding-bottom: 10px !important;
+  }
+
+  /* 하단 앱 네비게이션 */
+  .mobile-app-nav {
+    position: fixed;
+    left: 10px;
+    right: 10px;
+    bottom: calc(8px + env(safe-area-inset-bottom));
+    z-index: 25000;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: 62px;
+    padding: 6px;
+    border: 1px solid rgba(15, 23, 42, .08);
+    border-radius: 19px;
+    background: rgba(255,255,255,.96);
+    box-shadow: 0 14px 40px rgba(15,23,42,.18);
+    backdrop-filter: blur(18px);
+    -webkit-backdrop-filter: blur(18px);
+  }
+
+  .mobile-app-nav-item {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: #7a8697;
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    min-width: 0;
+    padding: 4px 2px;
+    font-family: inherit;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .mobile-app-nav-item svg {
+    width: 22px;
+    height: 22px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .mobile-app-nav-item.active {
+    color: #17664c;
+    background: #edf7f3;
+  }
+
+  /* 더보기 바텀시트 */
+  .mobile-more-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 25990;
+    background: rgba(15,23,42,.38);
+  }
+
+  .mobile-more-backdrop.open {
+    display: block !important;
+  }
+
+  .mobile-more-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 26000;
+    display: block;
+    transform: translateY(110%);
+    transition: transform .24s ease;
+    padding: 8px 16px calc(22px + env(safe-area-inset-bottom));
+    border-radius: 24px 24px 0 0;
+    background: #fff;
+    box-shadow: 0 -16px 50px rgba(15,23,42,.22);
+    pointer-events: none;
+  }
+
+  .mobile-more-sheet.open {
+    transform: translateY(0);
+    pointer-events: auto;
+  }
+
+  .mobile-more-handle {
+    width: 42px;
+    height: 5px;
+    border-radius: 999px;
+    margin: 0 auto 13px;
+    background: #d6dce5;
+  }
+
+  .mobile-more-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .mobile-more-head > div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .mobile-more-head strong {
+    font-size: 19px;
+    color: #172033;
+  }
+
+  .mobile-more-head span {
+    font-size: 12px;
+    color: #7a8697;
+  }
+
+  #mobileMoreCloseBtn {
+    border: 0;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: #f3f5f8;
+    font-size: 25px;
+    color: #667085;
+  }
+
+  .mobile-more-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 9px;
+  }
+
+  .mobile-more-grid button {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    min-height: 58px;
+    padding: 10px 12px;
+    border: 1px solid #e7ebf0;
+    border-radius: 15px;
+    background: #fff;
+    color: #263142;
+    text-align: left;
+    font-family: inherit;
+  }
+
+  .mobile-more-grid button > span {
+    flex: 0 0 37px;
+    height: 37px;
+    border-radius: 11px;
+    display: grid;
+    place-items: center;
+    background: #f0f6f3;
+    color: #23684f;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .mobile-more-grid button > strong {
+    min-width: 0;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  /* 접수 화면을 모바일 앱 형태로 */
+  #recordsView {
+    --mobile-card-gap: 10px;
+  }
+
+  #recordsView .records-page-head {
+    padding: 4px 2px 8px !important;
+    border: 0 !important;
+    background: transparent !important;
+  }
+
+  #recordsView .records-page-head .eyebrow {
+    display: none !important;
+  }
+
+  #recordsView .records-page-head h2 {
+    font-size: 24px !important;
+    margin: 0 !important;
+  }
+
+  #recordsView .records-page-actions {
+    display: none !important;
+  }
+
+  .mobile-records-app-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 12px;
+  }
+
+  .mobile-records-tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 4px;
+    border-radius: 14px;
+    background: #eef2f5;
+  }
+
+  .mobile-record-tab {
+    border: 0;
+    min-height: 39px;
+    padding: 7px 9px;
+    border-radius: 11px;
+    background: transparent;
+    color: #6d7888;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 800;
+  }
+
+  .mobile-record-tab.active {
+    color: #174f3f;
+    background: #fff;
+    box-shadow: 0 2px 8px rgba(15,23,42,.08);
+  }
+
+  .mobile-new-record-button {
+    flex: 0 0 auto;
+    min-height: 47px;
+    padding: 0 14px;
+    border: 0;
+    border-radius: 14px;
+    background: #17664c;
+    color: #fff;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 800;
+    box-shadow: 0 7px 18px rgba(23,102,76,.22);
+  }
+
+  #recordsView .records-layout {
+    display: block !important;
+  }
+
+  /* 모바일에서는 접수 입력폼을 기본 접고, 신규/수정 시에만 표시 */
+  #recordsView .record-form-panel {
+    display: none !important;
+    margin: 0 0 12px !important;
+    border-radius: 18px !important;
+  }
+
+  #recordsView .record-form-panel.mobile-form-open {
+    display: block !important;
+  }
+
+  #recordsView .record-form-panel .panel-head {
+    position: sticky;
+    top: 62px;
+    z-index: 2;
+    padding: 10px 0;
+    background: #fff;
+  }
+
+  #recordsView .record-form-row,
+  #recordsView .record-form-row.row-basic,
+  #recordsView .record-form-row.row-customer-no,
+  #recordsView .record-form-row.row-product,
+  #recordsView .record-form-row.row-memo {
+    grid-template-columns: 1fr !important;
+  }
+
+  #recordsView .record-form-row.row-basic > label:nth-child(n) {
+    grid-column: 1 / -1 !important;
+  }
+
+  #recordsView .record-form-panel .form-actions {
+    position: sticky;
+    bottom: calc(var(--mobile-app-bottom-safe) - 2px);
+    z-index: 4;
+    margin: 10px -12px -12px;
+    padding: 10px 12px;
+    background: rgba(255,255,255,.96);
+    border-top: 1px solid #edf0f3;
+    backdrop-filter: blur(12px);
+  }
+
+  #recordsView .record-form-panel .form-actions .primary-button {
+    min-height: 48px;
+    font-size: 15px;
+  }
+
+  /* 접수 패널: 기존 PC용 필터/표 숨김 */
+  #recordsView .record-filter-row {
+    display: none !important;
+  }
+
+  #recordsView .record-list-panel > .table-wrap,
+  #recordsView .membership-list-panel > .table-wrap {
+    display: none !important;
+  }
+
+  #recordsView .record-list-panel,
+  #recordsView .membership-list-panel {
+    padding: 12px !important;
+    border: 0 !important;
+    border-radius: 18px !important;
+    background: #f5f7f9 !important;
+    box-shadow: none !important;
+  }
+
+  #recordsView .record-list-panel .record-list-head,
+  #recordsView .membership-list-panel .record-list-head {
+    padding: 0 2px 10px !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  #recordsView .record-list-title-group h2 {
+    font-size: 17px !important;
+  }
+
+  #recordsView #printRecordsBtn {
+    display: none !important;
+  }
+
+  #recordsView[data-mobile-record-tab="main"] .membership-list-panel {
+    display: none !important;
+  }
+
+  #recordsView[data-mobile-record-tab="membership"] .record-list-panel {
+    display: none !important;
+  }
+
+  .mobile-record-controls {
+    display: block;
+    margin-bottom: 10px;
+  }
+
+  .mobile-record-search-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 7px;
+  }
+
+  .mobile-record-search-row input {
+    width: 100%;
+    min-height: 44px;
+    border: 1px solid #dce2e8;
+    border-radius: 13px;
+    padding: 0 13px;
+    background: #fff;
+    font-size: 15px !important;
+  }
+
+  .mobile-filter-toggle {
+    min-width: 64px;
+    border: 1px solid #dce2e8;
+    border-radius: 13px;
+    background: #fff;
+    color: #344054;
+    font-weight: 800;
+  }
+
+  .mobile-record-filter-panel {
+    margin-top: 8px;
+    padding: 10px;
+    border: 1px solid #e3e8ee;
+    border-radius: 14px;
+    background: #fff;
+  }
+
+  .mobile-filter-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .mobile-filter-grid label {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    color: #697586;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .mobile-filter-grid select,
+  .mobile-filter-grid input {
+    width: 100%;
+    min-width: 0;
+    min-height: 41px;
+    border: 1px solid #dce2e8;
+    border-radius: 10px;
+    background: #fff;
+    padding: 0 8px;
+    color: #263142;
+    font-size: 14px !important;
+  }
+
+  .mobile-filter-full {
+    grid-column: 1 / -1;
+  }
+
+  .mobile-filter-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 6px;
+    margin-top: 9px;
+  }
+
+  .mobile-filter-actions button {
+    min-width: 0;
+    min-height: 37px;
+    border: 0;
+    border-radius: 10px;
+    background: #eef3f1;
+    color: #2e654f;
+    font-size: 11px;
+    font-weight: 800;
+  }
+
+  .mobile-membership-filter-grid {
+    margin-bottom: 4px;
+  }
+
+  .mobile-record-list {
+    display: grid;
+    gap: var(--mobile-card-gap);
+  }
+
+  .mobile-record-empty {
+    padding: 32px 16px;
+    border-radius: 16px;
+    background: #fff;
+    color: #8691a0;
+    text-align: center;
+    font-size: 13px;
+  }
+
+  .mobile-record-card {
+    position: relative;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid #e7ebef;
+    border-radius: 17px;
+    background: #fff;
+    box-shadow: 0 5px 14px rgba(15,23,42,.045);
+  }
+
+  .mobile-record-card.selected {
+    border-color: #78aa96;
+    box-shadow: 0 0 0 2px rgba(37,117,87,.09);
+  }
+
+  .mobile-record-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .mobile-record-manager {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .mobile-record-manager strong {
+    color: #172033;
+    font-size: 16px;
+  }
+
+  .mobile-record-manager span {
+    color: #8a94a2;
+    font-size: 11px;
+  }
+
+  .mobile-record-status {
+    flex: 0 0 auto;
+  }
+
+  .mobile-record-chip-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin: 10px 0 11px;
+  }
+
+  .mobile-record-card .status-pill,
+  .mobile-record-card .category-chip,
+  .mobile-record-card .activity-type-chip,
+  .mobile-record-mini-chip {
+    min-height: 24px;
+    display: inline-flex;
+    align-items: center;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    white-space: nowrap;
+  }
+
+  .mobile-record-mini-chip {
+    background: #f0f2f5;
+    color: #5d6979;
+  }
+
+  .mobile-record-customer {
+    min-width: 0;
+    margin-bottom: 6px;
+  }
+
+  .mobile-record-customer strong {
+    display: block;
+    color: #111827;
+    font-size: 17px;
+    line-height: 1.25;
+    word-break: keep-all;
+  }
+
+  .mobile-record-customer a,
+  .mobile-record-customer span {
+    display: inline-block;
+    margin-top: 4px;
+    color: #23705a;
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+  }
+
+  .mobile-record-product {
+    color: #445064;
+    font-size: 13px;
+    line-height: 1.5;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-record-date-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin-top: 11px;
+  }
+
+  .mobile-record-date-box {
+    min-width: 0;
+    padding: 8px 9px;
+    border-radius: 11px;
+    background: #f6f8fa;
+  }
+
+  .mobile-record-date-box span {
+    display: block;
+    color: #8a94a2;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .mobile-record-date-box strong {
+    display: block;
+    margin-top: 2px;
+    color: #344054;
+    font-size: 12px;
+  }
+
+  .mobile-record-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 7px;
+    margin-top: 11px;
+  }
+
+  .mobile-record-actions button {
+    min-height: 40px;
+    border-radius: 11px;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .mobile-record-detail-btn {
+    border: 1px solid #dde3e9;
+    background: #fff;
+    color: #4b5667;
+  }
+
+  .mobile-record-edit-btn {
+    border: 0;
+    background: #edf7f3;
+    color: #23684f;
+  }
+
+  .mobile-record-detail {
+    display: none;
+    margin-top: 11px;
+    padding-top: 11px;
+    border-top: 1px solid #edf0f3;
+  }
+
+  .mobile-record-card.expanded .mobile-record-detail {
+    display: block;
+  }
+
+  .mobile-record-detail-grid {
+    display: grid;
+    gap: 7px;
+  }
+
+  .mobile-record-detail-row {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr);
+    gap: 8px;
+    align-items: start;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .mobile-record-detail-row span {
+    color: #8a94a2;
+    font-weight: 700;
+  }
+
+  .mobile-record-detail-row strong {
+    color: #344054;
+    font-weight: 700;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  .workspace {
+    padding-bottom: calc(var(--mobile-app-bottom-safe) + 28px) !important;
+  }
+}
+
+@media (max-width: 430px) {
+  .mobile-more-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .mobile-records-app-head {
+    align-items: stretch;
+  }
+
+  .mobile-new-record-button {
+    padding: 0 11px;
+    font-size: 12px;
+  }
+
+  .mobile-filter-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

@@ -31,6 +31,7 @@ function applyOptionalMenuVisibility() {
     const nav = document.querySelector(`.nav-item[data-view="${view}"]`);
     if (nav) nav.hidden = !visible;
   });
+  syncMobileMenuVisibility();
 }
 
 function defaultSalesAnalyticsSettings() {
@@ -8635,6 +8636,335 @@ function printRecordList() {
 }
 
 
+
+function syncMobileAppNav(view = currentView) {
+  const primaryViews = new Set(["dashboard", "records", "checklist"]);
+  $$(".mobile-app-nav-item[data-mobile-view]").forEach((button) => {
+    button.classList.toggle("active", button.dataset.mobileView === view);
+  });
+  const moreButton = $("#mobileMoreBtn");
+  if (moreButton) moreButton.classList.toggle("active", !primaryViews.has(view));
+}
+
+function openMobileMoreSheet() {
+  const sheet = $("#mobileMoreSheet");
+  const backdrop = $("#mobileMoreBackdrop");
+  const button = $("#mobileMoreBtn");
+  if (!sheet || !backdrop) return;
+  sheet.classList.add("open");
+  sheet.setAttribute("aria-hidden", "false");
+  backdrop.hidden = false;
+  backdrop.classList.add("open");
+  if (button) button.setAttribute("aria-expanded", "true");
+}
+
+function closeMobileMoreSheet() {
+  const sheet = $("#mobileMoreSheet");
+  const backdrop = $("#mobileMoreBackdrop");
+  const button = $("#mobileMoreBtn");
+  if (sheet) {
+    sheet.classList.remove("open");
+    sheet.setAttribute("aria-hidden", "true");
+  }
+  if (backdrop) {
+    backdrop.classList.remove("open");
+    backdrop.hidden = true;
+  }
+  if (button) button.setAttribute("aria-expanded", "false");
+}
+
+function syncMobileMenuVisibility() {
+  $$(".mobile-more-grid [data-mobile-more-view]").forEach((button) => {
+    const desktopNav = document.querySelector(`.nav-item[data-view="${button.dataset.mobileMoreView}"]`);
+    button.hidden = Boolean(desktopNav?.hidden);
+  });
+  const checklistButton = document.querySelector('.mobile-app-nav-item[data-mobile-view="checklist"]');
+  const checklistNav = document.querySelector('.nav-item[data-view="checklist"]');
+  if (checklistButton) checklistButton.hidden = Boolean(checklistNav?.hidden);
+}
+
+function setMobileRecordTab(tab = "main") {
+  const view = $("#recordsView");
+  if (!view) return;
+  const next = tab === "membership" ? "membership" : "main";
+  view.dataset.mobileRecordTab = next;
+  $$(".mobile-record-tab").forEach((button) => {
+    const active = button.dataset.mobileRecordTab === next;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+  });
+}
+
+function copySelectOptions(sourceSelector, targetSelector) {
+  const source = $(sourceSelector);
+  const target = $(targetSelector);
+  if (!source || !target) return;
+  const currentTargetValue = target.value;
+  target.innerHTML = source.innerHTML;
+  const desired = source.value || currentTargetValue || "";
+  if ([...target.options].some((option) => option.value === desired)) target.value = desired;
+}
+
+function syncMobileRecordControls() {
+  const search = $("#mobileRecordSearch");
+  if (search && document.activeElement !== search) search.value = $("#recordSimpleSearch")?.value || "";
+
+  copySelectOptions("#recordStatusFilter", "#mobileRecordStatusFilter");
+  copySelectOptions("#recordManagerFilter", "#mobileRecordManagerFilter");
+  copySelectOptions("#recordCategoryFilter", "#mobileRecordCategoryFilter");
+  copySelectOptions("#recordSellerFilter", "#mobileRecordSellerFilter");
+
+  const pairs = [
+    ["#recordStatusFilter", "#mobileRecordStatusFilter"],
+    ["#recordManagerFilter", "#mobileRecordManagerFilter"],
+    ["#recordCategoryFilter", "#mobileRecordCategoryFilter"],
+    ["#recordSellerFilter", "#mobileRecordSellerFilter"]
+  ];
+  pairs.forEach(([sourceSelector, targetSelector]) => {
+    const source = $(sourceSelector);
+    const target = $(targetSelector);
+    if (source && target) target.value = source.value || "";
+  });
+
+  const mobileStart = $("#mobileRecordStartDate");
+  const mobileEnd = $("#mobileRecordEndDate");
+  if (mobileStart && document.activeElement !== mobileStart) mobileStart.value = $("#recordStartDateFilter")?.value || "";
+  if (mobileEnd && document.activeElement !== mobileEnd) mobileEnd.value = $("#recordEndDateFilter")?.value || "";
+
+  copySelectOptions("#membershipStatusFilter", "#mobileMembershipStatusFilter");
+  copySelectOptions("#membershipManagerFilter", "#mobileMembershipManagerFilter");
+  copySelectOptions("#membershipContactFilter", "#mobileMembershipContactFilter");
+
+  const membershipPairs = [
+    ["#membershipStatusFilter", "#mobileMembershipStatusFilter"],
+    ["#membershipManagerFilter", "#mobileMembershipManagerFilter"],
+    ["#membershipContactFilter", "#mobileMembershipContactFilter"]
+  ];
+  membershipPairs.forEach(([sourceSelector, targetSelector]) => {
+    const source = $(sourceSelector);
+    const target = $(targetSelector);
+    if (source && target) target.value = source.value || "";
+  });
+}
+
+function mobileRecordCardHtml(record, index, total, membership = false) {
+  const recordId = record.id || promoRecordKey(record);
+  const phone = typeof formatPhoneNumber === "function" ? formatPhoneNumber(record.phone) : compactValue(record.phone, "");
+  const phoneHref = String(record.phone || "").replace(/[^0-9+]/g, "");
+  const category = compactValue(record.category, membership ? "멤버십" : "-");
+  const activityType = membership ? "" : recordActivityType(record);
+  const previousNo = compactValue(record.previousCustomer, "");
+  const newNo = compactValue(record.customerNo, "");
+  const sellerLabel = membership ? "컨텍자" : "실판매자";
+  const sellerValue = compactValue(record.seller, "-");
+  const sequence = membership ? (record.displaySequence || total - index) : total - index;
+  const selectedClass = selectedRecordId === recordId ? " selected" : "";
+
+  return `
+    <article class="mobile-record-card${selectedClass}" data-mobile-record-id="${escapeHtml(recordId)}">
+      <div class="mobile-record-card-top">
+        <div class="mobile-record-manager">
+          <strong>${escapeHtml(compactValue(record.manager, "매니저 미지정"))}</strong>
+          <span>#${formatNumber(sequence)} · ${escapeHtml(compactValue(record.receivedDate, "-"))}</span>
+        </div>
+        <div class="mobile-record-status">
+          <span class="status-pill ${statusClass(record.status)} ${typeof statusColorClass === "function" ? statusColorClass(record.status) : ""}">${escapeHtml(compactValue(record.status, "접수"))}</span>
+        </div>
+      </div>
+
+      <div class="mobile-record-chip-row">
+        <span class="category-chip ${typeof categoryColorClass === "function" ? categoryColorClass(category) : ""}">${escapeHtml(category)}</span>
+        ${activityType ? `<span class="activity-type-chip ${activityTypeChipClass(activityType)}">${escapeHtml(activityType)}</span>` : ""}
+        <span class="mobile-record-mini-chip">${escapeHtml(formatNumber(record.count))}건</span>
+        ${membership && sellerValue !== "-" ? `<span class="mobile-record-mini-chip">${escapeHtml(sellerValue)}</span>` : ""}
+      </div>
+
+      <div class="mobile-record-customer">
+        <strong>${escapeHtml(compactValue(record.customerName, "고객명 없음"))}</strong>
+        ${phone ? (phoneHref ? `<a href="tel:${escapeHtml(phoneHref)}">${escapeHtml(phone)}</a>` : `<span>${escapeHtml(phone)}</span>`) : ""}
+      </div>
+
+      <div class="mobile-record-product">${escapeHtml(compactValue(record.product, "제품명 없음"))}</div>
+
+      <div class="mobile-record-date-row">
+        <div class="mobile-record-date-box">
+          <span>접수일</span>
+          <strong>${escapeHtml(compactValue(record.receivedDate, "-"))}</strong>
+        </div>
+        <div class="mobile-record-date-box">
+          <span>설치요청일</span>
+          <strong>${escapeHtml(compactValue(record.installDate, "-"))}</strong>
+        </div>
+      </div>
+
+      <div class="mobile-record-actions">
+        <button class="mobile-record-detail-btn" type="button" data-mobile-record-action="detail">상세보기</button>
+        <button class="mobile-record-edit-btn" type="button" data-mobile-record-action="edit">수정</button>
+      </div>
+
+      <div class="mobile-record-detail">
+        <div class="mobile-record-detail-grid">
+          <div class="mobile-record-detail-row"><span>기존 고객번호</span><strong>${escapeHtml(previousNo || "-")}</strong></div>
+          <div class="mobile-record-detail-row"><span>신규 고객번호</span><strong>${escapeHtml(newNo || "-")}</strong></div>
+          <div class="mobile-record-detail-row"><span>${sellerLabel}</span><strong>${escapeHtml(sellerValue)}</strong></div>
+          ${!membership ? `<div class="mobile-record-detail-row"><span>구분</span><strong>${escapeHtml(activityType || "-")}</strong></div>` : ""}
+          <div class="mobile-record-detail-row"><span>기타내용</span><strong>${escapeHtml(compactValue(record.memo, "-"))}</strong></div>
+        </div>
+      </div>
+    </article>`;
+}
+
+function renderMobileRecordCards(records) {
+  const container = $("#mobileRecordCardList");
+  if (!container) return;
+  container.innerHTML = records.length
+    ? records.map((record, index) => mobileRecordCardHtml(record, index, records.length, false)).join("")
+    : `<div class="mobile-record-empty">조건에 맞는 접수 내역이 없습니다.</div>`;
+  syncMobileRecordControls();
+}
+
+function renderMobileMembershipCards(records) {
+  const container = $("#mobileMembershipCardList");
+  if (!container) return;
+  container.innerHTML = records.length
+    ? records.map((record, index) => mobileRecordCardHtml(record, index, records.length, true)).join("")
+    : `<div class="mobile-record-empty">멤버십 접수내역이 없습니다.</div>`;
+  syncMobileRecordControls();
+}
+
+function openMobileRecordForm(record = null) {
+  const panel = $(".record-form-panel");
+  if (!panel) return;
+  if (record) {
+    selectedRecordId = record.id || "";
+    fillRecordForm(record);
+  } else {
+    resetRecordForm();
+  }
+  panel.classList.add("mobile-form-open");
+  window.setTimeout(() => panel.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+}
+
+function bindMobileRecordCardActions(containerSelector, membership = false) {
+  const container = $(containerSelector);
+  if (!container) return;
+  container.addEventListener("click", (event) => {
+    const card = event.target.closest("[data-mobile-record-id]");
+    if (!card) return;
+    const actionButton = event.target.closest("[data-mobile-record-action]");
+    if (!actionButton) return;
+
+    const recordId = card.dataset.mobileRecordId;
+    const record = state.records.find((item) => (item.id || promoRecordKey(item)) === recordId);
+    if (!record) return;
+
+    if (actionButton.dataset.mobileRecordAction === "detail") {
+      const expanded = card.classList.toggle("expanded");
+      actionButton.textContent = expanded ? "접기" : "상세보기";
+      return;
+    }
+
+    if (actionButton.dataset.mobileRecordAction === "edit") {
+      openMobileRecordForm(record);
+      $$(".mobile-record-card").forEach((item) => item.classList.remove("selected"));
+      card.classList.add("selected");
+    }
+  });
+}
+
+function attachMobileAppEvents() {
+  $$(".mobile-app-nav-item[data-mobile-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      closeMobileMoreSheet();
+      switchView(button.dataset.mobileView);
+    });
+  });
+
+  $("#mobileMoreBtn")?.addEventListener("click", () => {
+    const open = $("#mobileMoreSheet")?.classList.contains("open");
+    if (open) closeMobileMoreSheet();
+    else openMobileMoreSheet();
+  });
+  $("#mobileMoreCloseBtn")?.addEventListener("click", closeMobileMoreSheet);
+  $("#mobileMoreBackdrop")?.addEventListener("click", closeMobileMoreSheet);
+  $$(".mobile-more-grid [data-mobile-more-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      closeMobileMoreSheet();
+      switchView(button.dataset.mobileMoreView);
+    });
+  });
+
+  $$(".mobile-record-tab").forEach((button) => {
+    button.addEventListener("click", () => setMobileRecordTab(button.dataset.mobileRecordTab));
+  });
+
+  $("#mobileNewRecordBtn")?.addEventListener("click", () => {
+    const panel = $(".record-form-panel");
+    if (panel?.classList.contains("mobile-form-open")) {
+      panel.classList.remove("mobile-form-open");
+      return;
+    }
+    openMobileRecordForm(null);
+  });
+
+  $("#mobileRecordFilterToggle")?.addEventListener("click", () => {
+    const panel = $("#mobileRecordFilterPanel");
+    const button = $("#mobileRecordFilterToggle");
+    if (!panel || !button) return;
+    panel.hidden = !panel.hidden;
+    button.setAttribute("aria-expanded", String(!panel.hidden));
+    button.textContent = panel.hidden ? "필터" : "닫기";
+  });
+
+  const mobileToDesktopPairs = [
+    ["#mobileRecordStatusFilter", "#recordStatusFilter"],
+    ["#mobileRecordManagerFilter", "#recordManagerFilter"],
+    ["#mobileRecordCategoryFilter", "#recordCategoryFilter"],
+    ["#mobileRecordSellerFilter", "#recordSellerFilter"],
+    ["#mobileRecordStartDate", "#recordStartDateFilter"],
+    ["#mobileRecordEndDate", "#recordEndDateFilter"],
+    ["#mobileMembershipStatusFilter", "#membershipStatusFilter"],
+    ["#mobileMembershipManagerFilter", "#membershipManagerFilter"],
+    ["#mobileMembershipContactFilter", "#membershipContactFilter"]
+  ];
+  mobileToDesktopPairs.forEach(([mobileSelector, desktopSelector]) => {
+    $(mobileSelector)?.addEventListener("change", (event) => {
+      const target = $(desktopSelector);
+      if (!target) return;
+      target.value = event.target.value;
+      target.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+  });
+
+  let mobileSearchTimer = null;
+  $("#mobileRecordSearch")?.addEventListener("input", (event) => {
+    window.clearTimeout(mobileSearchTimer);
+    mobileSearchTimer = window.setTimeout(() => {
+      const target = $("#recordSimpleSearch");
+      if (!target) return;
+      target.value = event.target.value;
+      recordSequenceSort = "desc";
+      renderRecords();
+    }, 120);
+  });
+
+  $$(".mobile-filter-actions [data-mobile-filter-action]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const map = {
+        goal: "#recordGoalPeriodBtn",
+        today: "#recordTodayViewBtn",
+        all: "#recordAllViewBtn",
+        reset: "#clearRecordFiltersBtn"
+      };
+      $(map[button.dataset.mobileFilterAction])?.click();
+      window.setTimeout(syncMobileRecordControls, 20);
+    });
+  });
+
+  bindMobileRecordCardActions("#mobileRecordCardList", false);
+  bindMobileRecordCardActions("#mobileMembershipCardList", true);
+}
+
 function statusCountSummary(records, labels = {}) {
   const total = records.length;
   const done = records.filter((record) => compactValue(record.status) === "완료").length;
@@ -8694,6 +9024,8 @@ function renderRecords() {
     `;
     }).join("")
     : `<tr><td colspan="12" class="empty">조건에 맞는 접수 내역이 없습니다.</td></tr>`;
+
+  renderMobileRecordCards(records);
 }
 
 
@@ -8735,6 +9067,8 @@ function renderMembershipRecords() {
       </tr>`;
     }).join("")
     : `<tr><td colspan="10" class="empty">맴버쉽 접수내역이 없습니다.</td></tr>`;
+
+  renderMobileMembershipCards(records);
 }
 
 
@@ -9282,7 +9616,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.29",
+    version: "V10.30",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -9798,6 +10132,8 @@ function switchView(view) {
   $$(".view").forEach((section) => section.classList.remove("active"));
   $(`#${view}View`)?.classList.add("active");
   document.body.dataset.view = view;
+  syncMobileAppNav(view);
+  closeMobileMoreSheet();
   renderNow();
 }
 
@@ -12639,6 +12975,10 @@ function attachEvents() {
   });
 
   $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
+  attachMobileAppEvents();
+  setMobileRecordTab($("#recordsView")?.dataset.mobileRecordTab || "main");
+  syncMobileAppNav(currentView);
+  syncMobileMenuVisibility();
   $("#payrollManagerInput")?.addEventListener("change", (event) => {
     state.payrollManager = event.target.value || "";
     persistState({ immediateServer: true });
@@ -13673,7 +14013,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.29";
+const APP_VERSION = "v10.30";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";
@@ -13826,6 +14166,8 @@ async function init() {
   setDashboardRange(period.start, dashboardDefaultEnd(period));
   attachEvents();
   document.body.dataset.view = currentView;
+  const recordsView = $("#recordsView");
+  if (recordsView && !recordsView.dataset.mobileRecordTab) recordsView.dataset.mobileRecordTab = "main";
   resetRecordForm();
   renderNow();
   setSettingsVersionStatus(SALES_MANAGER_LATEST_VERSION, compareVersionText(APP_VERSION, SALES_MANAGER_LATEST_VERSION) < 0
