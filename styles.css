@@ -19798,7 +19798,7 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 
 
 /* =========================================================
-   V10.30 접수등록/접수내역 - 컨스·지원 '구분' 필드
+   V10.31 접수등록/접수내역 - 컨스·지원 '구분' 필드
    - 판매종류 자체 의미는 변경하지 않음
    - 구분은 기존 기타내용의 컨스/지원 표기를 별도 필드로 분리
    ========================================================= */
@@ -19866,7 +19866,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* =========================================================
-   V10.30 / WEB V1.9
+   V10.31 / WEB V2.0
    모바일 반응형 UI 최종 보정
    - PC 화면 영향 없음
    - 850px 이하에서 상단 브랜드 + 가로 스크롤 메뉴
@@ -20280,7 +20280,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* =========================================================
-   V10.30 / WEB V1.9
+   V10.31 / WEB V2.0
    모바일 실사용 2차 보정
    첨부 아이폰 화면 기준:
    - 대시보드 상단 컨트롤 압축
@@ -20801,7 +20801,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* ============================================================
-   V10.30 / WEB V1.9
+   V10.31 / WEB V2.0
    모바일 전용 앱 UI 1차
    - PC UI는 기존 그대로 유지
    - 모바일: 하단 4메뉴 + 더보기 바텀시트
@@ -21495,5 +21495,789 @@ body[data-view="records"] .record-form-row.row-basic {
 
   .mobile-filter-actions {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+
+/* ============================================================
+   V10.31 / WEB V2.0
+   모바일 전용 앱 UI - 전체 메뉴 확장
+   ------------------------------------------------------------
+   원칙
+   1) PC UI는 기존 그대로 유지
+   2) 모바일에서 가로 스크롤을 기본적으로 사용하지 않음
+   3) 표는 자동 카드화
+   4) 입력 폼은 1열
+   5) 긴 설정은 아코디언
+   6) 목록 → 상세/수정 흐름
+   ============================================================ */
+
+.mobile-view-action-row,
+.mobile-primary-action,
+.mobile-settings-toggle,
+.mobile-promo-edit-btn {
+  display: none;
+}
+
+@media (max-width: 850px) {
+  /* ---------- 공통 ---------- */
+  .workspace {
+    max-width: 100% !important;
+    overflow-x: hidden !important;
+  }
+
+  .view,
+  .view > div,
+  .panel,
+  section,
+  article,
+  form {
+    max-width: 100%;
+    box-sizing: border-box;
+  }
+
+  .view .panel {
+    border-radius: 17px !important;
+    box-shadow: 0 4px 16px rgba(15,23,42,.045) !important;
+  }
+
+  .view .panel-head {
+    gap: 8px !important;
+  }
+
+  .view .panel-head h2,
+  .view .panel-head h3 {
+    word-break: keep-all !important;
+    overflow-wrap: break-word !important;
+  }
+
+  .mobile-view-action-row {
+    display: block;
+    margin: 0 0 10px;
+  }
+
+  .mobile-primary-action {
+    display: block;
+    width: 100%;
+    min-height: 48px;
+    border: 0;
+    border-radius: 14px;
+    background: #17664c;
+    color: #fff;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 800;
+    box-shadow: 0 7px 18px rgba(23,102,76,.18);
+  }
+
+  /* ---------- 모바일용 데이터 표 → 카드 ---------- */
+  table.mobile-card-table {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    border-collapse: separate !important;
+    border-spacing: 0 !important;
+  }
+
+  table.mobile-card-table colgroup,
+  table.mobile-card-table thead {
+    display: none !important;
+  }
+
+  table.mobile-card-table tbody,
+  table.mobile-card-table tfoot {
+    display: grid !important;
+    gap: 9px !important;
+    width: 100% !important;
+  }
+
+  table.mobile-card-table tbody tr,
+  table.mobile-card-table tfoot tr {
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    padding: 11px 12px !important;
+    border: 1px solid #e6ebef !important;
+    border-radius: 15px !important;
+    background: #fff !important;
+    box-shadow: 0 3px 10px rgba(15,23,42,.035) !important;
+  }
+
+  table.mobile-card-table tbody tr[hidden],
+  table.mobile-card-table tfoot tr[hidden] {
+    display: none !important;
+  }
+
+  table.mobile-card-table tbody td,
+  table.mobile-card-table tbody th,
+  table.mobile-card-table tfoot td,
+  table.mobile-card-table tfoot th {
+    display: grid !important;
+    grid-template-columns: 92px minmax(0,1fr) !important;
+    gap: 9px !important;
+    align-items: start !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 0 !important;
+    padding: 7px 0 !important;
+    border: 0 !important;
+    border-bottom: 1px solid #f0f2f4 !important;
+    white-space: normal !important;
+    text-align: left !important;
+    vertical-align: top !important;
+    box-sizing: border-box !important;
+  }
+
+  table.mobile-card-table tbody td:last-child,
+  table.mobile-card-table tbody th:last-child,
+  table.mobile-card-table tfoot td:last-child,
+  table.mobile-card-table tfoot th:last-child {
+    border-bottom: 0 !important;
+  }
+
+  table.mobile-card-table tbody td::before,
+  table.mobile-card-table tbody th::before,
+  table.mobile-card-table tfoot td::before,
+  table.mobile-card-table tfoot th::before {
+    content: attr(data-mobile-label);
+    color: #8691a0;
+    font-size: 11px;
+    font-weight: 800;
+    line-height: 1.4;
+  }
+
+  table.mobile-card-table tbody td[data-mobile-label=""]::before,
+  table.mobile-card-table tbody th[data-mobile-label=""]::before,
+  table.mobile-card-table tfoot td[data-mobile-label=""]::before,
+  table.mobile-card-table tfoot th[data-mobile-label=""]::before {
+    display: none !important;
+  }
+
+  table.mobile-card-table tbody td[colspan],
+  table.mobile-card-table tfoot td[colspan],
+  table.mobile-card-table tfoot th[colspan] {
+    grid-template-columns: 1fr !important;
+  }
+
+  table.mobile-card-table input,
+  table.mobile-card-table select,
+  table.mobile-card-table textarea,
+  table.mobile-card-table button {
+    max-width: 100% !important;
+    min-width: 0 !important;
+  }
+
+  .table-wrap:has(table.mobile-card-table),
+  .contact-note-table-wrap:has(table.mobile-card-table),
+  .evaluation-score-table-wrap:has(table.mobile-card-table),
+  .evaluation-primary-table-wrap:has(table.mobile-card-table),
+  .evaluation-high-value-table-wrap:has(table.mobile-card-table),
+  .renewal-sheet-table-wrap:has(table.mobile-card-table) {
+    overflow: visible !important;
+    max-width: 100% !important;
+  }
+
+  /* ---------- 홈 / 영업현황 ---------- */
+  #dashboardView .date-panel {
+    padding: 10px !important;
+  }
+
+  #dashboardView .mini-calendar {
+    display: none !important;
+  }
+
+  #dashboardView .calendar-box {
+    padding: 0 !important;
+    background: transparent !important;
+    box-shadow: none !important;
+  }
+
+  #dashboardView .calendar-month-head {
+    padding: 0 0 8px !important;
+  }
+
+  #dashboardView .calendar-actions {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 7px !important;
+  }
+
+  #dashboardView .summary-meta {
+    margin-top: 0 !important;
+  }
+
+  #dashboardView .summary-hero-grid,
+  #dashboardView .dashboard-stack-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+  }
+
+  #dashboardView .goal-card {
+    border-radius: 16px !important;
+  }
+
+  #dashboardView .summary-chip-grid,
+  #dashboardView .custom-condition-grid {
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+  }
+
+  /* ---------- 영업분석 ---------- */
+  #analyticsView .analytics-page {
+    display: grid !important;
+    gap: 10px !important;
+  }
+
+  #analyticsView .analytics-toolbar {
+    padding: 11px !important;
+  }
+
+  #analyticsView .analytics-range-presets {
+    display: grid !important;
+    grid-template-columns: repeat(3, minmax(0,1fr)) !important;
+    gap: 6px !important;
+  }
+
+  #analyticsView .analytics-range-btn {
+    min-width: 0 !important;
+    padding: 8px 4px !important;
+    font-size: 11px !important;
+    white-space: nowrap !important;
+  }
+
+  #analyticsView .analytics-range-inputs {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 7px !important;
+    align-items: end !important;
+    margin-top: 8px !important;
+  }
+
+  #analyticsView .analytics-range-inputs > span {
+    display: none !important;
+  }
+
+  #analyticsView .analytics-range-inputs label,
+  #analyticsView .analytics-range-inputs .analytics-combined-open-btn {
+    min-width: 0 !important;
+    width: 100% !important;
+  }
+
+  #analyticsView .analytics-range-inputs label:nth-of-type(3),
+  #analyticsView .analytics-combined-open-btn {
+    grid-column: 1 / -1 !important;
+  }
+
+  #analyticsView .analytics-basis-note {
+    display: block !important;
+    padding: 10px 12px !important;
+    border-radius: 13px !important;
+    font-size: 11px !important;
+    line-height: 1.55 !important;
+  }
+
+  #analyticsView .analytics-basis-note > * {
+    display: block !important;
+    margin: 0 0 3px !important;
+  }
+
+  #analyticsView .analytics-tabs {
+    display: grid !important;
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 6px !important;
+    overflow: visible !important;
+  }
+
+  #analyticsView .analytics-tab {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 41px !important;
+    padding: 7px 4px !important;
+    border-radius: 11px !important;
+    font-size: 11px !important;
+    white-space: normal !important;
+    word-break: keep-all !important;
+  }
+
+  #analyticsView .analytics-panel-printbar {
+    display: none !important;
+  }
+
+  #analyticsView .analytics-kpi-grid,
+  #analyticsView .analytics-kpi-grid-six {
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+    gap: 8px !important;
+  }
+
+  #analyticsView .analytics-kpi-card {
+    min-height: 96px !important;
+    padding: 11px !important;
+  }
+
+  #analyticsView .analytics-overview-grid,
+  #analyticsView .analytics-manager-detail-grid,
+  #analyticsView .analytics-strength-grid,
+  #analyticsView .analytics-product-grid,
+  #analyticsView .analytics-combined-category-grid,
+  #analyticsView .analytics-combined-product-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+  }
+
+  #analyticsView .analytics-chart-wrap {
+    height: 220px !important;
+  }
+
+  #analyticsView .analytics-product-summary,
+  #analyticsView .analytics-detail-kpis {
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  }
+
+  /* ---------- 업무체크리스트 ---------- */
+  #checklistView .checklist-form-panel {
+    display: none !important;
+  }
+
+  #checklistView .checklist-form-panel.mobile-form-open {
+    display: block !important;
+  }
+
+  #checklistView .checklist-main-grid {
+    display: block !important;
+  }
+
+  #checklistView .checklist-list-panel {
+    width: 100% !important;
+  }
+
+  #checklistView .checklist-summary-grid {
+    grid-template-columns: repeat(3,minmax(0,1fr)) !important;
+  }
+
+  #checklistView .checklist-summary-card {
+    min-width: 0 !important;
+    padding: 9px 5px !important;
+  }
+
+  #checklistView .checklist-summary-card strong {
+    font-size: 18px !important;
+  }
+
+  #checklistView .checklist-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 7px !important;
+  }
+
+  #checklistView #checklistSearchInput {
+    grid-column: 1 / -1 !important;
+  }
+
+  #checklistView .checklist-form-actions {
+    position: sticky;
+    bottom: calc(var(--mobile-app-bottom-safe) - 2px);
+    z-index: 5;
+    padding: 9px 0 2px;
+    background: rgba(255,255,255,.96);
+  }
+
+  /* ---------- 만기컨텍 ---------- */
+  #contactnoteView .contact-note-layout {
+    display: block !important;
+  }
+
+  #contactnoteView .contact-note-form {
+    display: none !important;
+  }
+
+  #contactnoteView .contact-note-form.mobile-form-open {
+    display: block !important;
+    margin-bottom: 10px !important;
+  }
+
+  #contactnoteView .contact-note-form-grid,
+  #contactnoteView .contact-progress-columns,
+  #contactnoteView .contact-progress-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  #contactnoteView .contact-progress-columns {
+    display: none !important;
+  }
+
+  #contactnoteView .contact-note-compact-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #contactnoteView .contact-note-head-actions,
+  #contactnoteView .contact-note-head-actions > * {
+    width: 100% !important;
+  }
+
+  #contactnoteView .contact-note-list-panel {
+    padding: 10px !important;
+  }
+
+  #contactnoteView .contact-note-header-row {
+    display: none !important;
+  }
+
+  #contactnoteView .contact-main-content-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #contactnoteView .contact-inline-progress-editor {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 6px !important;
+  }
+
+  /* ---------- 컨텍노트 ---------- */
+  #contactrequestView .contact-request-form {
+    display: none !important;
+  }
+
+  #contactrequestView .contact-request-form.mobile-form-open {
+    display: block !important;
+    margin-bottom: 10px !important;
+  }
+
+  #contactrequestView .contact-request-form-grid,
+  #contactrequestView .contact-progress-row {
+    grid-template-columns: 1fr !important;
+  }
+
+  #contactrequestView .contact-request-list {
+    display: grid !important;
+    gap: 9px !important;
+  }
+
+  #contactrequestView .contact-request-card {
+    border-radius: 16px !important;
+    padding: 12px !important;
+  }
+
+  #contactrequestView .contact-request-summary {
+    display: grid !important;
+    grid-template-columns: 1fr auto !important;
+    gap: 7px !important;
+  }
+
+  #contactrequestView .contact-request-summary > * {
+    min-width: 0 !important;
+  }
+
+  #contactrequestView .contact-request-summary strong,
+  #contactrequestView .contact-request-summary span:not(.contact-status-pill) {
+    grid-column: 1 / -1 !important;
+  }
+
+  #contactrequestView .contact-request-summary button {
+    grid-column: 2 !important;
+    grid-row: 1 !important;
+  }
+
+  #contactrequestView .contact-request-sub {
+    display: grid !important;
+    gap: 5px !important;
+  }
+
+  /* ---------- 프로모션 ---------- */
+  #promotionsView .promo-stable-head {
+    gap: 8px !important;
+  }
+
+  #promotionsView .promo-stable-tabs {
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  }
+
+  #promotionsView .promo-stable-card {
+    position: relative !important;
+    padding-bottom: 52px !important;
+  }
+
+  .mobile-promo-edit-btn {
+    display: block;
+    position: absolute;
+    left: 12px;
+    right: 12px;
+    bottom: 10px;
+    min-height: 36px;
+    border: 0;
+    border-radius: 10px;
+    background: #edf7f3;
+    color: #23684f;
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  #promotionsView .promo-stable-form-panel {
+    display: none !important;
+  }
+
+  #promotionsView .promo-stable-form-panel.mobile-form-open {
+    display: block !important;
+  }
+
+  #promotionsView .promo-stable-main-grid {
+    display: block !important;
+  }
+
+  #promotionsView .promo-stable-form-grid,
+  #promotionsView .count-rule-grid,
+  #promotionsView .score-rule-grid,
+  #promotionsView .product-rule-grid,
+  #promotionsView .promo-stable-detail-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #promotionsView .promo-rule-editor-head {
+    display: none !important;
+  }
+
+  #promotionsView .promo-rule-editor-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+    padding: 9px !important;
+    border: 1px solid #e8ecef !important;
+    border-radius: 13px !important;
+  }
+
+  #promotionsView .promo-detail-summary {
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  }
+
+  /* ---------- 경영평가 ---------- */
+  #evaluationView .evaluation-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #evaluationView .evaluation-toolbar > * {
+    width: 100% !important;
+  }
+
+  #evaluationView #evaluationPrintBtn {
+    display: none !important;
+  }
+
+  #evaluationView .evaluation-summary-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  }
+
+  #evaluationView .evaluation-input-groups,
+  #evaluationView .evaluation-group-fields,
+  #evaluationView .evaluation-group-fields.compact,
+  #evaluationView .evaluation-group-fields.service,
+  #evaluationView .evaluation-policy-input-layout,
+  #evaluationView .evaluation-product-settings-grid,
+  #evaluationView .evaluation-policy-editor-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  #evaluationView .evaluation-input-group,
+  #evaluationView .evaluation-input-group-wide {
+    grid-column: 1 / -1 !important;
+  }
+
+  #evaluationView .evaluation-product-tables-grid {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  #evaluationView .evaluation-policy-settings-head,
+  #evaluationView .evaluation-policy-settings-panel .panel-head {
+    align-items: flex-start !important;
+  }
+
+  #evaluationView .panel-head-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+
+  /* ---------- 월별도표 ---------- */
+  #renewalguideView .renewal-guide-toolbar {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #renewalguideView .renewal-guide-toolbar > * {
+    width: 100% !important;
+  }
+
+  #renewalguideView .renewal-guide-toolbar #renewalGuidePrintBtn,
+  #renewalguideView .renewal-guide-toolbar label:has(#renewalGuidePrintCount) {
+    display: none !important;
+  }
+
+  #renewalguideView .renewal-print-layout {
+    display: block !important;
+  }
+
+  #renewalguideView .renewal-print-copy:nth-child(n+2) {
+    display: none !important;
+  }
+
+  #renewalguideView .renewal-sheet {
+    min-width: 0 !important;
+    width: 100% !important;
+    padding: 10px !important;
+  }
+
+  #renewalguideView .renewal-sheet-title {
+    font-size: 20px !important;
+  }
+
+  /* ---------- 급여계산 ---------- */
+  #payrollView .payroll-page-head {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+  }
+
+  #payrollView .payroll-guide {
+    font-size: 12px !important;
+    line-height: 1.55 !important;
+  }
+
+  #payrollView .payroll-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #payrollView .payroll-actions > *,
+  #payrollView .payroll-actions label,
+  #payrollView .payroll-actions input,
+  #payrollView .payroll-actions select,
+  #payrollView .payroll-actions button {
+    width: 100% !important;
+  }
+
+  #payrollView .payroll-summary-grid {
+    grid-template-columns: repeat(2,minmax(0,1fr)) !important;
+  }
+
+  #payrollView .payroll-summary-card {
+    min-width: 0 !important;
+  }
+
+  #payrollView .payroll-archive-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #payrollView .payroll-archive-actions {
+    width: 100% !important;
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 6px !important;
+  }
+
+  /* ---------- 사용자설정 ---------- */
+  #settingsView .settings-page-head {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 9px !important;
+  }
+
+  #settingsView .settings-backup-actions {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 7px !important;
+  }
+
+  #settingsView .settings-backup-actions > * {
+    width: 100% !important;
+    min-height: 44px !important;
+  }
+
+  #settingsView .settings-grid,
+  #settingsView .settings-grid-main {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+
+  #settingsView .settings-card {
+    padding: 12px !important;
+  }
+
+  #settingsView .settings-card.mobile-collapsed > :not(.panel-head) {
+    display: none !important;
+  }
+
+  .mobile-settings-toggle {
+    display: inline-grid;
+    place-items: center;
+    flex: 0 0 34px;
+    width: 34px;
+    height: 34px;
+    border: 0;
+    border-radius: 10px;
+    background: #f2f5f7;
+    color: #667085;
+    font-size: 17px;
+    font-weight: 800;
+  }
+
+  #settingsView .settings-card .panel-head {
+    cursor: pointer;
+  }
+
+  #settingsView .settings-card .panel-head > h2 {
+    flex: 1 1 auto;
+  }
+
+  #settingsView .settings-form-grid,
+  #settingsView .goal-settings-grid,
+  #settingsView .custom-dashboard-card-settings-grid,
+  #settingsView .analytics-settings-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  #settingsView .manager-row,
+  #settingsView .team-setting-row {
+    min-width: 0 !important;
+  }
+
+  /* Safari/iPhone 버튼 영역 확보 */
+  .view {
+    padding-bottom: 8px;
+  }
+}
+
+@media (max-width: 430px) {
+  table.mobile-card-table tbody td,
+  table.mobile-card-table tbody th,
+  table.mobile-card-table tfoot td,
+  table.mobile-card-table tfoot th {
+    grid-template-columns: 80px minmax(0,1fr) !important;
+  }
+
+  #analyticsView .analytics-kpi-grid,
+  #analyticsView .analytics-kpi-grid-six,
+  #evaluationView .evaluation-summary-grid,
+  #payrollView .payroll-summary-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+
+  #dashboardView .summary-chip-grid,
+  #dashboardView .custom-condition-grid {
+    grid-template-columns: 1fr 1fr !important;
   }
 }

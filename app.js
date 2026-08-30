@@ -7222,6 +7222,7 @@ function renderNow() {
   renderTopbar();
   renderTodos();
   renderView(currentView);
+  window.requestAnimationFrame(enhanceMobileFullAppUi);
 }
 
 function render() {
@@ -8637,6 +8638,216 @@ function printRecordList() {
 
 
 
+
+function mobileOnlyViewport() {
+  return window.matchMedia && window.matchMedia("(max-width: 850px)").matches;
+}
+
+function mobileHeaderLabels(table) {
+  const headerRows = [...table.querySelectorAll("thead tr")];
+  if (!headerRows.length) return [];
+  const lastRow = headerRows[headerRows.length - 1];
+  return [...lastRow.children].map((cell) =>
+    String(cell.textContent || "").replace(/\s+/g, " ").trim()
+  );
+}
+
+function enhanceMobileDataTables(root = document) {
+  const selectors = [
+    "#analyticsView table",
+    "#evaluationView table",
+    "#promotionsView table",
+    "#renewalguideView .renewal-sheet-table",
+    "#payrollView table",
+    "#contactnoteView .contact-note-table"
+  ];
+
+  root.querySelectorAll(selectors.join(",")).forEach((table) => {
+    if (table.closest(".mini-calendar")) return;
+    table.classList.add("mobile-card-table");
+
+    const labels = mobileHeaderLabels(table);
+    [...table.querySelectorAll("tbody tr, tfoot tr")].forEach((row) => {
+      let logicalIndex = 0;
+      [...row.children].forEach((cell) => {
+        if (!cell.matches("td,th")) return;
+        const span = Number(cell.getAttribute("colspan") || 1);
+        const current = String(cell.dataset.mobileLabel || "").trim();
+        if (!current) {
+          const label = labels[logicalIndex] || "";
+          cell.dataset.mobileLabel = label;
+        }
+        logicalIndex += Math.max(1, span);
+      });
+    });
+  });
+}
+
+function setupMobileSettingsAccordions() {
+  const cards = [...document.querySelectorAll("#settingsView .settings-card")];
+  cards.forEach((card, index) => {
+    const head = card.querySelector(":scope > .panel-head");
+    if (!head) return;
+
+    let button = head.querySelector(".mobile-settings-toggle");
+    if (!button) {
+      button = document.createElement("button");
+      button.type = "button";
+      button.className = "mobile-settings-toggle";
+      button.setAttribute("aria-label", "설정 펼치기/접기");
+      head.appendChild(button);
+
+      button.addEventListener("click", (event) => {
+        event.stopPropagation();
+        card.classList.toggle("mobile-collapsed");
+        button.textContent = card.classList.contains("mobile-collapsed") ? "＋" : "−";
+      });
+
+      head.addEventListener("click", (event) => {
+        if (event.target.closest("button, input, select, a, label")) return;
+        if (!mobileOnlyViewport()) return;
+        card.classList.toggle("mobile-collapsed");
+        button.textContent = card.classList.contains("mobile-collapsed") ? "＋" : "−";
+      });
+    }
+
+    if (!card.dataset.mobileAccordionReady) {
+      card.dataset.mobileAccordionReady = "1";
+      // 첫 카드(버전 확인)는 펼치고 나머지는 접힌 상태로 시작
+      if (index > 0) card.classList.add("mobile-collapsed");
+    }
+    button.textContent = card.classList.contains("mobile-collapsed") ? "＋" : "−";
+  });
+}
+
+function ensureMobilePromotionEditButtons() {
+  const promoList = $("#promoList");
+  if (!promoList) return;
+  promoList.querySelectorAll(".promo-stable-card").forEach((card) => {
+    if (card.querySelector(".mobile-promo-edit-btn")) return;
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "mobile-promo-edit-btn";
+    button.textContent = "프로모션 편집";
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      card.click();
+      const form = $("#promoForm");
+      form?.classList.add("mobile-form-open");
+      window.setTimeout(() => form?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+    });
+    card.appendChild(button);
+  });
+}
+
+function closeMobileEntryForms(view = "") {
+  if (!mobileOnlyViewport()) return;
+  if (view !== "records") $(".record-form-panel")?.classList.remove("mobile-form-open");
+  if (view !== "checklist") $(".checklist-form-panel")?.classList.remove("mobile-form-open");
+  if (view !== "contactnote") $(".contact-note-form")?.classList.remove("mobile-form-open");
+  if (view !== "contactrequest") $(".contact-request-form")?.classList.remove("mobile-form-open");
+  if (view !== "promotions") $(".promo-stable-form-panel")?.classList.remove("mobile-form-open");
+}
+
+function openMobilePanelForm(selector, resetFn) {
+  const panel = $(selector);
+  if (!panel) return;
+  if (typeof resetFn === "function") resetFn();
+  panel.classList.add("mobile-form-open");
+  window.setTimeout(() => panel.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+}
+
+function attachMobileFullMenuEvents() {
+  $("#mobileChecklistNewBtn")?.addEventListener("click", () => {
+    const panel = $(".checklist-form-panel");
+    if (panel?.classList.contains("mobile-form-open")) {
+      panel.classList.remove("mobile-form-open");
+      return;
+    }
+    openMobilePanelForm(".checklist-form-panel", resetChecklistForm);
+  });
+
+  $("#mobileContactNoteNewBtn")?.addEventListener("click", () => {
+    const panel = $(".contact-note-form");
+    if (panel?.classList.contains("mobile-form-open")) {
+      panel.classList.remove("mobile-form-open");
+      return;
+    }
+    openMobilePanelForm(".contact-note-form", resetContactNoteForm);
+  });
+
+  $("#mobileContactRequestNewBtn")?.addEventListener("click", () => {
+    const panel = $(".contact-request-form");
+    if (panel?.classList.contains("mobile-form-open")) {
+      panel.classList.remove("mobile-form-open");
+      return;
+    }
+    openMobilePanelForm(".contact-request-form", resetContactRequestForm);
+  });
+
+  $("#newPromotionBtn")?.addEventListener("click", () => {
+    if (!mobileOnlyViewport()) return;
+    const form = $("#promoForm");
+    form?.classList.add("mobile-form-open");
+    window.setTimeout(() => form?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  });
+
+  $("#checklistList")?.addEventListener("click", (event) => {
+    if (!mobileOnlyViewport()) return;
+    if (!event.target.closest("[data-checklist-edit]")) return;
+    $(".checklist-form-panel")?.classList.add("mobile-form-open");
+    window.setTimeout(() => $(".checklist-form-panel")?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  });
+
+  $("#contactNoteTableBody")?.addEventListener("click", (event) => {
+    if (!mobileOnlyViewport()) return;
+    if (!event.target.closest("[data-contact-edit]")) return;
+    $(".contact-note-form")?.classList.add("mobile-form-open");
+    window.setTimeout(() => $(".contact-note-form")?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  });
+
+  $("#contactRequestList")?.addEventListener("click", (event) => {
+    if (!mobileOnlyViewport()) return;
+    if (!event.target.closest("[data-contact-request-edit]")) return;
+    $(".contact-request-form")?.classList.add("mobile-form-open");
+    window.setTimeout(() => $(".contact-request-form")?.scrollIntoView({ behavior: "smooth", block: "start" }), 30);
+  });
+
+  $("#promoList")?.addEventListener("click", () => {
+    window.setTimeout(ensureMobilePromotionEditButtons, 0);
+  });
+
+  $("#checklistForm")?.addEventListener("submit", () => {
+    if (!mobileOnlyViewport()) return;
+    window.setTimeout(() => $(".checklist-form-panel")?.classList.remove("mobile-form-open"), 250);
+  });
+
+  $("#contactNoteForm")?.addEventListener("submit", () => {
+    if (!mobileOnlyViewport()) return;
+    window.setTimeout(() => $(".contact-note-form")?.classList.remove("mobile-form-open"), 250);
+  });
+
+  $("#contactRequestForm")?.addEventListener("submit", () => {
+    if (!mobileOnlyViewport()) return;
+    window.setTimeout(() => $(".contact-request-form")?.classList.remove("mobile-form-open"), 250);
+  });
+
+  $("#promoForm")?.addEventListener("submit", () => {
+    if (!mobileOnlyViewport()) return;
+    window.setTimeout(() => $(".promo-stable-form-panel")?.classList.remove("mobile-form-open"), 250);
+  });
+
+  setupMobileSettingsAccordions();
+}
+
+function enhanceMobileFullAppUi() {
+  enhanceMobileDataTables(document);
+  setupMobileSettingsAccordions();
+  ensureMobilePromotionEditButtons();
+  syncMobileAppNav(currentView);
+  syncMobileMenuVisibility();
+}
+
 function syncMobileAppNav(view = currentView) {
   const primaryViews = new Set(["dashboard", "records", "checklist"]);
   $$(".mobile-app-nav-item[data-mobile-view]").forEach((button) => {
@@ -9616,7 +9827,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.30",
+    version: "V10.31",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -10134,6 +10345,7 @@ function switchView(view) {
   document.body.dataset.view = view;
   syncMobileAppNav(view);
   closeMobileMoreSheet();
+  closeMobileEntryForms(view);
   renderNow();
 }
 
@@ -12976,6 +13188,7 @@ function attachEvents() {
 
   $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
   attachMobileAppEvents();
+  attachMobileFullMenuEvents();
   setMobileRecordTab($("#recordsView")?.dataset.mobileRecordTab || "main");
   syncMobileAppNav(currentView);
   syncMobileMenuVisibility();
@@ -14013,7 +14226,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.30";
+const APP_VERSION = "v10.31";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";
