@@ -7392,6 +7392,92 @@ function actualManagerSalesMetrics(records, managerName = "") {
   };
 }
 
+function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
+  const totalMetrics = rowMetrics.reduce((acc, row) => {
+    const m = row.exactMetrics;
+    acc.newCount += toNumber(m.newCount);
+    acc.packageCount += toNumber(m.packageCount);
+    acc.rentalCount += toNumber(m.rentalCount);
+    acc.cashCount += toNumber(m.cashCount);
+    acc.supportCount += toNumber(m.supportCount);
+    acc.business += toNumber(m.business);
+    acc.renewal += toNumber(m.renewal);
+    acc.refund += toNumber(m.refund);
+    acc.final += toNumber(m.final);
+    acc.goal += toNumber(row.managerGoal);
+    return acc;
+  }, { newCount: 0, packageCount: 0, rentalCount: 0, cashCount: 0, supportCount: 0, business: 0, renewal: 0, refund: 0, final: 0, goal: 0 });
+
+  const totalRate = totalMetrics.goal > 0 ? Math.round((totalMetrics.final / totalMetrics.goal) * 100) : 0;
+  const totalDiff = totalMetrics.final - totalMetrics.goal;
+
+  const metricBox = (label, value, extraClass = "") => `<div class="manager-mobile-metric ${extraClass}"><span>${label}</span><strong>${value}</strong></div>`;
+  const diffText = (diff, isVirtual = false) => {
+    if (isVirtual) return "목표 없음";
+    if (!diff) return "목표와 동일";
+    return diff > 0 ? `목표 +${formatNumber(diff)}` : `목표 ${formatNumber(diff)}`;
+  };
+
+  const renderCard = (title, metrics, managerGoal, rate, diff, options = {}) => {
+    const isTotal = Boolean(options.total);
+    const actualCard = Boolean(options.actualMode);
+    const managerName = options.managerName || title;
+    const shareButton = (!isTotal && !actualCard)
+      ? `<button class="manager-share-icon mobile" type="button" data-manager-share="${escapeHtml(managerName)}" title="${escapeHtml(managerName)} 매니저 카톡 이미지 공유" aria-label="${escapeHtml(managerName)} 매니저 이미지공유">↗</button>`
+      : "";
+    const badgeClass = rate >= 100 ? "good" : rate >= 85 ? "watch" : "danger";
+    return `
+      <article class="manager-mobile-card ${isTotal ? "total" : ""}">
+        <div class="manager-mobile-card-head">
+          <div class="manager-mobile-title-block">
+            <span>${isTotal ? "지국 전체" : "매니저"}</span>
+            <strong>${escapeHtml(title)}</strong>
+          </div>
+          <div class="manager-mobile-card-head-right">
+            ${shareButton}
+            <span class="manager-mobile-rate-badge ${badgeClass}">${rate ? `${rate}%` : "-"}</span>
+          </div>
+        </div>
+        <div class="manager-mobile-kpi-grid">
+          ${metricBox("영업실적", blankZeroNumber(metrics.business), "focus")}
+          ${metricBox("최종실적", blankZeroNumber(metrics.final), "focus")}
+          ${metricBox("상시목표", managerGoal ? blankZeroNumber(managerGoal) : "-")}
+          ${metricBox("목표차이", diff ? `${diff > 0 ? "+" : ""}${formatNumber(diff)}` : "0", diff >= 0 ? "positive" : "negative")}
+        </div>
+        <div class="manager-mobile-sales-grid ${actualCard ? "actual-mode" : "assigned-mode"}">
+          ${metricBox("신규", blankZeroNumber(metrics.newCount))}
+          ${metricBox("패키지", blankZeroNumber(metrics.packageCount))}
+          ${metricBox("재렌탈", blankZeroNumber(metrics.rentalCount))}
+          ${metricBox("일시불", blankZeroNumber(metrics.cashCount))}
+          ${actualCard ? "" : metricBox("지원", blankZeroNumber(metrics.supportCount))}
+          ${metricBox("재약정", blankZeroNumber(metrics.renewal))}
+          ${metricBox("환수", metrics.refund ? `-${formatNumber(metrics.refund)}` : "0", "refund")}
+        </div>
+        ${actualCard || isTotal ? "" : `
+          <div class="manager-mobile-manual-grid">
+            <label class="manager-mobile-input-box"><span>컨스</span><input class="manager-inline-input activity-inline-input" data-manager="${escapeHtml(managerName)}" data-field="orderCons" type="number" min="0" step="0.5" value="${manualStatFor(managerName).orderCons ? manualStatFor(managerName).orderCons : ""}" inputmode="decimal" aria-label="컨스 수기입력"></label>
+            <label class="manager-mobile-input-box"><span>재약정</span><input class="manager-inline-input" data-manager="${escapeHtml(managerName)}" data-field="renewal" type="number" min="0" step="0.5" value="${manualStatFor(managerName).renewal ? manualStatFor(managerName).renewal : ""}" inputmode="decimal" aria-label="재약정 수기입력"></label>
+            <label class="manager-mobile-input-box"><span>환수</span><input class="manager-inline-input refund-input" data-manager="${escapeHtml(managerName)}" data-field="refund" type="number" min="0" step="0.5" value="${manualStatFor(managerName).refund ? manualStatFor(managerName).refund : ""}" inputmode="decimal" aria-label="환수 수기입력"></label>
+          </div>`}
+        <div class="manager-mobile-progress-area">
+          <div class="manager-mobile-progress-label"><strong>달성률</strong><span>${diffText(diff, options.isVirtualBranchManager)}</span></div>
+          <div class="mini-rate-track large" data-rate="${rate}%"><span style="width:${Math.max(0, Math.min(rate, 120))}%"></span></div>
+        </div>
+      </article>`;
+  };
+
+  const cards = [];
+  cards.push(renderCard("합계", totalMetrics, totalMetrics.goal, totalRate, totalDiff, { total: true, actualMode }));
+  rowMetrics.forEach(({ manager, exactMetrics, managerGoal, managerRate, shortage, isVirtualBranchManager }) => {
+    cards.push(renderCard(manager.name, exactMetrics, managerGoal, managerRate || 0, shortage || 0, {
+      managerName: manager.name,
+      actualMode,
+      isVirtualBranchManager
+    }));
+  });
+  return cards.join("");
+}
+
 function renderManagerPerformanceTable(records, salesManagers) {
   const actualMode = managerPerformanceMode === "actual";
   const managerNames = new Set((salesManagers || []).map((manager) => manager.name));
@@ -7575,6 +7661,13 @@ function renderManagerPerformanceTable(records, salesManagers) {
 
   if (body) {
     body.innerHTML = rows + totalRow || `<tr><td colspan="${headers.length}" class="empty">등록된 매니저가 없습니다.</td></tr>`;
+  }
+
+  const mobileList = $("#managerPerformanceMobileList");
+  if (mobileList) {
+    mobileList.innerHTML = displayManagers.length
+      ? renderManagerPerformanceMobileCards(rowMetrics, actualMode)
+      : `<div class="manager-mobile-empty">등록된 매니저가 없습니다.</div>`;
   }
 }
 
@@ -8855,9 +8948,51 @@ function attachMobileFullMenuEvents() {
 function enhanceMobileFullAppUi() {
   enhanceMobileDataTables(document);
   setupMobileSettingsAccordions();
+  setupOperatingGoalMobilePanel();
   ensureMobilePromotionEditButtons();
   syncMobileAppNav(currentView);
   syncMobileMenuVisibility();
+}
+
+function syncOperatingGoalMobilePanel() {
+  const panel = $("#operatingGoalPanel");
+  const button = $("#operatingGoalMobileToggle");
+  if (!panel || !button) return;
+
+  const mobile = mobileOnlyViewport();
+  if (!mobile) {
+    panel.classList.remove("mobile-collapsed");
+    button.hidden = true;
+    button.textContent = "운영목표 접기";
+    button.setAttribute("aria-expanded", "true");
+    return;
+  }
+
+  button.hidden = false;
+  if (!panel.dataset.mobileCollapseInitialized) {
+    panel.classList.add("mobile-collapsed");
+    panel.dataset.mobileCollapseInitialized = "1";
+  }
+
+  const collapsed = panel.classList.contains("mobile-collapsed");
+  button.textContent = collapsed ? "운영목표 펼치기" : "운영목표 접기";
+  button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+}
+
+function setupOperatingGoalMobilePanel() {
+  const button = $("#operatingGoalMobileToggle");
+  const panel = $("#operatingGoalPanel");
+  if (!button || !panel || button.dataset.bound === "1") {
+    syncOperatingGoalMobilePanel();
+    return;
+  }
+  button.dataset.bound = "1";
+  button.addEventListener("click", () => {
+    if (!mobileOnlyViewport()) return;
+    panel.classList.toggle("mobile-collapsed");
+    syncOperatingGoalMobilePanel();
+  });
+  syncOperatingGoalMobilePanel();
 }
 
 function syncMobileAppNav(view = currentView) {
@@ -9839,7 +9974,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.32",
+    version: "V10.33",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -10139,6 +10274,28 @@ function renderInstallAlertRows(records, includeCompleteAction = false) {
   }).join("");
 }
 
+function renderInstallAlertCards(records, includeCompleteAction = false) {
+  return records.slice(0, 20).map((record) => {
+    const phone = typeof formatPhoneNumber === "function" ? formatPhoneNumber(record.phone) : compactValue(record.phone, "");
+    const done = compactValue(record.status, "") === "완료";
+    const statusText = compactValue(record.status, "") || "-";
+    return `
+      <article class="install-mobile-card">
+        <div class="install-mobile-card-head">
+          <strong>${escapeHtml(compactValue(record.customerName) || "고객명 미입력")}</strong>
+          <span class="install-mobile-status ${done ? "done" : "pending"}">${escapeHtml(statusText)}</span>
+        </div>
+        <div class="install-mobile-meta">
+          <span>매니저</span><strong>${escapeHtml(compactValue(record.manager) || "-")}</strong>
+          <span>연락처</span><strong>${phone ? escapeHtml(phone) : "-"}</strong>
+          <span>제품명</span><strong>${escapeHtml(compactValue(record.product) || "-")}</strong>
+          <span>건수</span><strong>${formatNumber(record.count)}</strong>
+        </div>
+        ${includeCompleteAction ? `<div class="install-mobile-card-actions">${done ? '<span class="install-done-label">완료 처리됨</span>' : `<button class="ghost-button small install-complete-btn" type="button" data-install-complete="${escapeHtml(record.id)}">설치완료</button>`}</div>` : ""}
+      </article>`;
+  }).join("");
+}
+
 function renderInstallTodayModalContent() {
   const todayRecords = todayInstallRecords();
   const yesterdayRecords = yesterdayInstallRecords();
@@ -10162,11 +10319,26 @@ function renderInstallTodayModalContent() {
       : `<tr><td colspan="6" class="install-empty-row">어제 설치요청 건이 없습니다.</td></tr>`;
   }
 
+  const todayCardList = $("#installTodayCardList");
+  if (todayCardList) {
+    todayCardList.innerHTML = todayCount
+      ? renderInstallAlertCards(todayRecords, false)
+      : `<div class="install-mobile-empty">오늘 설치요청 건이 없습니다.</div>`;
+  }
+
+  const yesterdayCardList = $("#installYesterdayCardList");
+  if (yesterdayCardList) {
+    yesterdayCardList.innerHTML = yesterdayCount
+      ? renderInstallAlertCards(yesterdayRecords, true)
+      : `<div class="install-mobile-empty">어제 설치요청 건이 없습니다.</div>`;
+  }
+
   const todayTitle = $("#installTodaySectionTitle");
   if (todayTitle) todayTitle.textContent = `오늘 설치요청 (${todayCount}건)`;
   const yesterdayTitle = $("#installYesterdaySectionTitle");
   if (yesterdayTitle) yesterdayTitle.textContent = `어제 설치요청 (${yesterdayCount}건)`;
 }
+
 
 function openInstallTodayModalIfNeeded() {
   const modal = $("#installTodayModal");
@@ -13196,6 +13368,7 @@ function attachEvents() {
   });
   window.addEventListener("resize", () => {
     if (currentView === "analytics") window.requestAnimationFrame(drawAnalyticsTrendChart);
+    syncOperatingGoalMobilePanel();
   });
 
   $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
@@ -13454,7 +13627,7 @@ function attachEvents() {
       if (input) input.value = "";
     }
   });
-  $("#managerStatsBody")?.addEventListener("click", (event) => {
+  $("#printManagerStats")?.addEventListener("click", (event) => {
     const button = event.target.closest("[data-manager-share]");
     if (!button) return;
     event.preventDefault();
@@ -13683,7 +13856,7 @@ function attachEvents() {
     updateSellerInputOptions("");
   });
 
-  $("#managerStatsBody").addEventListener("change", (event) => {
+  $("#printManagerStats")?.addEventListener("change", (event) => {
     const input = event.target.closest(".manager-inline-input");
     if (!input) return;
     const managerName = input.dataset.manager;
@@ -14238,7 +14411,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.32";
+const APP_VERSION = "v10.33";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";

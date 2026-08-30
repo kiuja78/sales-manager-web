@@ -19,7 +19,7 @@
     <p>체계적인 영업관리, 더 나은 성과의 시작</p>
     <div class="startup-intro-status"><span></span><span id="startupIntroStatus">업무 화면을 구성하고 있습니다</span></div>
     <div class="startup-intro-progress"><i id="startupIntroProgress"></i></div>
-    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.32</span></div>
+    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.33</span></div>
   </div>
 </div>
 
@@ -28,7 +28,7 @@
       <div class="brand" id="sidebarRefreshBtn" role="button" tabindex="0" title="새로고침">
         <div class="brand-mark brand-program-icon"><img src="./assets/sales_manager_icon.png" alt="영업관리 시스템"></div>
         <div class="brand-text">
-          <strong id="sidebarAppTitle">영업관리 시스템 V10.32</strong>
+          <strong id="sidebarAppTitle">영업관리 시스템 V10.33</strong>
           <em id="sidebarManagerLine">김건일 마스터</em>
         </div>
       </div>
@@ -209,6 +209,7 @@
               <strong>매니저별 목표는 변동 없음</strong>
               <span>지국 전체 운영목표만 조정합니다.</span>
             </div>
+            <button type="button" class="operating-goal-mobile-toggle" id="operatingGoalMobileToggle" aria-expanded="true">운영목표 접기</button>
           </div>
 
           <div class="operating-goal-kpi-grid">
@@ -329,6 +330,7 @@
                 <tbody id="managerStatsBody"></tbody>
               </table>
             </div>
+            <div id="managerPerformanceMobileList" class="manager-performance-mobile-list"></div>
             <div id="managerConditionSummary" class="manager-condition-summary"></div>
           </section>
 
@@ -1573,6 +1575,7 @@
             <tbody id="installTodayTableBody"></tbody>
           </table>
         </div>
+        <div class="install-mobile-card-list" id="installTodayCardList"></div>
       </div>
       <div class="install-alert-section yesterday">
         <div class="install-alert-section-head"><strong id="installYesterdaySectionTitle">어제 설치요청</strong><span>미완료건은 바로 완료 처리</span></div>
@@ -1582,6 +1585,7 @@
             <tbody id="installYesterdayTableBody"></tbody>
           </table>
         </div>
+        <div class="install-mobile-card-list" id="installYesterdayCardList"></div>
       </div>
       <div class="install-today-actions">
         <label class="install-today-skip"><input type="checkbox" id="skipInstallTodayOnce"> 오늘 하루 보지 않기</label>
