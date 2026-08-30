@@ -8643,7 +8643,20 @@ function mobileOnlyViewport() {
   return window.matchMedia && window.matchMedia("(max-width: 850px)").matches;
 }
 
+
+/* V10.32 모바일 화면 2차 정밀 보정 */
 function mobileHeaderLabels(table) {
+  if (!table) return [];
+
+  // 대시보드 조건/프로모션 표는 rowspan/colspan 헤더라 모바일 라벨을 별도로 정리
+  if (table.classList.contains("manager-condition-table")) {
+    const secondRow = table.querySelector("thead tr:last-child");
+    const detailLabels = secondRow
+      ? [...secondRow.children].map((cell) => String(cell.textContent || "").replace(/\s+/g, " ").trim())
+      : [];
+    return ["매니저", ...detailLabels];
+  }
+
   const headerRows = [...table.querySelectorAll("thead tr")];
   if (!headerRows.length) return [];
   const lastRow = headerRows[headerRows.length - 1];
@@ -8654,6 +8667,8 @@ function mobileHeaderLabels(table) {
 
 function enhanceMobileDataTables(root = document) {
   const selectors = [
+    "#dashboardView #managerStatsTable",
+    "#dashboardView .manager-condition-table",
     "#analyticsView table",
     "#evaluationView table",
     "#promotionsView table",
@@ -8672,11 +8687,8 @@ function enhanceMobileDataTables(root = document) {
       [...row.children].forEach((cell) => {
         if (!cell.matches("td,th")) return;
         const span = Number(cell.getAttribute("colspan") || 1);
-        const current = String(cell.dataset.mobileLabel || "").trim();
-        if (!current) {
-          const label = labels[logicalIndex] || "";
-          cell.dataset.mobileLabel = label;
-        }
+        const label = labels[logicalIndex] || "";
+        cell.dataset.mobileLabel = label;
         logicalIndex += Math.max(1, span);
       });
     });
@@ -9827,7 +9839,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.31",
+    version: "V10.32",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -14226,7 +14238,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.31";
+const APP_VERSION = "v10.32";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";

@@ -19798,7 +19798,7 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 
 
 /* =========================================================
-   V10.31 접수등록/접수내역 - 컨스·지원 '구분' 필드
+   V10.32 접수등록/접수내역 - 컨스·지원 '구분' 필드
    - 판매종류 자체 의미는 변경하지 않음
    - 구분은 기존 기타내용의 컨스/지원 표기를 별도 필드로 분리
    ========================================================= */
@@ -19866,7 +19866,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* =========================================================
-   V10.31 / WEB V2.0
+   V10.32 / WEB V2.1
    모바일 반응형 UI 최종 보정
    - PC 화면 영향 없음
    - 850px 이하에서 상단 브랜드 + 가로 스크롤 메뉴
@@ -20280,7 +20280,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* =========================================================
-   V10.31 / WEB V2.0
+   V10.32 / WEB V2.1
    모바일 실사용 2차 보정
    첨부 아이폰 화면 기준:
    - 대시보드 상단 컨트롤 압축
@@ -20801,7 +20801,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* ============================================================
-   V10.31 / WEB V2.0
+   V10.32 / WEB V2.1
    모바일 전용 앱 UI 1차
    - PC UI는 기존 그대로 유지
    - 모바일: 하단 4메뉴 + 더보기 바텀시트
@@ -21500,7 +21500,7 @@ body[data-view="records"] .record-form-row.row-basic {
 
 
 /* ============================================================
-   V10.31 / WEB V2.0
+   V10.32 / WEB V2.1
    모바일 전용 앱 UI - 전체 메뉴 확장
    ------------------------------------------------------------
    원칙
@@ -22279,5 +22279,453 @@ body[data-view="records"] .record-form-row.row-basic {
   #dashboardView .summary-chip-grid,
   #dashboardView .custom-condition-grid {
     grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+
+/* ============================================================
+   V10.32 / WEB V2.1
+   첨부된 실제 iPhone 화면 기준 정밀 보정
+   ============================================================ */
+@media (max-width: 850px) {
+
+  /* ----------------------------------------------------------
+     1. 모든 모바일 카드표: 데스크톱 열폭/최대폭 완전 해제
+     ---------------------------------------------------------- */
+  .view table.mobile-card-table tbody td,
+  .view table.mobile-card-table tbody th,
+  .view table.mobile-card-table tfoot td,
+  .view table.mobile-card-table tfoot th {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+    writing-mode: horizontal-tb !important;
+    text-orientation: mixed !important;
+    word-break: keep-all !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  .view table.mobile-card-table tbody td *,
+  .view table.mobile-card-table tbody th *,
+  .view table.mobile-card-table tfoot td *,
+  .view table.mobile-card-table tfoot th * {
+    max-width: 100% !important;
+    writing-mode: horizontal-tb !important;
+    text-orientation: mixed !important;
+    word-break: keep-all !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  /* ----------------------------------------------------------
+     2. 영업현황 - 매니저별 실적
+     PC의 넓은 표를 모바일에서 2열 실적카드로 전환
+     ---------------------------------------------------------- */
+  #dashboardView #printManagerStats .manager-performance-controls {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+
+  #dashboardView #printManagerStats .manager-performance-tabs {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+    gap: 5px !important;
+    width: 100% !important;
+  }
+
+  #dashboardView #printManagerStats .manager-performance-tab {
+    width: 100% !important;
+    min-width: 0 !important;
+    min-height: 42px !important;
+    padding: 8px 5px !important;
+    font-size: 13px !important;
+    white-space: normal !important;
+    word-break: keep-all !important;
+  }
+
+  #dashboardView #managerPerformancePrintBtn {
+    display: none !important;
+  }
+
+  #dashboardView #printManagerStats .manager-period-row {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 5px !important;
+    padding: 10px 2px !important;
+    font-size: 12px !important;
+  }
+
+  #dashboardView #printManagerStats .manager-edit-guide {
+    padding: 9px 10px !important;
+    font-size: 11px !important;
+    line-height: 1.55 !important;
+    border-radius: 12px !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table tbody {
+    gap: 10px !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table tbody tr {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+    gap: 7px !important;
+    padding: 11px !important;
+    border-radius: 17px !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table tbody td {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    min-height: 62px !important;
+    padding: 8px 9px !important;
+    border: 1px solid #edf0f3 !important;
+    border-radius: 11px !important;
+    background: #f9fafb !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table tbody td::before {
+    display: block !important;
+    color: #7a8696 !important;
+    font-size: 10px !important;
+    line-height: 1.25 !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table .manager-name-cell {
+    grid-column: 1 / -1 !important;
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    min-height: 48px !important;
+    padding: 9px 11px !important;
+    background: #edf7f3 !important;
+    border-color: #d9ebe4 !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table .manager-name-cell::before {
+    content: "매니저" !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table .manager-name-cell strong {
+    font-size: 16px !important;
+    color: #174f3f !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table .business-cell,
+  #dashboardView #managerStatsTable.mobile-card-table .final-cell,
+  #dashboardView #managerStatsTable.mobile-card-table .rate-cell {
+    background: #f3f7ff !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table .rate-cell {
+    grid-column: 1 / -1 !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table .manager-inline-input {
+    width: 100% !important;
+    min-height: 38px !important;
+    border-radius: 9px !important;
+    text-align: center !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table .manager-total-row {
+    border: 2px solid #e0b130 !important;
+    background: #fffbef !important;
+  }
+
+  #dashboardView #managerStatsTable.mobile-card-table .manager-total-row .manager-name-cell {
+    background: #fff6d9 !important;
+    border-color: #f0d884 !important;
+  }
+
+  /* ----------------------------------------------------------
+     3. 영업현황 - 매니저별 조건·프로모션
+     rowspan 헤더 보정 + 카드형
+     ---------------------------------------------------------- */
+  #dashboardView .manager-condition-summary {
+    margin-top: 14px !important;
+  }
+
+  #dashboardView .manager-condition-summary-head {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 5px !important;
+  }
+
+  #dashboardView .manager-condition-promo-period {
+    justify-self: start !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+  }
+
+  #dashboardView .manager-condition-table.mobile-card-table tbody tr {
+    display: grid !important;
+    grid-template-columns: repeat(2, minmax(0,1fr)) !important;
+    gap: 7px !important;
+    padding: 10px !important;
+  }
+
+  #dashboardView .manager-condition-table.mobile-card-table tbody td {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 3px !important;
+    width: auto !important;
+    min-height: 54px !important;
+    padding: 8px !important;
+    border: 1px solid #edf0f3 !important;
+    border-radius: 10px !important;
+    background: #f9fafb !important;
+  }
+
+  #dashboardView .manager-condition-table.mobile-card-table .manager-condition-name {
+    grid-column: 1 / -1 !important;
+    min-height: 44px !important;
+    background: #edf7f3 !important;
+    color: #174f3f !important;
+    font-size: 15px !important;
+    font-weight: 900 !important;
+  }
+
+  /* ----------------------------------------------------------
+     4. 경영평가 - 제품 순위표
+     모델명이 한 글자씩 세로로 떨어지던 문제 수정
+     ---------------------------------------------------------- */
+  #evaluationView .evaluation-primary-table.mobile-card-table tbody tr,
+  #evaluationView .evaluation-high-value-table.mobile-card-table tbody tr {
+    display: grid !important;
+    grid-template-columns: 64px minmax(0,1fr) 72px !important;
+    gap: 7px !important;
+    padding: 10px !important;
+    min-height: 0 !important;
+  }
+
+  #evaluationView .evaluation-primary-table.mobile-card-table tbody td,
+  #evaluationView .evaluation-high-value-table.mobile-card-table tbody td {
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: center !important;
+    gap: 3px !important;
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    min-height: 58px !important;
+    padding: 7px !important;
+    border: 1px solid #edf0f3 !important;
+    border-radius: 10px !important;
+    background: #fff !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    white-space: normal !important;
+  }
+
+  #evaluationView .evaluation-primary-table.mobile-card-table tbody td:nth-child(1),
+  #evaluationView .evaluation-primary-table.mobile-card-table tbody td:nth-child(2),
+  #evaluationView .evaluation-primary-table.mobile-card-table tbody td:nth-child(3),
+  #evaluationView .evaluation-high-value-table.mobile-card-table tbody td:nth-child(1),
+  #evaluationView .evaluation-high-value-table.mobile-card-table tbody td:nth-child(2),
+  #evaluationView .evaluation-high-value-table.mobile-card-table tbody td:nth-child(3) {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+  }
+
+  #evaluationView .evaluation-primary-table.mobile-card-table tbody td:nth-child(2),
+  #evaluationView .evaluation-high-value-table.mobile-card-table tbody td:nth-child(2) {
+    font-size: 13px !important;
+    line-height: 1.4 !important;
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    word-break: keep-all !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  #evaluationView .evaluation-primary-table.mobile-card-table tfoot tr,
+  #evaluationView .evaluation-high-value-table.mobile-card-table tfoot tr {
+    display: grid !important;
+    grid-template-columns: minmax(0,1fr) 90px !important;
+    gap: 7px !important;
+    padding: 9px !important;
+    background: #edf7f3 !important;
+  }
+
+  #evaluationView .evaluation-primary-table.mobile-card-table tfoot th,
+  #evaluationView .evaluation-primary-table.mobile-card-table tfoot td,
+  #evaluationView .evaluation-high-value-table.mobile-card-table tfoot th,
+  #evaluationView .evaluation-high-value-table.mobile-card-table tfoot td,
+  #evaluationPrimaryProductTotalCell,
+  #evaluationHighValueTotalCell {
+    width: auto !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    white-space: normal !important;
+  }
+
+  /* ----------------------------------------------------------
+     5. 프로모션 - 매니저 상세/접수/제품합산
+     셀 폭 때문에 내용이 세로로 깨지던 문제 수정
+     ---------------------------------------------------------- */
+  #promotionsView table.mobile-card-table tbody tr {
+    min-height: 0 !important;
+  }
+
+  #promotionsView table.mobile-card-table tbody td,
+  #promotionsView table.mobile-card-table tbody th {
+    max-width: none !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    height: auto !important;
+    white-space: normal !important;
+    word-break: keep-all !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  #promotionsView .promo-stable-detail-grid h3 {
+    margin: 12px 0 8px !important;
+    font-size: 16px !important;
+  }
+
+  #promotionsView .promo-stable-detail-grid .mini-table.mobile-card-table tbody tr {
+    padding: 10px !important;
+  }
+
+  #promotionsView .promo-stable-detail-grid .mini-table.mobile-card-table tbody td {
+    grid-template-columns: 88px minmax(0,1fr) !important;
+  }
+
+  /* ----------------------------------------------------------
+     6. 급여계산 - 고객명/제품명 세로 깨짐 수정
+     ---------------------------------------------------------- */
+  #payrollView .payroll-table.mobile-card-table {
+    min-width: 0 !important;
+    table-layout: auto !important;
+  }
+
+  #payrollView .payroll-table.mobile-card-table tbody td {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: none !important;
+    height: auto !important;
+    white-space: normal !important;
+    word-break: keep-all !important;
+    overflow-wrap: anywhere !important;
+    line-height: 1.45 !important;
+    text-align: left !important;
+  }
+
+  #payrollView .payroll-table.mobile-card-table tbody td:nth-child(3),
+  #payrollView .payroll-table.mobile-card-table tbody td:nth-child(4) {
+    max-width: none !important;
+    width: 100% !important;
+    white-space: normal !important;
+    word-break: keep-all !important;
+    overflow-wrap: anywhere !important;
+  }
+
+  #payrollView .payroll-table.mobile-card-table tbody td.money,
+  #payrollView .payroll-table.mobile-card-table tbody td.qty {
+    text-align: left !important;
+  }
+
+  /* ----------------------------------------------------------
+     7. 사용자설정 - 접힌 카드에 큰 빈 공간이 생기던 문제 수정
+     ---------------------------------------------------------- */
+  #settingsView .settings-grid-main {
+    gap: 8px !important;
+    width: 100% !important;
+  }
+
+  #settingsView .settings-card {
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: 0 !important;
+    height: auto !important;
+    margin: 0 !important;
+  }
+
+  #settingsView .settings-card.mobile-collapsed {
+    min-height: 0 !important;
+    height: auto !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    border: 1px solid var(--settings-line, #dfe5e9) !important;
+    background: #fff !important;
+    box-shadow: none !important;
+  }
+
+  #settingsView .settings-card.mobile-collapsed > .panel-head {
+    display: flex !important;
+    min-height: 54px !important;
+    height: auto !important;
+    margin: 0 !important;
+    padding: 10px 12px !important;
+    border: 0 !important;
+    border-left: 4px solid var(--settings-accent, #2b7a61) !important;
+    border-radius: 0 !important;
+    background: var(--settings-tint, #f7faf9) !important;
+  }
+
+  #settingsView .settings-card.mobile-collapsed > .panel-head h2 {
+    display: block !important;
+    margin: 0 !important;
+    color: #243142 !important;
+    font-size: 15px !important;
+    line-height: 1.3 !important;
+    opacity: 1 !important;
+    visibility: visible !important;
+  }
+
+  #settingsView .settings-card.mobile-collapsed > .panel-head .mobile-settings-toggle {
+    display: grid !important;
+  }
+
+  #settingsView .settings-card:not(.mobile-collapsed) > .panel-head {
+    min-height: 52px !important;
+  }
+
+  #settingsView .settings-page-head {
+    padding-top: 4px !important;
+  }
+
+  #settingsView .settings-backup-actions {
+    gap: 7px !important;
+  }
+
+  /* ----------------------------------------------------------
+     8. 홈: 모바일에서 불필요하게 긴 영역 조금 압축
+     ---------------------------------------------------------- */
+  #dashboardView .summary-panel {
+    padding: 12px !important;
+  }
+
+  #dashboardView .dashboard-card-stack {
+    gap: 9px !important;
+  }
+
+  #dashboardView .goal-card {
+    min-height: 0 !important;
+  }
+
+  #dashboardView .summary-chip-grid {
+    gap: 8px !important;
+  }
+
+  /* 하단 메뉴에 내용이 가려지지 않도록 충분한 안전 여백 */
+  .workspace {
+    padding-bottom: calc(var(--mobile-app-bottom-safe) + 44px) !important;
   }
 }
