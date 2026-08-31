@@ -2117,7 +2117,7 @@ function waterPurifierEvaluationMetrics(month = currentDashboardMonth(), records
   const goals = calculatedGoals(month);
   const policy = managementEvaluationPolicy(month);
   const policyItem = policy.policyItems.find(item =>
-    item.kind === "rate" && String(item.title || "").includes("정수기")
+    item?.id === "policy-water" || (item.kind === "rate" && String(item.title || "").includes("정수기"))
   ) || defaultManagementEvaluationPolicyItem("rate");
   const targetRate = toNumber(policyItem.targetRate) || 55;
   const goal = (toNumber(goals.newGoal) + toNumber(goals.rentalGoal)) * (targetRate / 100);
@@ -5987,7 +5987,7 @@ function managementEvaluationGoalBaseMatches(record, goalBase) {
 }
 
 function managementEvaluationPolicyItemMetrics(records, goals, input, item) {
-  const isWaterRateItem = item.kind === "rate" && String(item.title || "").includes("정수기");
+  const isWaterRateItem = item?.id === "policy-water" || (item.kind === "rate" && String(item.title || "").includes("정수기"));
   const isMattressCareItem = item.id === "policy-mattress" || String(item.title || "").trim() === "매트리스 케어";
 
   // 매트리스 케어는 판매종류(신규/재렌탈/일시불)와 무관하게
@@ -6110,7 +6110,14 @@ function managementEvaluationMetrics(month = managementEvaluationMonth()) {
     : toNumber(inspectionCompleted) / inspectionDenominator * 100;
   const happyTalkRate = input.happyTalkRate;
 
-  const policyItems = policy.policyItems.map((item) => managementEvaluationPolicyItemMetrics(businessRecords, goals, input, item));
+  // V10.35: 정수기(CP-) KPI는 대시보드 선택카드와 완전히 동일한 원본 범위를 사용합니다.
+  // 기존에는 경영평가가 businessRecords(신규/패키지/재렌탈/일시불만)만 넘겨서
+  // 판매종류가 비어 있거나 다른 값인 CP- 접수행이 경영평가에서 빠질 수 있었습니다.
+  const policyItems = policy.policyItems.map((item) => {
+    const isWaterRateItem = item?.id === "policy-water"
+      || (item?.kind === "rate" && String(item?.title || "").includes("정수기"));
+    return managementEvaluationPolicyItemMetrics(isWaterRateItem ? records : businessRecords, goals, input, item);
+  });
 
   const scores = {
     overall: managementEvaluationScoreUp(overallRate, 80, 10, 2, 1, 5),
@@ -9978,7 +9985,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.34",
+    version: "V10.35",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -14415,7 +14422,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.34";
+const APP_VERSION = "v10.35";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";
