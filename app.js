@@ -2139,7 +2139,9 @@ function renderDashboardCustomCards(records) {
     const active = Boolean(card.enabled && card.conditions?.some(c => String(c.value || "").trim()));
     labelNode.textContent = active ? card.title : `조건${index + 1}`;
     if (active && String(card.title || "").trim() === "정수기" && card.field === "product") {
-      const water = waterPurifierEvaluationMetrics(currentDashboardMonth(), records);
+      // 정수기 선택카드는 경영평가와 동일하게 목표월의 목표산정기간 전체를 기준으로 집계합니다.
+      // 대시보드의 임의 날짜/매니저/검색 필터 때문에 경영평가 수량과 달라지지 않도록 filtered records를 넘기지 않습니다.
+      const water = waterPurifierEvaluationMetrics(currentDashboardMonth());
       valueNode.innerHTML =
         `<span class="water-card-count">${formatNumber(water.current)}</span><small class="water-card-rate">${formatNumber(Math.round(water.achievementRate * 10) / 10)}%</small>`;
       valueNode.classList.add("water-card-value");
@@ -5991,10 +5993,12 @@ function managementEvaluationPolicyItemMetrics(records, goals, input, item) {
   // 매트리스 케어는 판매종류(신규/재렌탈/일시불)와 무관하게
   // CRM-으로 시작하면서 6C/12C/4C/케어B 중 하나가 포함된 접수행을 1건으로 인정한다.
   // 따라서 goalBase 필터를 먼저 적용하면 안 된다.
-  const eligibleRecords = isMattressCareItem
+  const eligibleRecords = (isMattressCareItem || isWaterRateItem)
     ? records
     : records.filter((record) => managementEvaluationGoalBaseMatches(record, item.goalBase));
 
+  // 정수기 목표의 goalBase(new-rental)는 목표(분모) 산정에만 사용합니다.
+  // 실제 정수기 수량(분자)은 판매종류와 무관하게 CP-로 시작하는 접수행을 1건씩 집계합니다.
   const matchedUnits = isWaterRateItem
     ? waterPurifierCpCount(eligibleRecords)
     : isMattressCareItem
@@ -9974,7 +9978,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.33",
+    version: "V10.34",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -14411,7 +14415,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.33";
+const APP_VERSION = "v10.34";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";
