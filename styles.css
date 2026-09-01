@@ -23337,3 +23337,28 @@ body[data-view="records"] .record-form-row.row-basic {
   /* 메인 실적 표만 숨기고 조건·프로모션 영역까지 같이 숨지 않도록 범위 제한 */
   #printManagerStats > .table-wrap { display:none !important; }
 }
+
+
+/* V10.41 모바일 영업현황 단일화 - 구형 KPI 중복 완전 차단 */
+@media (max-width:850px) {
+  #dashboardView .dashboard-legacy-summary,
+  #dashboardView .summary-hero-grid.dashboard-legacy-summary {
+    display:none !important;
+    visibility:hidden !important;
+    height:0 !important;
+    min-height:0 !important;
+    max-height:0 !important;
+    margin:0 !important;
+    padding:0 !important;
+    border:0 !important;
+    overflow:hidden !important;
+  }
+  #dashboardView #dashboardMobileOverview {
+    display:grid !important;
+    visibility:visible !important;
+    height:auto !important;
+  }
+}
+@media (min-width:851px) {
+  #dashboardView #dashboardMobileOverview { display:none !important; }
+}

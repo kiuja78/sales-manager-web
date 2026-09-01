@@ -7703,6 +7703,26 @@ function renderManagerPerformanceTable(records, salesManagers) {
 }
 
 
+
+function syncDashboardSummaryMode() {
+  const legacy = $("#dashboardView .dashboard-legacy-summary");
+  const mobileOverview = $("#dashboardMobileOverview");
+  if (!legacy || !mobileOverview) return;
+
+  const mobile = mobileOnlyViewport();
+  if (mobile) {
+    legacy.style.setProperty("display", "none", "important");
+    legacy.setAttribute("aria-hidden", "true");
+    mobileOverview.style.setProperty("display", "grid", "important");
+    mobileOverview.removeAttribute("aria-hidden");
+  } else {
+    legacy.style.removeProperty("display");
+    legacy.removeAttribute("aria-hidden");
+    mobileOverview.style.setProperty("display", "none", "important");
+    mobileOverview.setAttribute("aria-hidden", "true");
+  }
+}
+
 function renderDashboardMobileOverview(records, goals, totals) {
   const host = $("#dashboardMobileOverview");
   if (!host) return;
@@ -7800,6 +7820,7 @@ function renderDashboard() {
   $("#summaryNewActual").textContent = formatNumber(totals.newActual);
   renderDashboardCustomCards(records);
   renderDashboardMobileOverview(records, goals, totals);
+  syncDashboardSummaryMode();
   $("#summaryNewOnly").textContent = formatNumber(totals.newCount);
   $("#summaryPackageActual").textContent = formatNumber(totals.packageCount);
   const summaryPackageSub = $("#summaryPackageSub");
@@ -9068,6 +9089,7 @@ function attachMobileFullMenuEvents() {
 }
 
 function enhanceMobileFullAppUi() {
+  syncDashboardSummaryMode();
   enhanceMobileDataTables(document);
   setupMobileSettingsAccordions();
   setupOperatingGoalMobilePanel();
@@ -10096,7 +10118,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.40",
+    version: "V10.41",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -13491,6 +13513,7 @@ function attachEvents() {
   window.addEventListener("resize", () => {
     if (currentView === "analytics") window.requestAnimationFrame(drawAnalyticsTrendChart);
     syncOperatingGoalMobilePanel();
+    syncDashboardSummaryMode();
   });
 
   $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
@@ -14533,7 +14556,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.40";
+const APP_VERSION = "v10.41";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";
