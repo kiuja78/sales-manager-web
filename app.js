@@ -7431,6 +7431,7 @@ function actualManagerSalesMetrics(records, managerName = "") {
   };
 }
 
+
 function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
   const totalMetrics = rowMetrics.reduce((acc, row) => {
     const m = row.exactMetrics;
@@ -7447,72 +7448,63 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
     return acc;
   }, { newCount: 0, packageCount: 0, rentalCount: 0, cashCount: 0, supportCount: 0, business: 0, renewal: 0, refund: 0, final: 0, goal: 0 });
 
-  const totalRate = totalMetrics.goal > 0 ? Math.round((totalMetrics.final / totalMetrics.goal) * 100) : 0;
-  const totalDiff = totalMetrics.final - totalMetrics.goal;
-
-  const metricBox = (label, value, extraClass = "") => `<div class="manager-mobile-metric ${extraClass}"><span>${label}</span><strong>${value}</strong></div>`;
-  const diffText = (diff, isVirtual = false) => {
-    if (isVirtual) return "목표 없음";
-    if (!diff) return "목표와 동일";
-    return diff > 0 ? `목표 +${formatNumber(diff)}` : `목표 ${formatNumber(diff)}`;
+  const metric = (label, value, cls = "") => `<div class="manager-zone-metric ${cls}"><span>${label}</span><strong>${formatNumber(toNumber(value))}</strong></div>`;
+  const diffInfo = (actual, goal, isVirtual = false) => {
+    if (isVirtual || goal <= 0) return { text: "목표 없음", cls: "neutral" };
+    const delta = toNumber(actual) - toNumber(goal);
+    if (delta > 0) return { text: `${formatNumber(delta)}건 초과`, cls: "good" };
+    if (delta < 0) return { text: `${formatNumber(Math.abs(delta))}건 부족`, cls: "short" };
+    return { text: "목표 달성", cls: "good" };
   };
 
-  const renderCard = (title, metrics, managerGoal, rate, diff, options = {}) => {
+  const renderCard = (title, metrics, managerGoal, rate, options = {}) => {
     const isTotal = Boolean(options.total);
-    const actualCard = Boolean(options.actualMode);
+    const isVirtual = Boolean(options.isVirtualBranchManager);
     const managerName = options.managerName || title;
-    const shareButton = (!isTotal && !actualCard)
+    const validRate = (!isVirtual && managerGoal > 0) ? Math.max(0, Math.round(toNumber(rate))) : null;
+    const diff = diffInfo(metrics.final, managerGoal, isVirtual);
+    const shareButton = (!isTotal && !actualMode)
       ? `<button class="manager-share-icon mobile" type="button" data-manager-share="${escapeHtml(managerName)}" title="${escapeHtml(managerName)} 매니저 카톡 이미지 공유" aria-label="${escapeHtml(managerName)} 매니저 이미지공유">↗</button>`
       : "";
-    const badgeClass = rate >= 100 ? "good" : rate >= 85 ? "watch" : "danger";
+    const rateClass = validRate === null ? "neutral" : validRate >= 100 ? "good" : validRate >= 85 ? "watch" : "danger";
     return `
-      <article class="manager-mobile-card ${isTotal ? "total" : ""}">
-        <div class="manager-mobile-card-head">
-          <div class="manager-mobile-title-block">
-            <span>${isTotal ? "지국 전체" : "매니저"}</span>
-            <strong>${escapeHtml(title)}</strong>
-          </div>
-          <div class="manager-mobile-card-head-right">
-            ${shareButton}
-            <span class="manager-mobile-rate-badge ${badgeClass}">${rate ? `${rate}%` : "-"}</span>
-          </div>
+      <article class="manager-zone-card ${isTotal ? "total" : ""}">
+        <div class="manager-zone-head">
+          <div class="manager-zone-name"><span>${isTotal ? "지국 전체" : "매니저"}</span><strong>${escapeHtml(title)}</strong></div>
+          <div class="manager-zone-head-actions">${shareButton}<span class="manager-zone-rate ${rateClass}">${validRate === null ? "-" : `${validRate}%`}</span></div>
         </div>
-        <div class="manager-mobile-kpi-grid">
-          ${metricBox("영업실적", blankZeroNumber(metrics.business), "focus")}
-          ${metricBox("최종실적", blankZeroNumber(metrics.final), "focus")}
-          ${metricBox("상시목표", managerGoal ? blankZeroNumber(managerGoal) : "-")}
-          ${metricBox("목표차이", diff ? `${diff > 0 ? "+" : ""}${formatNumber(diff)}` : "0", diff >= 0 ? "positive" : "negative")}
+        <div class="manager-zone-summary">
+          ${metric("영업", metrics.business, "business")}
+          ${metric("최종", metrics.final, "final")}
+          <div class="manager-zone-metric goal"><span>목표</span><strong>${managerGoal > 0 ? formatNumber(managerGoal) : "-"}</strong></div>
         </div>
-        <div class="manager-mobile-sales-grid ${actualCard ? "actual-mode" : "assigned-mode"}">
-          ${metricBox("신규", blankZeroNumber(metrics.newCount))}
-          ${metricBox("패키지", blankZeroNumber(metrics.packageCount))}
-          ${metricBox("재렌탈", blankZeroNumber(metrics.rentalCount))}
-          ${metricBox("일시불", blankZeroNumber(metrics.cashCount))}
-          ${actualCard ? "" : metricBox("지원", blankZeroNumber(metrics.supportCount))}
-          ${metricBox("재약정", blankZeroNumber(metrics.renewal))}
-          ${metricBox("환수", metrics.refund ? `-${formatNumber(metrics.refund)}` : "0", "refund")}
+        <div class="manager-zone-sales">
+          ${metric("신규", metrics.newCount)}
+          ${metric("패키지", metrics.packageCount)}
+          ${metric("재렌탈", metrics.rentalCount)}
+          ${metric("일시불", metrics.cashCount)}
         </div>
-        ${actualCard || isTotal ? "" : `
-          <div class="manager-mobile-manual-grid">
-            <label class="manager-mobile-input-box"><span>컨스</span><input class="manager-inline-input activity-inline-input" data-manager="${escapeHtml(managerName)}" data-field="orderCons" type="number" min="0" step="0.5" value="${manualStatFor(managerName).orderCons ? manualStatFor(managerName).orderCons : ""}" inputmode="decimal" aria-label="컨스 수기입력"></label>
-            <label class="manager-mobile-input-box"><span>재약정</span><input class="manager-inline-input" data-manager="${escapeHtml(managerName)}" data-field="renewal" type="number" min="0" step="0.5" value="${manualStatFor(managerName).renewal ? manualStatFor(managerName).renewal : ""}" inputmode="decimal" aria-label="재약정 수기입력"></label>
-            <label class="manager-mobile-input-box"><span>환수</span><input class="manager-inline-input refund-input" data-manager="${escapeHtml(managerName)}" data-field="refund" type="number" min="0" step="0.5" value="${manualStatFor(managerName).refund ? manualStatFor(managerName).refund : ""}" inputmode="decimal" aria-label="환수 수기입력"></label>
-          </div>`}
-        <div class="manager-mobile-progress-area">
-          <div class="manager-mobile-progress-label"><strong>달성률</strong><span>${diffText(diff, options.isVirtualBranchManager)}</span></div>
-          <div class="mini-rate-track large" data-rate="${rate}%"><span style="width:${Math.max(0, Math.min(rate, 120))}%"></span></div>
+        <div class="manager-zone-subline">
+          ${actualMode ? "" : `<span>컨스 <b>${formatNumber(toNumber(manualStatFor(managerName).orderCons))}</b></span><span>지원 <b>${formatNumber(toNumber(metrics.supportCount))}</b></span>`}
+          <span>재약정 <b>${formatNumber(toNumber(metrics.renewal))}</b></span>
+          <span>환수 <b class="refund">${formatNumber(toNumber(metrics.refund))}</b></span>
         </div>
+        <div class="manager-zone-progress">
+          <div class="manager-zone-progress-head"><strong>달성률</strong><span class="${diff.cls}">${diff.text}</span></div>
+          <div class="manager-zone-track"><span style="width:${validRate === null ? 0 : Math.max(0, Math.min(validRate, 100))}%"></span></div>
+        </div>
+        ${actualMode || isTotal ? "" : `<details class="manager-zone-manual"><summary>수기실적 입력</summary><div class="manager-zone-manual-grid">
+          <label><span>컨스</span><input class="manager-inline-input activity-inline-input" data-manager="${escapeHtml(managerName)}" data-field="orderCons" type="number" min="0" step="0.5" value="${manualStatFor(managerName).orderCons || ""}" inputmode="decimal"></label>
+          <label><span>재약정</span><input class="manager-inline-input" data-manager="${escapeHtml(managerName)}" data-field="renewal" type="number" min="0" step="0.5" value="${manualStatFor(managerName).renewal || ""}" inputmode="decimal"></label>
+          <label><span>환수</span><input class="manager-inline-input refund-input" data-manager="${escapeHtml(managerName)}" data-field="refund" type="number" min="0" step="0.5" value="${manualStatFor(managerName).refund || ""}" inputmode="decimal"></label>
+        </div></details>`}
       </article>`;
   };
 
-  const cards = [];
-  cards.push(renderCard("합계", totalMetrics, totalMetrics.goal, totalRate, totalDiff, { total: true, actualMode }));
-  rowMetrics.forEach(({ manager, exactMetrics, managerGoal, managerRate, shortage, isVirtualBranchManager }) => {
-    cards.push(renderCard(manager.name, exactMetrics, managerGoal, managerRate || 0, shortage || 0, {
-      managerName: manager.name,
-      actualMode,
-      isVirtualBranchManager
-    }));
+  const totalRate = totalMetrics.goal > 0 ? (totalMetrics.final / totalMetrics.goal) * 100 : 0;
+  const cards = [renderCard("합계", totalMetrics, totalMetrics.goal, totalRate, { total: true })];
+  rowMetrics.forEach(({ manager, exactMetrics, managerGoal, managerRate, isVirtualBranchManager }) => {
+    cards.push(renderCard(manager.name, exactMetrics, managerGoal, managerRate, { managerName: manager.name, isVirtualBranchManager }));
   });
   return cards.join("");
 }
@@ -7710,6 +7702,73 @@ function renderManagerPerformanceTable(records, salesManagers) {
   }
 }
 
+
+function renderDashboardMobileOverview(records, goals, totals) {
+  const host = $("#dashboardMobileOverview");
+  if (!host) return;
+
+  const rateFor = (actual, goal) => goal > 0 ? Math.round((toNumber(actual) / toNumber(goal)) * 100) : 0;
+  const shortageFor = (actual, goal) => Math.max(toNumber(goal) - toNumber(actual), 0);
+  const progressRow = (label, actual, goal, tone = "") => {
+    const rate = rateFor(actual, goal);
+    const shortage = shortageFor(actual, goal);
+    const delta = toNumber(actual) - toNumber(goal);
+    const status = goal <= 0 ? "목표 없음" : shortage > 0 ? `${formatNumber(shortage)}건 부족` : delta > 0 ? `${formatNumber(delta)}건 초과` : "목표 달성";
+    return `
+      <div class="mobile-goal-row ${tone}">
+        <div class="mobile-goal-row-top">
+          <strong>${escapeHtml(label)}</strong>
+          <span><b>${formatNumber(actual)}</b> / ${formatNumber(goal)}</span>
+          <em>${goal > 0 ? `${rate}%` : "-"}</em>
+        </div>
+        <div class="mobile-goal-row-bottom">
+          <div class="mobile-goal-track"><span style="width:${Math.max(0, Math.min(rate, 100))}%"></span></div>
+          <small class="${shortage > 0 ? "short" : "done"}">${escapeHtml(status)}</small>
+        </div>
+      </div>`;
+  };
+
+  const goalsHtml = [
+    progressRow("종합달성", totals.overallActual, goals.overallGoal, "overall"),
+    progressRow("신규", totals.newActual, goals.newGoal),
+    progressRow("패키지", totals.packageCount, goals.packageGoal),
+    progressRow("재렌탈", totals.rentalActual, goals.rentalGoal),
+    progressRow("재약정", totals.renewalActual, goals.renewalGoal)
+  ].join("");
+
+  const activeCards = dashboardCustomCards().filter(card =>
+    card.enabled && card.conditions?.some(c => String(c.value || "").trim())
+  );
+  const focusCards = activeCards.map((card) => {
+    let value = 0;
+    let sub = "";
+    if (String(card.title || "").trim() === "정수기") {
+      const water = waterPurifierEvaluationMetrics(currentDashboardMonth());
+      value = water.current;
+      sub = `${formatNumber(Math.round(water.achievementRate * 10) / 10)}%`;
+    } else {
+      value = customCardCount(records, card);
+    }
+    return `<div class="mobile-focus-tile"><span>${escapeHtml(card.title || "조건")}</span><strong>${formatNumber(value)}</strong>${sub ? `<em>${sub}</em>` : ""}</div>`;
+  }).join("");
+
+  const detailItems = [
+    ["순수 신규", totals.newCount],
+    ["일시불", totals.cashActual],
+    ["컨스", totals.orderConsActual],
+    ["환수", totals.refundActual]
+  ].map(([label,value]) => `<div class="mobile-detail-tile ${label === "환수" ? "refund" : ""}"><span>${label}</span><strong>${formatNumber(value)}</strong></div>`).join("");
+
+  host.innerHTML = `
+    <section class="mobile-overview-zone mobile-overview-goals">
+      <div class="mobile-zone-head"><div><span>SALES SNAPSHOT</span><strong>핵심 목표 진행</strong></div><em>실적 / 목표 / 달성률</em></div>
+      <div class="mobile-goal-list">${goalsHtml}</div>
+    </section>
+    ${focusCards ? `<section class="mobile-overview-zone"><div class="mobile-zone-head"><div><span>FOCUS</span><strong>집중관리</strong></div></div><div class="mobile-focus-grid">${focusCards}</div></section>` : ""}
+    <section class="mobile-overview-zone"><div class="mobile-zone-head"><div><span>DETAIL</span><strong>세부 실적</strong></div></div><div class="mobile-detail-grid">${detailItems}</div></section>
+  `;
+}
+
 function renderDashboard() {
   const records = filteredRecords();
   const goals = calculatedGoals($("#monthFilter").value);
@@ -7740,6 +7799,7 @@ function renderDashboard() {
   $("#summaryOverallTitle").textContent = `종합달성 ${formatNumber(goals.overallGoal)}`;
   $("#summaryNewActual").textContent = formatNumber(totals.newActual);
   renderDashboardCustomCards(records);
+  renderDashboardMobileOverview(records, goals, totals);
   $("#summaryNewOnly").textContent = formatNumber(totals.newCount);
   $("#summaryPackageActual").textContent = formatNumber(totals.packageCount);
   const summaryPackageSub = $("#summaryPackageSub");
@@ -7837,6 +7897,28 @@ function renderDashboardManagerConditionSummary(records, managers) {
   `).join("");
 
 
+
+  const mobileRows = [
+    {
+      manager: "합계",
+      conditionValues: totalConditions,
+      promoValues: totalPromo,
+      promoTotal: totalPromoScore,
+      total: true
+    },
+    ...rows
+  ];
+  const mobileHtml = mobileRows.map((row) => {
+    const conditionTiles = cards.map((card, index) => `<div class="condition-mobile-tile"><span>${escapeHtml(card.title || "조건")}</span><strong>${formatNumber(toNumber(row.conditionValues[index]))}</strong></div>`).join("");
+    const promoTiles = promoRules.map((rule, index) => `<div class="condition-mobile-promo-item"><span>${escapeHtml(rule.title || rule.keyword || "항목")}</span><strong>${formatNumber(toNumber(row.promoValues[index]))}점</strong></div>`).join("");
+    return `
+      <article class="condition-mobile-card ${row.total ? "total" : ""}">
+        <div class="condition-mobile-card-head"><strong>${escapeHtml(row.manager)}</strong>${promoRules.length ? `<span>프로모션 <b>${formatNumber(toNumber(row.promoTotal))}점</b></span>` : `<span>프로모션 없음</span>`}</div>
+        ${conditionTiles ? `<div class="condition-mobile-grid">${conditionTiles}</div>` : ""}
+        ${promoTiles ? `<details class="condition-mobile-details"><summary>프로모션 항목 보기</summary><div class="condition-mobile-promo-grid">${promoTiles}</div></details>` : ""}
+      </article>`;
+  }).join("");
+
   host.innerHTML = `
     <div class="manager-condition-summary-head">
       <div>
@@ -7844,6 +7926,7 @@ function renderDashboardManagerConditionSummary(records, managers) {
       </div>
       ${promo ? `<span class="manager-condition-promo-period">${escapeHtml(promo.name || "100점을 잡아라")}</span>` : ""}
     </div>
+    <div class="manager-condition-mobile-list">${mobileHtml}</div>
     <div class="table-wrap manager-condition-table-wrap">
       <table class="manager-condition-table">
         <thead>
@@ -10013,7 +10096,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.39",
+    version: "V10.40",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -14450,7 +14533,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.39";
+const APP_VERSION = "v10.40";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";
