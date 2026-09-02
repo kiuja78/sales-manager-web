@@ -10393,7 +10393,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.43",
+    version: "V10.44",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -14832,11 +14832,72 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.43";
-const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
-const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
-const SALES_MANAGER_LATEST_VERSION = "v10";
+const APP_VERSION = "v10.44";
+const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
+const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
+const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
 const UPDATE_DISMISS_KEY = "mjSalesUpdateDismissedVersion";
+let cachedReleaseInfo = null;
+
+function releaseVersionCandidates(release = {}) {
+  const values = [release.name, release.tag_name, ...(Array.isArray(release.assets) ? release.assets.map((asset) => asset?.name) : [])];
+  const found = [];
+  values.filter(Boolean).forEach((value) => {
+    const matches = String(value).match(/v?\d+(?:\.\d+){1,3}/gi) || [];
+    matches.forEach((item) => found.push(item.replace(/^v/i, "v")));
+  });
+  return found;
+}
+
+function highestVersionText(values = [], fallback = APP_VERSION) {
+  return values.reduce((best, value) => compareVersionText(value, best) > 0 ? value : best, fallback);
+}
+
+async function fetchSalesManagerReleaseInfo(force = false) {
+  if (cachedReleaseInfo && !force) return cachedReleaseInfo;
+  try {
+    const response = await fetch(UPDATE_RELEASE_API_URL, {
+      cache: "no-store",
+      headers: { "Accept": "application/vnd.github+json" }
+    });
+    if (!response.ok) throw new Error(`GitHub ${response.status}`);
+    cachedReleaseInfo = await response.json();
+    return cachedReleaseInfo;
+  } catch (error) {
+    console.warn("영업관리시스템 릴리즈 정보 확인 실패", error);
+    return null;
+  }
+}
+
+function preferredUpdateAsset(release = {}) {
+  const assets = Array.isArray(release.assets) ? release.assets : [];
+  if (!assets.length) return null;
+  const scored = assets.map((asset) => {
+    const name = String(asset?.name || "");
+    let score = 0;
+    if (/^Sales_Manager\.zip$/i.test(name)) score += 120;
+    if (/sales[_ -]?manager/i.test(name)) score += 50;
+    if (/setup/i.test(name)) score += 45;
+    if (/user|사용자/i.test(name)) score += 35;
+    if (/\.exe$/i.test(name)) score += 25;
+    if (/\.zip$/i.test(name)) score += 20;
+    if (/branch|지국|타지국/i.test(name)) score -= 80;
+    return { asset, score };
+  }).sort((a, b) => b.score - a.score);
+  return scored[0]?.score > 0 ? scored[0].asset : null;
+}
+
+async function resolveLatestProgramVersion() {
+  const release = await fetchSalesManagerReleaseInfo();
+  if (!release) return APP_VERSION;
+  return highestVersionText(releaseVersionCandidates(release), APP_VERSION);
+}
+
+async function resolveUpdateDownloadUrl() {
+  const release = await fetchSalesManagerReleaseInfo(true);
+  const asset = release ? preferredUpdateAsset(release) : null;
+  return asset?.browser_download_url || release?.html_url || UPDATE_RELEASES_URL;
+}
 
 function normalizeVersionText(version = "") {
   return String(version || "").trim().replace(/^v/i, "");
@@ -14890,8 +14951,17 @@ function closeUpdateModal() {
   document.body.classList.remove("update-modal-open");
 }
 
-function openReleaseDownloadPage() {
-  window.open(UPDATE_DOWNLOAD_URL, "_blank", "noopener,noreferrer");
+async function openReleaseDownloadPage() {
+  const popup = window.open("about:blank", "_blank");
+  try {
+    const url = await resolveUpdateDownloadUrl();
+    if (popup) popup.location.replace(url);
+    else window.location.href = url;
+  } catch (error) {
+    console.warn("업데이트 다운로드 링크 확인 실패", error);
+    if (popup) popup.location.replace(UPDATE_RELEASES_URL);
+    else window.location.href = UPDATE_RELEASES_URL;
+  }
 }
 
 function downloadLatestUpdate() {
@@ -14899,25 +14969,26 @@ function downloadLatestUpdate() {
 }
 
 async function manualCheckForProgramUpdate() {
-  const latestVersion = SALES_MANAGER_LATEST_VERSION;
+  const latestVersion = await resolveLatestProgramVersion();
   const compare = compareVersionText(APP_VERSION, latestVersion);
   if (compare < 0) {
-    setSettingsVersionStatus(latestVersion, "새 버전이 있습니다. 업데이트 버튼을 눌러 바로 다운로드하세요.");
+    setSettingsVersionStatus(latestVersion, "새 버전이 있습니다. 업데이트 버튼을 누르면 GitHub 배포파일을 확인해 자동으로 엽니다.");
     openUpdateModal(latestVersion);
     showToast(`최신 버전은 ${versionLabelForDisplay(latestVersion)} 입니다.`);
   } else {
-    setSettingsVersionStatus(latestVersion, "현재 최신 버전을 사용 중입니다.");
+    setSettingsVersionStatus(APP_VERSION, "현재 최신 버전을 사용 중입니다. 업데이트 버튼은 현재 배포파일을 다시 받을 때 사용할 수 있습니다.");
     showToast("현재 최신 버전입니다.");
   }
 }
 
 async function checkForProgramUpdate() {
-  const latestVersion = SALES_MANAGER_LATEST_VERSION;
-  setSettingsVersionStatus(latestVersion, compareVersionText(APP_VERSION, latestVersion) < 0
-    ? "새 버전이 있습니다. 업데이트 버튼을 눌러 바로 다운로드하세요."
+  const latestVersion = await resolveLatestProgramVersion();
+  const compare = compareVersionText(APP_VERSION, latestVersion);
+  setSettingsVersionStatus(compare < 0 ? latestVersion : APP_VERSION, compare < 0
+    ? "새 버전이 있습니다. 업데이트 버튼을 누르면 GitHub 배포파일을 확인해 자동으로 엽니다."
     : "현재 최신 버전을 사용 중입니다.");
   if (localStorage.getItem(UPDATE_DISMISS_KEY) === latestVersion) return;
-  if (compareVersionText(APP_VERSION, latestVersion) < 0) openUpdateModal(latestVersion);
+  if (compare < 0) openUpdateModal(latestVersion);
 }
 
 function openCompleteResetModal() {

@@ -23562,3 +23562,85 @@ body[data-view="records"] .record-form-row.row-basic {
   #evaluationView .evaluation-part-score-cards { grid-template-columns: 1fr; }
   #evaluationView .evaluation-section-nav .ghost-button { flex: 1 1 calc(50% - 4px); }
 }
+
+
+/* V10.44 급여계산 / 월별도표 단일 타이틀 + 영역형 레이아웃 */
+.payroll-page-v1044,
+.renewal-guide-page-v1044 { gap: 16px !important; }
+.payroll-workflow-panel,
+.renewal-guide-control-panel { overflow:hidden; border:1px solid #cfddd6 !important; box-shadow:0 8px 24px rgba(25,59,45,.05); }
+.payroll-workflow-head,
+.renewal-guide-control-head { align-items:flex-start !important; padding-bottom:14px !important; border-bottom:1px solid #e0e9e5; }
+.payroll-workflow-head h2,
+.renewal-guide-control-head h2 { margin:0; font-size:19px; color:#173d31; }
+.payroll-workflow-badge,
+.renewal-guide-auto-badge { display:inline-flex; align-items:center; justify-content:center; min-height:30px; padding:0 11px; border-radius:999px; background:#eaf5ef; color:#236c52; font-size:11px; font-weight:900; }
+.payroll-workflow-grid,
+.renewal-guide-control-grid { display:grid; grid-template-columns:1.05fr 1fr 1.25fr; gap:12px; padding:16px; }
+.payroll-workflow-zone,
+.renewal-guide-control-zone { min-width:0; display:grid; grid-template-columns:34px minmax(0,1fr); gap:10px; align-items:start; padding:14px; border:1px solid #dce7e2; border-radius:16px; background:#fbfdfc; }
+.payroll-workflow-zone.import-zone,
+.renewal-guide-control-zone:nth-child(2) { background:#f7faff; border-color:#d9e4f0; }
+.payroll-workflow-zone.action-zone,
+.renewal-guide-control-zone.action-zone { background:#fffaf0; border-color:#ecdfbd; }
+.payroll-step-number,
+.renewal-guide-zone-step { width:30px; height:30px; display:inline-flex; align-items:center; justify-content:center; border-radius:10px; background:#236b51; color:#fff; font-size:13px; font-weight:950; }
+.payroll-step-content,
+.renewal-guide-zone-body { min-width:0; display:grid; gap:8px; }
+.payroll-step-content > strong,
+.renewal-guide-zone-body > strong { font-size:14px; color:#193b30; }
+.payroll-step-help,
+.renewal-guide-zone-help,
+.renewal-guide-control-head p { color:#6d7f78; font-size:11px; line-height:1.45; }
+.payroll-step-controls,
+.renewal-guide-zone-controls { display:flex; gap:8px; align-items:end; flex-wrap:wrap; }
+.payroll-step-controls.two-cols { display:grid; grid-template-columns:minmax(135px,1fr) minmax(135px,1fr); }
+.payroll-step-controls.actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); }
+.payroll-step-controls.actions #payrollClearBtn { grid-column:1 / -1; }
+.payroll-step-content label,
+.renewal-guide-zone-body label { display:grid; gap:5px; min-width:0; color:#63756e; font-size:11px; font-weight:800; }
+.payroll-step-content input,
+.payroll-step-content select,
+.renewal-guide-zone-body input,
+.renewal-guide-zone-body select { width:100%; min-height:40px; border-radius:10px; }
+.payroll-file-button { min-height:42px; width:100%; cursor:pointer; }
+.payroll-view-filter-row { display:flex; align-items:center; justify-content:space-between; gap:14px; margin:0 16px 16px; padding:12px 14px; border-radius:13px; background:#f2f7f4; border:1px solid #dbe7e1; }
+.payroll-view-filter-row > div { display:grid; gap:2px; }
+.payroll-view-filter-row strong { color:#24483a; font-size:13px; }
+.payroll-view-filter-row span { color:#77877f; font-size:11px; }
+.payroll-view-filter-row .payroll-seller-filter { min-width:220px; }
+.payroll-zone-panel .panel-head { align-items:center; }
+.payroll-zone-panel .panel-head > div { display:grid; gap:2px; }
+.payroll-section-kicker,
+.renewal-guide-preview-kicker { color:#718b80; font-size:10px; font-weight:950; letter-spacing:.08em; }
+.payroll-summary-grid { padding:0 14px 14px; }
+.payroll-summary-card { border-radius:16px !important; padding:15px 16px !important; background:linear-gradient(180deg,#fff 0%,#fbfdfc 100%) !important; }
+.payroll-summary-card strong { color:#173d31; font-size:22px !important; }
+.payroll-table-panel,
+.payroll-archive-panel { overflow:hidden; }
+.payroll-table-wrap { margin:0 12px 12px; border:1px solid #e1e8e4; border-radius:13px; overflow:auto; }
+.payroll-archives-list { padding:0 14px 14px; }
+.danger-light { color:#a04a38 !important; border-color:#e7c9c1 !important; background:#fff8f6 !important; }
+.renewal-guide-control-grid { grid-template-columns:1.15fr 1fr .85fr; }
+.renewal-guide-zone-controls > label { flex:1 1 150px; }
+.renewal-guide-control-zone.action-zone .primary-button { min-height:42px; width:100%; }
+.renewal-guide-preview-head > div { display:grid; gap:2px; }
+.renewal-guide-preview-head h2 { margin:0; font-size:18px; color:#173c30; }
+.renewal-guide-preview-panel { overflow:hidden; }
+.renewal-guide-preview { background:#f7faf8; border-top:1px solid #e3ebe7; padding:16px !important; }
+.renewal-guide-preview > .renewal-sheet { box-shadow:0 6px 22px rgba(35,69,55,.07); border-radius:12px; overflow:hidden; }
+@media (max-width:1100px) {
+  .payroll-workflow-grid,.renewal-guide-control-grid { grid-template-columns:1fr; }
+  .payroll-step-controls.two-cols { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width:850px) {
+  .payroll-workflow-grid,.renewal-guide-control-grid { padding:12px; gap:9px; }
+  .payroll-workflow-zone,.renewal-guide-control-zone { padding:12px; }
+  .payroll-step-controls.two-cols,.payroll-step-controls.actions { grid-template-columns:1fr; }
+  .payroll-step-controls.actions #payrollClearBtn { grid-column:auto; }
+  .payroll-view-filter-row { align-items:stretch; flex-direction:column; margin:0 12px 12px; }
+  .payroll-view-filter-row .payroll-seller-filter { width:100%; min-width:0; }
+  .payroll-summary-grid { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+  .renewal-guide-preview-head { align-items:flex-start !important; flex-direction:column; }
+}
+@media (max-width:560px) { .payroll-summary-grid { grid-template-columns:1fr !important; } }
