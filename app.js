@@ -173,35 +173,112 @@ function defaultManagementEvaluationProductRules(type) {
 }
 
 function defaultManagementEvaluationPolicyItem(kind = "count") {
-  const isRate = kind === "rate";
+  const normalizedKind = ["count", "rate", "percentile"].includes(kind) ? kind : "count";
+  const isRate = normalizedKind === "rate";
+  const isPercentile = normalizedKind === "percentile";
   return {
     id: uid("evaluation-policy"),
-    title: isRate ? "정수기 목표 달성률" : "정책상품",
-    kind: isRate ? "rate" : "count",
+    title: isRate ? "목표 달성률" : isPercentile ? "상대평가 정책영업" : "정책상품",
+    description: "",
+    kind: normalizedKind,
     keywords: isRate ? ["CP-"] : [],
+    requiredKeywords: [],
     excludeKeywords: [],
-    manualLabel: isRate ? "" : "추가 수량",
+    categoryFilter: "business",
+    countBasis: "record",
+    manualLabel: isPercentile ? "상위 백분위(%)" : isRate ? "" : "추가 수량",
     manualRequired: !isRate,
     goalBase: "new-rental",
     targetRate: isRate ? 55 : 0,
+    scoreMode: isPercentile ? "at-most" : "at-least",
     scoreRules: isRate
       ? [[80, 2], [85, 4], [90, 6], [95, 8], [100, 10]]
-      : [[1, 1], [2, 2], [3, 3], [4, 5]]
+      : isPercentile
+        ? [[10, 10], [30, 7], [60, 5], [80, 3], [100, 1]]
+        : [[1, 1], [2, 2], [3, 3], [4, 5]]
   };
 }
 
 function defaultManagementEvaluationPolicy(month = "") {
+  // 2026년 9월 정책이행: 사용자가 제공한 본사 기준표를 기본 템플릿으로 반영.
+  // 상대평가(쿠쿠데이)는 지국 내 데이터만으로 '상위 백분위'를 계산할 수 없으므로
+  // 해당 백분위만 수기로 입력하고, 정책영업 건수는 조건에 따라 자동 집계한다.
+  if (month === "2026-09") {
+    return {
+      primaryProducts: defaultManagementEvaluationProductRules("primary"),
+      highValueProducts: defaultManagementEvaluationProductRules("high"),
+      policyItems: [
+        {
+          id: "policy-cuckoo-day",
+          title: "쿠쿠데이 정책 영업 건수",
+          description: "정수기·공기청정기·비데 기준 · 렌탈 건에 한함 · 상품명에 [쿠쿠데이] 포함 건만 평가",
+          kind: "percentile",
+          keywords: ["CP-", "AC-", "CAC-", "CBT-"],
+          requiredKeywords: ["쿠쿠데이"],
+          excludeKeywords: [],
+          categoryFilter: "rental",
+          countBasis: "record",
+          manualLabel: "상위 백분위(%)",
+          manualRequired: true,
+          goalBase: "general",
+          targetRate: 0,
+          scoreMode: "at-most",
+          scoreRules: [[10, 10], [30, 7], [60, 5], [80, 3], [100, 1]]
+        },
+        {
+          id: "policy-mattress",
+          title: "매트리스 케어 제품",
+          description: "세트 및 단품 포함 · 프레임 제외",
+          kind: "count",
+          keywords: ["CRM-"],
+          requiredKeywords: [],
+          excludeKeywords: ["프레임"],
+          categoryFilter: "all",
+          countBasis: "record",
+          manualLabel: "",
+          manualRequired: false,
+          goalBase: "general",
+          targetRate: 0,
+          scoreMode: "at-least",
+          scoreRules: [[2, 2], [3, 3], [4, 4], [5, 7]]
+        },
+        {
+          id: "policy-massage",
+          title: "안마의자 전모델",
+          description: "안마의자 전모델",
+          kind: "count",
+          keywords: ["CMS-"],
+          requiredKeywords: [],
+          excludeKeywords: [],
+          categoryFilter: "all",
+          countBasis: "record",
+          manualLabel: "",
+          manualRequired: false,
+          goalBase: "general",
+          targetRate: 0,
+          scoreMode: "at-least",
+          scoreRules: [[1, 1], [2, 2], [3, 3], [4, 5]]
+        }
+      ]
+    };
+  }
+
   const isAugust2026 = month === "2026-08";
   const massageOrWindow = {
     id: isAugust2026 ? "policy-window" : "policy-massage",
     title: isAugust2026 ? "창문형" : "안마의자",
+    description: "",
     kind: "count",
     keywords: isAugust2026 ? ["창문형"] : ["CMS-"],
+    requiredKeywords: [],
     excludeKeywords: [],
+    categoryFilter: isAugust2026 ? "cash" : "new-rental",
+    countBasis: "product",
     manualLabel: "팀 추가 수량",
     manualRequired: true,
     goalBase: isAugust2026 ? "lump-sum" : "new-rental",
     targetRate: 0,
+    scoreMode: "at-least",
     scoreRules: [[1, 1], [2, 2], [3, 3], [4, 5]]
   };
   return {
@@ -212,25 +289,35 @@ function defaultManagementEvaluationPolicy(month = "") {
       {
         id: "policy-mattress",
         title: "매트리스 케어",
+        description: "",
         kind: "count",
         keywords: ["CRM-", "6C", "12C", "4C", "케어B"],
+        requiredKeywords: [],
         excludeKeywords: [],
+        categoryFilter: "all",
+        countBasis: "record",
         manualLabel: "팀 추가 수량",
         manualRequired: true,
         goalBase: "new-rental",
         targetRate: 0,
+        scoreMode: "at-least",
         scoreRules: [[2, 2], [3, 3], [4, 4], [5, 7]]
       },
       {
         id: "policy-water",
         title: "정수기 목표 달성률",
+        description: "",
         kind: "rate",
         keywords: ["CP-"],
+        requiredKeywords: [],
         excludeKeywords: [],
+        categoryFilter: "business",
+        countBasis: "record",
         manualLabel: "",
         manualRequired: false,
         goalBase: "new-rental",
         targetRate: isAugust2026 ? 55 : 65,
+        scoreMode: "at-least",
         scoreRules: [[80, 2], [85, 4], [90, 6], [95, 8], [100, 10]]
       }
     ]
@@ -258,24 +345,42 @@ function normalizeManagementEvaluationProductRule(item, type = "primary") {
   };
 }
 
+function managementEvaluationLegacyCategoryFilter(source = {}, kind = "count") {
+  if (source.categoryFilter) return source.categoryFilter;
+  if (kind === "rate") return "business";
+  return ({
+    "new": "new",
+    "new-rental": "new-rental",
+    "lump-sum": "cash",
+    "general": "business"
+  })[source.goalBase] || "business";
+}
+
 function normalizeManagementEvaluationPolicyItem(item = {}) {
   const source = item && typeof item === "object" ? item : {};
-  const kind = source.kind === "rate" ? "rate" : "count";
+  const kind = ["count", "rate", "percentile"].includes(source.kind) ? source.kind : "count";
   const fallback = defaultManagementEvaluationPolicyItem(kind);
+  const validCategoryFilters = ["all", "business", "rental", "new-rental", "new", "package", "rerental", "cash", "membership"];
+  const categoryFilter = managementEvaluationLegacyCategoryFilter(source, kind);
   return {
     id: String(source.id || fallback.id),
     title: String(source.title || fallback.title).trim() || fallback.title,
+    description: String(source.description || "").trim(),
     kind,
     keywords: evaluationKeywordList(source.keywords === undefined ? fallback.keywords : source.keywords),
+    requiredKeywords: evaluationKeywordList(source.requiredKeywords),
     excludeKeywords: evaluationKeywordList(source.excludeKeywords),
-    manualLabel: kind === "count"
-      ? String(source.manualLabel === undefined ? fallback.manualLabel : source.manualLabel).trim()
-      : "",
-    manualRequired: kind === "count" ? source.manualRequired !== false : false,
+    categoryFilter: validCategoryFilters.includes(categoryFilter) ? categoryFilter : fallback.categoryFilter,
+    countBasis: source.countBasis === "product" ? "product" : "record",
+    manualLabel: kind === "rate"
+      ? ""
+      : String(source.manualLabel === undefined ? fallback.manualLabel : source.manualLabel).trim(),
+    manualRequired: kind === "percentile" ? true : kind === "count" ? source.manualRequired !== false : false,
     goalBase: ["new", "new-rental", "lump-sum", "general"].includes(source.goalBase)
       ? source.goalBase
       : fallback.goalBase,
     targetRate: kind === "rate" ? Math.max(0, evaluationNullableNumber(source.targetRate) ?? fallback.targetRate) : 0,
+    scoreMode: source.scoreMode === "at-most" || kind === "percentile" ? "at-most" : "at-least",
     scoreRules: normalizeManagementEvaluationScoreRules(source.scoreRules, kind)
   };
 }
@@ -287,8 +392,17 @@ function normalizeManagementEvaluationPolicy(value = {}, month = "") {
     .map((item) => normalizeManagementEvaluationProductRule(item, "primary"));
   const highValueProducts = (Array.isArray(source.highValueProducts) ? source.highValueProducts : defaults.highValueProducts)
     .map((item) => normalizeManagementEvaluationProductRule(item, "high"));
-  const policyItems = (Array.isArray(source.policyItems) ? source.policyItems : defaults.policyItems)
-    .map(normalizeManagementEvaluationPolicyItem);
+
+  // V10.42: 2026-09에 기존 8월형 3개 정책(창문형/매트리스/정수기)이 자동 복사돼 있던 경우만
+  // 새 9월 정책 템플릿으로 안전하게 전환한다. 사용자가 별도로 커스텀한 9월 정책은 유지한다.
+  const sourcePolicyItems = Array.isArray(source.policyItems) ? source.policyItems : null;
+  const legacySeptember = month === "2026-09" && sourcePolicyItems && sourcePolicyItems.length === 3
+    && sourcePolicyItems.some((item) => item?.id === "policy-water")
+    && sourcePolicyItems.some((item) => item?.id === "policy-mattress")
+    && sourcePolicyItems.some((item) => item?.id === "policy-window" || item?.id === "policy-massage")
+    && !sourcePolicyItems.some((item) => item?.id === "policy-cuckoo-day");
+  const policySource = legacySeptember ? defaults.policyItems : (sourcePolicyItems || defaults.policyItems);
+  const policyItems = policySource.map(normalizeManagementEvaluationPolicyItem);
   return { primaryProducts, highValueProducts, policyItems };
 }
 
@@ -298,7 +412,6 @@ function normalizeManagementEvaluationPolicies(value = {}) {
     .filter(([month]) => /^\d{4}-\d{2}$/.test(month))
     .map(([month, policy]) => [month, normalizeManagementEvaluationPolicy(policy, month)]));
 }
-
 
 function defaultOperatingGoalEntry() {
   return {
@@ -5879,9 +5992,10 @@ function dashboardMattressCareMatch(record) {
 function managementEvaluationRuleMatches(productText, rule = {}) {
   const text = managementEvaluationNormalizedProduct(productText);
   const keywords = evaluationKeywordList(rule.keywords);
+  const required = evaluationKeywordList(rule.requiredKeywords);
   const excludes = evaluationKeywordList(rule.excludeKeywords);
-  return keywords.length > 0
-    && keywords.some((keyword) => text.includes(keyword))
+  return (keywords.length === 0 || keywords.some((keyword) => text.includes(keyword)))
+    && required.every((keyword) => text.includes(keyword))
     && !excludes.some((keyword) => text.includes(keyword));
 }
 
@@ -5967,17 +6081,27 @@ function managementEvaluationScoreDown(rate, baseRate, stepRate, baseScore, step
   return Math.min(maxScore, baseScore + steps * stepScore);
 }
 
-function managementEvaluationPolicyScoreByUnits(units, thresholds) {
+function managementEvaluationPolicyScoreByUnits(units, thresholds, scoreMode = "at-least") {
+  const value = Number(units);
+  if (!Number.isFinite(value)) return null;
+  const rows = Array.isArray(thresholds) ? thresholds.slice().sort((a, b) => toNumber(a[0]) - toNumber(b[0])) : [];
+  if (scoreMode === "at-most") {
+    const matched = rows.find(([maximum]) => value <= toNumber(maximum));
+    return matched ? toNumber(matched[1]) : 0;
+  }
   let score = 0;
-  thresholds.forEach(([minimum, points]) => {
-    if (units >= minimum) score = points;
+  rows.forEach(([minimum, points]) => {
+    if (value >= toNumber(minimum)) score = toNumber(points);
   });
   return score;
 }
 
 function managementEvaluationPolicyCriteriaText(item) {
+  const suffix = item.kind === "count" ? "대" : "%";
   return item.scoreRules
-    .map(([minimum, score]) => item.kind === "rate" ? `${formatNumber(minimum)}% ${formatNumber(score)}점` : `${formatNumber(minimum)}대 ${formatNumber(score)}점`)
+    .map(([threshold, score]) => item.scoreMode === "at-most"
+      ? `${formatNumber(threshold)}${suffix} 이하 ${formatNumber(score)}점`
+      : `${formatNumber(threshold)}${suffix} 이상 ${formatNumber(score)}점`)
     .join(" · ");
 }
 
@@ -5990,27 +6114,74 @@ function managementEvaluationGoalBaseLabel(goalBase) {
   })[goalBase] || "신규+재렌탈";
 }
 
-function managementEvaluationGoalBaseMatches(record, goalBase) {
+function managementEvaluationPolicyCategoryLabel(filter) {
+  return ({
+    "all": "전체 접수",
+    "business": "영업 전체",
+    "rental": "렌탈(신규+패키지+재렌탈)",
+    "new-rental": "신규+재렌탈",
+    "new": "신규",
+    "package": "패키지",
+    "rerental": "재렌탈",
+    "cash": "일시불",
+    "membership": "멤버십"
+  })[filter] || "영업 전체";
+}
+
+function managementEvaluationPolicyCategoryMatches(record, filter = "business") {
   const category = normalizeCategory(record?.category);
-  switch (goalBase) {
-    case "new":
-      return category === "신규";
-    case "new-rental":
-      return category === "신규" || category === "재렌탈";
-    case "lump-sum":
-      return category === "일시불";
-    case "general":
-    default:
-      return managementEvaluationIsBusinessRecord(record);
+  switch (filter) {
+    case "all": return true;
+    case "rental": return ["신규", "패키지", "재렌탈"].includes(category);
+    case "new-rental": return category === "신규" || category === "재렌탈";
+    case "new": return category === "신규";
+    case "package": return category === "패키지";
+    case "rerental": return category === "재렌탈";
+    case "cash": return category === "일시불";
+    case "membership": return isMembershipRecord(record);
+    case "business":
+    default: return managementEvaluationIsBusinessRecord(record);
   }
 }
 
-function managementEvaluationPolicyItemMetrics(records, goals, input, item, month = managementEvaluationMonth()) {
-  const isWaterRateItem = item?.id === "policy-water" || (item.kind === "rate" && String(item.title || "").includes("정수기"));
-  const isMattressCareItem = item.id === "policy-mattress" || String(item.title || "").trim() === "매트리스 케어";
+function managementEvaluationGoalBaseMatches(record, goalBase) {
+  return managementEvaluationPolicyCategoryMatches(record, ({
+    "new": "new",
+    "new-rental": "new-rental",
+    "lump-sum": "cash",
+    "general": "business"
+  })[goalBase] || "business");
+}
 
-  // V10.39: 정수기는 대시보드와 경영평가가 동일한 영업접수행 기준 metric을 그대로 사용합니다.
-  if (isWaterRateItem) {
+function managementEvaluationPolicyProductMatches(productText, item = {}) {
+  const text = managementEvaluationNormalizedProduct(productText);
+  const keywords = evaluationKeywordList(item.keywords);
+  const required = evaluationKeywordList(item.requiredKeywords);
+  const excludes = evaluationKeywordList(item.excludeKeywords);
+  const anyMatch = !keywords.length || keywords.some((keyword) => text.includes(keyword));
+  const requiredMatch = required.every((keyword) => text.includes(keyword));
+  const excluded = excludes.some((keyword) => text.includes(keyword));
+  return anyMatch && requiredMatch && !excluded;
+}
+
+function managementEvaluationPolicyMatchedUnits(records, item = {}) {
+  const eligible = (records || []).filter((record) => managementEvaluationPolicyCategoryMatches(record, item.categoryFilter));
+  if (item.countBasis === "product") {
+    return eligible.reduce((sum, record) => sum + managementEvaluationProductItems(record)
+      .filter((product) => managementEvaluationPolicyProductMatches(product, item))
+      .reduce((itemSum) => itemSum + managementEvaluationPhysicalCount(record), 0), 0);
+  }
+  return eligible.reduce((sum, record) => {
+    const matched = managementEvaluationProductItems(record).some((product) => managementEvaluationPolicyProductMatches(product, item));
+    return sum + (matched ? managementEvaluationPhysicalCount(record) : 0);
+  }, 0);
+}
+
+function managementEvaluationPolicyItemMetrics(records, goals, input, item, month = managementEvaluationMonth()) {
+  const isLegacyWaterRateItem = item?.id === "policy-water" && item.kind === "rate";
+
+  // 기존 정수기 목표 달성률 항목은 대시보드 정수기 KPI와 동일 기준 유지.
+  if (isLegacyWaterRateItem) {
     const water = waterPurifierEvaluationMetrics(month);
     return {
       ...item,
@@ -6019,29 +6190,34 @@ function managementEvaluationPolicyItemMetrics(records, goals, input, item, mont
       totalUnits: water.current,
       goal: water.goal,
       rate: water.achievementRate,
-      score: managementEvaluationPolicyScoreByUnits(water.achievementRate, item.scoreRules)
+      score: managementEvaluationPolicyScoreByUnits(water.achievementRate, item.scoreRules, item.scoreMode)
     };
   }
 
-  // 매트리스 케어는 판매종류(신규/재렌탈/일시불)와 무관하게
-  // CRM-으로 시작하면서 6C/12C/4C/케어B 중 하나가 포함된 접수행을 1건으로 인정한다.
-  // 따라서 goalBase 필터를 먼저 적용하면 안 된다.
-  const eligibleRecords = isMattressCareItem
-    ? records
-    : records.filter((record) => managementEvaluationGoalBaseMatches(record, item.goalBase));
+  const matchedUnits = managementEvaluationPolicyMatchedUnits(records, item);
 
-    const matchedUnits = isMattressCareItem
-    ? eligibleRecords.filter((record) => isMattressCareRecord(record)).length
-    : eligibleRecords.reduce((sum, record) => sum + managementEvaluationProductItems(record)
-      .filter((product) => managementEvaluationRuleMatches(product, item))
-      .reduce((itemSum) => itemSum + managementEvaluationPhysicalCount(record), 0), 0);
+  if (item.kind === "percentile") {
+    const manualValue = input.policyManual?.[item.id];
+    const percentile = manualValue === null || manualValue === undefined || manualValue === "" ? null : Math.max(0, Math.min(100, toNumber(manualValue)));
+    return {
+      ...item,
+      autoUnits: matchedUnits,
+      manualUnits: percentile,
+      totalUnits: matchedUnits,
+      goal: null,
+      rate: percentile,
+      score: percentile === null ? null : managementEvaluationPolicyScoreByUnits(percentile, item.scoreRules, "at-most")
+    };
+  }
 
   if (item.kind === "rate") {
     const baseGoal = item.goalBase === "new"
       ? toNumber(goals.newGoal)
       : item.goalBase === "general"
         ? toNumber(goals.generalGoal)
-        : toNumber(goals.newGoal) + toNumber(goals.rentalGoal);
+        : item.goalBase === "lump-sum"
+          ? toNumber(goals.cashGoal || 0)
+          : toNumber(goals.newGoal) + toNumber(goals.rentalGoal);
     const goal = baseGoal * (toNumber(item.targetRate) / 100);
     const rate = goal > 0 ? matchedUnits / goal * 100 : 0;
     return {
@@ -6051,13 +6227,10 @@ function managementEvaluationPolicyItemMetrics(records, goals, input, item, mont
       totalUnits: matchedUnits,
       goal,
       rate,
-      score: managementEvaluationPolicyScoreByUnits(rate, item.scoreRules)
+      score: managementEvaluationPolicyScoreByUnits(rate, item.scoreRules, item.scoreMode)
     };
   }
 
-  // 수기 추가수량은 선택 입력값이다.
-  // 자동 실적이 있으면 수기 입력이 비어 있어도 자동 실적만으로 점수를 계산한다.
-  // 수기 입력값이 들어오면 자동 실적에 더해서 점수를 계산한다.
   const manualValue = input.policyManual?.[item.id];
   const manualUnits = manualValue === null || manualValue === undefined || manualValue === ""
     ? 0
@@ -6070,7 +6243,7 @@ function managementEvaluationPolicyItemMetrics(records, goals, input, item, mont
     totalUnits,
     goal: null,
     rate: null,
-    score: managementEvaluationPolicyScoreByUnits(totalUnits, item.scoreRules)
+    score: managementEvaluationPolicyScoreByUnits(totalUnits, item.scoreRules, item.scoreMode)
   };
 }
 
@@ -6139,13 +6312,10 @@ function managementEvaluationMetrics(month = managementEvaluationMonth()) {
     : toNumber(inspectionCompleted) / inspectionDenominator * 100;
   const happyTalkRate = input.happyTalkRate;
 
-  // V10.39: 정수기(CP-) KPI는 대시보드 선택카드와 동일한 공식 영업접수행 기준을 사용합니다.
-  // 비영업 행(멤버십/기타/공란)은 정수기 판매실적에 포함하지 않습니다.
-  const policyItems = policy.policyItems.map((item) => {
-    const isWaterRateItem = item?.id === "policy-water"
-      || (item?.kind === "rate" && String(item?.title || "").includes("정수기"));
-    return managementEvaluationPolicyItemMetrics(isWaterRateItem ? records : businessRecords, goals, input, item, month);
-  });
+  // V10.42: 정책이행 각 항목의 판매종류/포함/필수/제외 조건은 항목 자체 설정으로 판단한다.
+  const policyItems = policy.policyItems.map((item) =>
+    managementEvaluationPolicyItemMetrics(records, goals, input, item, month)
+  );
 
   const scores = {
     overall: managementEvaluationScoreUp(overallRate, 80, 10, 2, 1, 5),
@@ -6314,7 +6484,9 @@ function managementEvaluationRows(metrics) {
       item: item.title,
       value: item.kind === "rate"
         ? `${formatNumber(item.autoUnits)} / ${formatNumber(item.goal)} (${managementEvaluationFormatRate(item.rate)})`
-        : `자동 ${formatNumber(item.autoUnits)} + ${item.manualLabel || "추가"} ${item.manualUnits === null ? "-" : formatNumber(item.manualUnits)} = ${formatNumber(item.totalUnits)}대`,
+        : item.kind === "percentile"
+          ? `정책영업 ${formatNumber(item.autoUnits)}건 · ${item.manualUnits === null ? "상위 백분위 미입력" : `상위 ${formatNumber(item.manualUnits)}%`}`
+          : `자동 ${formatNumber(item.autoUnits)} + ${item.manualLabel || "추가"} ${item.manualUnits === null ? "-" : formatNumber(item.manualUnits)} = ${formatNumber(item.totalUnits)}건`,
       criteria: managementEvaluationPolicyCriteriaText(item),
       max: Math.max(0, ...item.scoreRules.map(([, score]) => toNumber(score))),
       score: item.score
@@ -6353,15 +6525,23 @@ function renderManagementEvaluationPolicyInputs(metrics) {
   if (!container) return;
   const countItems = metrics.policyItems.filter((item) => item.kind === "count");
   const rateItems = metrics.policyItems.filter((item) => item.kind === "rate");
-  const manualFields = countItems.filter((item) => item.manualLabel).map((item) => `
-    <label>${escapeHtml(item.title)} · ${escapeHtml(item.manualLabel)}
-      <input class="evaluation-policy-manual-input" data-policy-manual-id="${escapeHtml(item.id)}" type="number" min="0" step="1" value="${item.manualUnits === null ? "" : escapeHtml(item.manualUnits)}">
-    </label>`).join("");
-  const countPreviews = countItems.map((item) => `<div><span>${escapeHtml(item.title)}</span><strong>자동 ${formatNumber(item.autoUnits)} · 합계 ${formatNumber(item.totalUnits)}대</strong></div>`).join("");
+  const percentileItems = metrics.policyItems.filter((item) => item.kind === "percentile");
+  const manualFields = [
+    ...countItems.filter((item) => item.manualLabel).map((item) => `
+      <label>${escapeHtml(item.title)} · ${escapeHtml(item.manualLabel)}
+        <input class="evaluation-policy-manual-input" data-policy-manual-id="${escapeHtml(item.id)}" type="number" min="0" step="1" value="${item.manualUnits === null ? "" : escapeHtml(item.manualUnits)}">
+      </label>`),
+    ...percentileItems.map((item) => `
+      <label>${escapeHtml(item.title)} · ${escapeHtml(item.manualLabel || "상위 백분위(%)")}
+        <input class="evaluation-policy-manual-input" data-policy-manual-id="${escapeHtml(item.id)}" type="number" min="0" max="100" step="0.1" value="${item.manualUnits === null ? "" : escapeHtml(item.manualUnits)}" placeholder="예: 12.5">
+      </label>`)
+  ].join("");
+  const countPreviews = countItems.map((item) => `<div><span>${escapeHtml(item.title)}</span><strong>자동 ${formatNumber(item.autoUnits)} · 합계 ${formatNumber(item.totalUnits)}건</strong></div>`).join("");
   const ratePreviews = rateItems.map((item) => `<div><span>${escapeHtml(item.title)}</span><strong>${formatNumber(item.autoUnits)} / ${formatNumber(item.goal)} (${managementEvaluationFormatRate(item.rate)})</strong></div>`).join("");
+  const percentilePreviews = percentileItems.map((item) => `<div><span>${escapeHtml(item.title)}</span><strong>정책영업 ${formatNumber(item.autoUnits)}건 · ${item.manualUnits === null ? "상위 백분위 입력 필요" : `상위 ${formatNumber(item.manualUnits)}% · ${formatNumber(item.score)}점`}</strong></div>`).join("");
   container.innerHTML = `
     <div class="evaluation-policy-manual">${manualFields || '<span class="muted">수기 입력 항목 없음</span>'}</div>
-    <div class="evaluation-policy-previews">${countPreviews}${ratePreviews || ''}</div>`;
+    <div class="evaluation-policy-previews">${countPreviews}${ratePreviews}${percentilePreviews}</div>`;
 }
 
 function evaluationPolicyProductRowsMarkup(type, rules) {
@@ -6377,21 +6557,39 @@ function renderManagementEvaluationPolicySettings(month = managementEvaluationMo
   const container = $("#evaluationPolicySettings");
   if (!container) return;
   const policy = managementEvaluationPolicy(month);
-  const policyRows = policy.policyItems.map((item) => `
+  const policyRows = policy.policyItems.map((item, index) => `
     <div class="evaluation-policy-editor-row" data-evaluation-policy-id="${escapeHtml(item.id)}">
+      <div class="evaluation-policy-row-head">
+        <strong>${index + 1}. ${escapeHtml(item.title)}</strong>
+        <button class="ghost-button small remove-evaluation-policy-item" type="button">삭제</button>
+      </div>
       <label>항목명<input class="evaluation-policy-title" value="${escapeHtml(item.title)}"></label>
-      <label>계산<select class="evaluation-policy-kind"><option value="count"${item.kind === "count" ? " selected" : ""}>수량</option><option value="rate"${item.kind === "rate" ? " selected" : ""}>달성률</option></select></label>
-      <label>모델·포함문구<input class="evaluation-policy-keywords" value="${escapeHtml(item.keywords.join(', '))}" placeholder="쉼표로 구분"></label>
-      <label class="evaluation-policy-manual-label">추가입력명<input class="evaluation-policy-manual-label-input" value="${escapeHtml(item.manualLabel)}" placeholder="예: 팀 추가 수량"></label>
-      <label class="evaluation-policy-manual-switch"><input class="evaluation-policy-manual-required" type="checkbox"${item.manualRequired ? " checked" : ""}> 수기 합산</label>
-      <label class="evaluation-policy-goal-base">목표 기준<select class="evaluation-policy-goal-base-select"><option value="new"${item.goalBase === "new" ? " selected" : ""}>신규만</option><option value="new-rental"${item.goalBase === "new-rental" ? " selected" : ""}>신규+재렌탈</option><option value="lump-sum"${item.goalBase === "lump-sum" ? " selected" : ""}>일시불</option><option value="general"${item.goalBase === "general" ? " selected" : ""}>전체</option></select></label>
-      <label class="evaluation-policy-target-rate">목표비율(%)<input class="evaluation-policy-target-rate-input" type="number" min="0" step="0.1" value="${escapeHtml(item.targetRate)}"></label>
-      <label>점수기준<input class="evaluation-policy-score-rules" value="${escapeHtml(managementEvaluationScoreRulesInputValue(item))}" placeholder="예: 1:1, 2:2"></label>
-      <button class="ghost-button small remove-evaluation-policy-item" type="button">삭제</button>
+      <label>평가방식<select class="evaluation-policy-kind">
+        <option value="count"${item.kind === "count" ? " selected" : ""}>수량 자동집계</option>
+        <option value="rate"${item.kind === "rate" ? " selected" : ""}>목표 달성률</option>
+        <option value="percentile"${item.kind === "percentile" ? " selected" : ""}>상위 백분위(수기)</option>
+      </select></label>
+      <label>집계 판매종류<select class="evaluation-policy-category-filter">
+        ${[
+          ["all","전체 접수"],["business","영업 전체"],["rental","렌탈(신규+패키지+재렌탈)"],["new-rental","신규+재렌탈"],
+          ["new","신규"],["package","패키지"],["rerental","재렌탈"],["cash","일시불"],["membership","멤버십"]
+        ].map(([value,label]) => `<option value="${value}"${item.categoryFilter === value ? " selected" : ""}>${label}</option>`).join("")}
+      </select></label>
+      <label>집계단위<select class="evaluation-policy-count-basis"><option value="record"${item.countBasis !== "product" ? " selected" : ""}>접수행 1건</option><option value="product"${item.countBasis === "product" ? " selected" : ""}>제품수량</option></select></label>
+      <label class="evaluation-policy-wide">정책 설명<input class="evaluation-policy-description" value="${escapeHtml(item.description || "")}" placeholder="예: 렌탈 건에 한함 · [쿠쿠데이] 상품명만 평가"></label>
+      <label class="evaluation-policy-wide">모델·포함문구(하나라도 일치)<input class="evaluation-policy-keywords" value="${escapeHtml(item.keywords.join(', '))}" placeholder="예: CP-, AC-, CBT-"></label>
+      <label class="evaluation-policy-wide">필수 포함문구(모두 일치)<input class="evaluation-policy-required-keywords" value="${escapeHtml(item.requiredKeywords.join(', '))}" placeholder="예: 쿠쿠데이"></label>
+      <label class="evaluation-policy-wide">제외문구<input class="evaluation-policy-exclude-keywords" value="${escapeHtml(item.excludeKeywords.join(', '))}" placeholder="예: 프레임"></label>
+      <label class="evaluation-policy-manual-label">수기 입력명<input class="evaluation-policy-manual-label-input" value="${escapeHtml(item.manualLabel)}" placeholder="예: 상위 백분위(%) / 팀 추가 수량"></label>
+      <label class="evaluation-policy-manual-switch"><input class="evaluation-policy-manual-required" type="checkbox"${item.manualRequired ? " checked" : ""}> 자동수량에 수기 합산</label>
+      <label class="evaluation-policy-goal-base">목표 기준(달성률용)<select class="evaluation-policy-goal-base-select"><option value="new"${item.goalBase === "new" ? " selected" : ""}>신규만</option><option value="new-rental"${item.goalBase === "new-rental" ? " selected" : ""}>신규+재렌탈</option><option value="lump-sum"${item.goalBase === "lump-sum" ? " selected" : ""}>일시불</option><option value="general"${item.goalBase === "general" ? " selected" : ""}>전체</option></select></label>
+      <label class="evaluation-policy-target-rate">목표비율(% · 달성률용)<input class="evaluation-policy-target-rate-input" type="number" min="0" step="0.1" value="${escapeHtml(item.targetRate)}"></label>
+      <label>점수방향<select class="evaluation-policy-score-mode"><option value="at-least"${item.scoreMode !== "at-most" ? " selected" : ""}>기준 이상이면 점수</option><option value="at-most"${item.scoreMode === "at-most" ? " selected" : ""}>기준 이하이면 점수</option></select></label>
+      <label class="evaluation-policy-wide">점수기준<input class="evaluation-policy-score-rules" value="${escapeHtml(managementEvaluationScoreRulesInputValue(item))}" placeholder="예: 2:2, 3:3, 4:4, 5:7"></label>
     </div>`).join("");
   container.innerHTML = `
     <div class="evaluation-policy-settings-block">
-      <div class="evaluation-policy-settings-head"><h3>정책이행</h3><button class="ghost-button small" id="addEvaluationPolicyItemBtn" type="button">항목 추가</button></div>
+      <div class="evaluation-policy-settings-head"><div><h3>정책이행 조건 설정</h3><p>평가월마다 집계대상·포함/필수/제외문구·점수방식을 직접 바꿀 수 있습니다.</p></div><button class="ghost-button small" id="addEvaluationPolicyItemBtn" type="button">항목 추가</button></div>
       <div class="evaluation-policy-editor-list">${policyRows || '<div class="empty">등록된 정책이행 항목이 없습니다.</div>'}</div>
     </div>
     <div class="evaluation-product-settings-grid">
@@ -6410,18 +6608,23 @@ function collectManagementEvaluationPolicySettings() {
   const month = managementEvaluationMonth();
   const current = managementEvaluationPolicy(month);
   const policyItems = $$("#evaluationPolicySettings .evaluation-policy-editor-row").map((row) => {
-    const kind = row.querySelector(".evaluation-policy-kind")?.value === "rate" ? "rate" : "count";
-    const previous = current.policyItems.find((item) => item.id === row.dataset.evaluationPolicyId);
+    const rawKind = row.querySelector(".evaluation-policy-kind")?.value || "count";
+    const kind = ["count", "rate", "percentile"].includes(rawKind) ? rawKind : "count";
     return {
       id: row.dataset.evaluationPolicyId || uid("evaluation-policy"),
       title: row.querySelector(".evaluation-policy-title")?.value || "",
+      description: row.querySelector(".evaluation-policy-description")?.value || "",
       kind,
       keywords: evaluationKeywordList(row.querySelector(".evaluation-policy-keywords")?.value),
-      excludeKeywords: previous?.excludeKeywords || [],
+      requiredKeywords: evaluationKeywordList(row.querySelector(".evaluation-policy-required-keywords")?.value),
+      excludeKeywords: evaluationKeywordList(row.querySelector(".evaluation-policy-exclude-keywords")?.value),
+      categoryFilter: row.querySelector(".evaluation-policy-category-filter")?.value || "business",
+      countBasis: row.querySelector(".evaluation-policy-count-basis")?.value === "product" ? "product" : "record",
       manualLabel: row.querySelector(".evaluation-policy-manual-label-input")?.value || "",
       manualRequired: Boolean(row.querySelector(".evaluation-policy-manual-required")?.checked),
       goalBase: row.querySelector(".evaluation-policy-goal-base-select")?.value || "new-rental",
       targetRate: evaluationNullableNumber(row.querySelector(".evaluation-policy-target-rate-input")?.value),
+      scoreMode: row.querySelector(".evaluation-policy-score-mode")?.value === "at-most" ? "at-most" : "at-least",
       scoreRules: parseManagementEvaluationScoreRules(row.querySelector(".evaluation-policy-score-rules")?.value, kind)
     };
   });
@@ -6633,7 +6836,8 @@ function printManagementEvaluation() {
   ];
   const manualPolicyItems = policy.policyItems.filter((item) => item.manualLabel);
   manualPolicyItems.forEach((item) => {
-    const value = item.manualUnits === null || item.manualUnits === undefined ? "-" : `${formatNumber(item.manualUnits)}대`;
+    const suffix = item.kind === "percentile" ? "%" : "건";
+    const value = item.manualUnits === null || item.manualUnits === undefined ? "-" : `${formatNumber(item.manualUnits)}${suffix}`;
     manualItems.push(["정책이행", `${item.title} · ${item.manualLabel}`, value]);
   });
 
@@ -6721,8 +6925,8 @@ function printManagementEvaluation() {
   if (!chunks.length) chunks.push([]);
   chunks.forEach((chunk, idx) => {
     const rows = chunk.map((item) => `
-      <tr><td class="policy-item-title">${esc(item.title)}</td><td>${esc(item.kind === "rate" ? "달성률" : "수량")}</td><td>${esc(joinKeywords(item.keywords))}</td><td>${esc(item.manualLabel || "-")}</td><td>${esc(item.manualRequired ? "합산" : "-")}</td><td>${esc(managementEvaluationGoalBaseLabel(item.goalBase))}</td><td>${item.targetRate === null || item.targetRate === undefined ? "-" : esc(`${formatNumber(item.targetRate)}%`)}</td><td>${esc(rulesText(item.scoreRules))}</td></tr>`).join("");
-    const criteria = `<section class="evaluation-policy-report"><div class="report-subheading">월별 경영평가 기준${chunks.length > 1 ? ` · ${idx + 1}` : ""}</div><p class="report-intro">${esc(formatMonthLabel(month))} · ${esc(period.start)} ~ ${esc(period.end)}</p><table class="evaluation-policy-table"><thead><tr><th>평가항목</th><th>계산</th><th>모델·포함문구</th><th>추가입력명</th><th>수기합산</th><th>목표기준</th><th>목표비율</th><th>점수기준</th></tr></thead><tbody>${rows || '<tr><td colspan="8">등록된 정책이행 기준이 없습니다.</td></tr>'}</tbody></table></section>`;
+      <tr><td class="policy-item-title">${esc(item.title)}</td><td>${esc(item.kind === "rate" ? "달성률" : item.kind === "percentile" ? "상위백분위" : "수량")}</td><td>${esc(managementEvaluationPolicyCategoryLabel(item.categoryFilter))}</td><td>${esc(joinKeywords(item.keywords))}</td><td>${esc(joinKeywords(item.requiredKeywords))}</td><td>${esc(joinKeywords(item.excludeKeywords))}</td><td>${esc(item.description || "-")}</td><td>${esc(managementEvaluationPolicyCriteriaText(item))}</td></tr>`).join("");
+    const criteria = `<section class="evaluation-policy-report"><div class="report-subheading">월별 경영평가 기준${chunks.length > 1 ? ` · ${idx + 1}` : ""}</div><p class="report-intro">${esc(formatMonthLabel(month))} · ${esc(period.start)} ~ ${esc(period.end)}</p><table class="evaluation-policy-table"><thead><tr><th>평가항목</th><th>계산</th><th>판매종류</th><th>포함문구</th><th>필수문구</th><th>제외문구</th><th>정책설명</th><th>점수기준</th></tr></thead><tbody>${rows || '<tr><td colspan="8">등록된 정책이행 기준이 없습니다.</td></tr>'}</tbody></table></section>`;
     const isLast = idx === chunks.length - 1;
     pages.push(page("월별 경영평가 기준", "정책이행 및 상품별 평가 기준", criteria + (isLast ? productRulesMarkup : ""), "evaluation-report-policy"));
   });
@@ -10118,7 +10322,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.41",
+    version: "V10.42",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -14556,7 +14760,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.41";
+const APP_VERSION = "v10.42";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";

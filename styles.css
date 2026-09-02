@@ -23362,3 +23362,41 @@ body[data-view="records"] .record-form-row.row-basic {
 @media (min-width:851px) {
   #dashboardView #dashboardMobileOverview { display:none !important; }
 }
+
+
+/* V10.42 정책이행 조건 편집 확장 */
+#evaluationView .evaluation-policy-settings-head > div { min-width:0; }
+#evaluationView .evaluation-policy-settings-head p { margin:3px 0 0; color:#746a88; font-size:10px; font-weight:700; line-height:1.45; }
+#evaluationView .evaluation-policy-editor-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+  gap:8px !important;
+  align-items:end !important;
+  padding:12px !important;
+}
+#evaluationView .evaluation-policy-row-head {
+  grid-column:1 / -1;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:0 0 8px;
+  border-bottom:1px solid #ece7f5;
+}
+#evaluationView .evaluation-policy-row-head strong { color:#3e3165; font-size:13px; font-weight:950; }
+#evaluationView .evaluation-policy-wide { grid-column:span 2; }
+#evaluationView .evaluation-policy-editor-row label { align-content:end; }
+#evaluationView .evaluation-policy-editor-row input,
+#evaluationView .evaluation-policy-editor-row select { min-height:36px; }
+#evaluationView .evaluation-policy-manual-switch { min-height:36px; padding:0 4px; }
+#evaluationView .evaluation-policy-previews > div { border:1px solid #e5e0ef; border-radius:9px; padding:8px 10px; background:#fcfbff; }
+
+@media (max-width: 1000px) {
+  #evaluationView .evaluation-policy-editor-row { grid-template-columns:repeat(2,minmax(0,1fr)) !important; }
+}
+@media (max-width: 760px) {
+  #evaluationView .evaluation-policy-editor-row { grid-template-columns:1fr !important; padding:10px !important; }
+  #evaluationView .evaluation-policy-wide,
+  #evaluationView .evaluation-policy-row-head { grid-column:1 !important; }
+  #evaluationView .evaluation-policy-settings-head { align-items:flex-start !important; }
+  #evaluationView .evaluation-policy-settings-head p { font-size:11px; }
+}
