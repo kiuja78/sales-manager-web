@@ -6650,6 +6650,73 @@ function collectManagementEvaluationPolicySettings() {
   return state.managementEvaluationPolicies[month];
 }
 
+
+function evaluationPartLabelClass(part) {
+  return ({"영업관리":"business","계정관리":"account","조직관리":"organization","고객서비스관리":"service","정책이행":"policy"})[part] || "general";
+}
+
+function renderEvaluationPartScoreCards(partSummaries) {
+  const container = $("#evaluationPartScoreCards");
+  if (!container) return;
+  const order = ["영업관리","계정관리","조직관리","고객서비스관리","정책이행"];
+  const cards = order.filter((part) => partSummaries[part]).map((part) => {
+    const item = partSummaries[part];
+    const pending = item.pending ? `<span class="evaluation-part-card-pending">수기 ${formatNumber(item.pending)}개 대기</span>` : '<span class="evaluation-part-card-pending ok">자동 계산 완료</span>';
+    return `<article class="evaluation-part-card ${evaluationPartLabelClass(part)}">\n      <div class="evaluation-part-card-head"><span>${escapeHtml(part)}</span><strong>${formatNumber(item.actual)} / ${formatNumber(item.max)}</strong></div>\n      <div class="evaluation-part-card-meta"><b>${item.max ? Math.round((toNumber(item.actual) / toNumber(item.max)) * 100) : 0}%</b>${pending}</div>\n    </article>`;
+  }).join("");
+  container.innerHTML = cards || '<div class="empty">점수 요약이 없습니다.</div>';
+}
+
+function renderEvaluationScoreMobileList(rows, partSummaries) {
+  const container = $("#evaluationScoreMobileList");
+  if (!container) return;
+  const grouped = rows.reduce((acc, row) => {
+    (acc[row.part] ||= []).push(row);
+    return acc;
+  }, {});
+  const order = ["영업관리","계정관리","조직관리","고객서비스관리","정책이행"];
+  container.innerHTML = order.filter((part) => grouped[part]?.length).map((part) => {
+    const summary = partSummaries[part] || { actual: 0, max: 0, pending: 0 };
+    const items = grouped[part].map((row) => `\n      <div class="evaluation-score-mobile-item">\n        <div class="evaluation-score-mobile-item-head">\n          <strong>${escapeHtml(row.item)}</strong>\n          <b>${row.score === null ? '-' : formatNumber(row.score)} / ${formatNumber(row.max)}</b>\n        </div>\n        <div class="evaluation-score-mobile-line"><span>현재수치</span><strong>${escapeHtml(row.value)}</strong></div>\n        <div class="evaluation-score-mobile-line"><span>평가기준</span><strong>${escapeHtml(row.criteria)}</strong></div>\n      </div>`).join("");
+    return `<section class="evaluation-score-mobile-group ${evaluationPartLabelClass(part)}">\n      <div class="evaluation-score-mobile-group-head">\n        <div><span>${escapeHtml(part)}</span><strong>${formatNumber(summary.actual)} / ${formatNumber(summary.max)}</strong></div>\n        <em>${summary.pending ? `수기 ${formatNumber(summary.pending)}개 대기` : '확인 완료'}</em>\n      </div>\n      <div class="evaluation-score-mobile-items">${items}</div>\n    </section>`;
+  }).join("");
+}
+
+function syncEvaluationPolicySettingsVisibility() {
+  const panel = $("#evaluationPolicySettingsPanel");
+  const body = $("#evaluationPolicySettingsBody");
+  const button = $("#evaluationPolicySettingsToggle");
+  if (!panel || !body || !button) return;
+  if (window.innerWidth <= 850 && !panel.dataset.collapseInitialized) {
+    panel.classList.add("collapsed");
+    panel.dataset.collapseInitialized = "1";
+  }
+  const collapsed = panel.classList.contains("collapsed");
+  body.hidden = collapsed;
+  button.textContent = collapsed ? "기준 편집 열기" : "기준 편집 숨기기";
+  button.setAttribute("aria-expanded", collapsed ? "false" : "true");
+}
+
+function setupEvaluationViewUx() {
+  if (!document.body || document.body.dataset.evaluationUxBound === "1") return;
+  document.body.dataset.evaluationUxBound = "1";
+  document.addEventListener("click", (event) => {
+    const jumpBtn = event.target.closest("[data-evaluation-jump]");
+    if (jumpBtn) {
+      const target = document.getElementById(jumpBtn.dataset.evaluationJump || "");
+      if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    const toggle = event.target.closest("#evaluationPolicySettingsToggle");
+    if (toggle) {
+      $("#evaluationPolicySettingsPanel")?.classList.toggle("collapsed");
+      syncEvaluationPolicySettingsVisibility();
+      return;
+    }
+  });
+  syncEvaluationPolicySettingsVisibility();
+}
+
 function renderManagementEvaluation() {
   const monthInput = $("#evaluationMonthInput");
   if (!monthInput) return;
@@ -6684,8 +6751,8 @@ function renderManagementEvaluation() {
   if ($("#evaluationSalesTotal")) $("#evaluationSalesTotal").textContent = `${formatNumber(metrics.overallActual)}건`;
 
   const body = $("#evaluationScoreBody");
+  const { rows, partSummaries } = managementEvaluationRows(metrics);
   if (body) {
-    const { rows, partSummaries } = managementEvaluationRows(metrics);
     const renderedParts = new Set();
     const partClassNames = {
       "영업관리": "business",
@@ -6748,6 +6815,10 @@ function renderManagementEvaluation() {
   if ($("#evaluationMembershipPreview")) $("#evaluationMembershipPreview").textContent = `${formatNumber(metrics.membershipCount)}건`;
   renderManagementEvaluationPolicyInputs(metrics);
   renderManagementEvaluationPolicySettings(month);
+  renderEvaluationPartScoreCards(partSummaries);
+  renderEvaluationScoreMobileList(rows, partSummaries);
+  setupEvaluationViewUx();
+  syncEvaluationPolicySettingsVisibility();
 }
 
 function collectManagementEvaluationInput() {
@@ -10322,7 +10393,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.42",
+    version: "V10.43",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -13718,6 +13789,7 @@ function attachEvents() {
     if (currentView === "analytics") window.requestAnimationFrame(drawAnalyticsTrendChart);
     syncOperatingGoalMobilePanel();
     syncDashboardSummaryMode();
+    syncEvaluationPolicySettingsVisibility();
   });
 
   $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
@@ -14760,7 +14832,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.42";
+const APP_VERSION = "v10.43";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-work-system/releases";
 const UPDATE_DOWNLOAD_URL = "https://github.com/kiuja78/cuckoo-work-system/releases/download/%EC%97%85%EB%AC%B4%EC%9E%90%EB%8F%99%ED%99%94%EC%8B%9C%EC%8A%A4%ED%85%9C/Sales_Manager.zip";
 const SALES_MANAGER_LATEST_VERSION = "v10";

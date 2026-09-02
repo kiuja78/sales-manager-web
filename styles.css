@@ -23400,3 +23400,165 @@ body[data-view="records"] .record-form-row.row-basic {
   #evaluationView .evaluation-policy-settings-head { align-items:flex-start !important; }
   #evaluationView .evaluation-policy-settings-head p { font-size:11px; }
 }
+
+
+/* V10.43 경영평가 가독성/사용성 개선 */
+#evaluationView .evaluation-guide-panel {
+  border: 1px solid #d7e4ef;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+#evaluationView .evaluation-guide-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 0 18px 10px;
+}
+#evaluationView .evaluation-guide-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid #dbe7f0;
+  border-radius: 16px;
+  background: #fff;
+}
+#evaluationView .evaluation-guide-card b {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #1e73cf;
+  color: #fff;
+  font-size: 16px;
+}
+#evaluationView .evaluation-guide-card strong { display:block; font-size:15px; color:#14344c; margin-bottom:2px; }
+#evaluationView .evaluation-guide-card span { color:#5e7484; font-size:12px; line-height:1.45; }
+#evaluationView .evaluation-section-nav {
+  display:flex; flex-wrap:wrap; gap:8px; padding: 0 18px 18px;
+}
+#evaluationView .evaluation-panel-description {
+  margin: 4px 0 0;
+  color: #667b8b;
+  font-size: 12px;
+  line-height: 1.5;
+  font-weight: 700;
+}
+#evaluationView .evaluation-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(244, 249, 246, 0.96);
+  backdrop-filter: blur(6px);
+  border: 1px solid #d8e6df;
+  border-radius: 16px;
+  padding: 14px;
+}
+#evaluationView .evaluation-toolbar label { font-size: 13px; font-weight: 900; color:#204236; }
+#evaluationView .evaluation-toolbar input { min-height: 42px; font-size: 16px; }
+#evaluationView .evaluation-summary-card span { font-size: 13px !important; }
+#evaluationView .evaluation-summary-card strong { font-size: 28px !important; }
+#evaluationView .evaluation-input-group,
+#evaluationView .evaluation-input-group-wide {
+  border-radius: 18px !important;
+  padding: 18px !important;
+}
+#evaluationView .evaluation-input-group h3 {
+  font-size: 19px !important;
+  margin-bottom: 12px !important;
+}
+#evaluationView .evaluation-group-fields label,
+#evaluationView .evaluation-policy-manual label {
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 800;
+}
+#evaluationView .evaluation-input-group input,
+#evaluationView .evaluation-policy-manual input,
+#evaluationView #evaluationPolicySettings input,
+#evaluationView #evaluationPolicySettings select {
+  min-height: 42px !important;
+  font-size: 15px !important;
+}
+#evaluationView .evaluation-group-preview,
+#evaluationView .evaluation-mini-preview-grid,
+#evaluationView .evaluation-policy-previews {
+  margin-top: 12px;
+}
+#evaluationView .evaluation-group-preview strong,
+#evaluationView .evaluation-mini-preview-grid strong,
+#evaluationView .evaluation-policy-previews strong {
+  font-size: 20px;
+}
+#evaluationView .evaluation-policy-settings-panel.collapsed #evaluationPolicySettingsBody { display:none; }
+#evaluationView .evaluation-part-score-cards {
+  display:grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  padding: 0 18px 16px;
+}
+#evaluationView .evaluation-part-card {
+  border: 1px solid #d9e5ed;
+  border-radius: 16px;
+  background: #f8fbfe;
+  padding: 14px;
+}
+#evaluationView .evaluation-part-card.business { border-color:#c7ddf2; background:#f4f9fe; }
+#evaluationView .evaluation-part-card.account { border-color:#cbe6da; background:#f3fbf8; }
+#evaluationView .evaluation-part-card.organization { border-color:#ddd6f4; background:#f8f6ff; }
+#evaluationView .evaluation-part-card.service { border-color:#f0ddb6; background:#fffaf1; }
+#evaluationView .evaluation-part-card.policy { border-color:#d2e0ef; background:#f4f8fc; }
+#evaluationView .evaluation-part-card-head { display:grid; gap:6px; }
+#evaluationView .evaluation-part-card-head span { color:#5e7281; font-size:12px; font-weight:800; }
+#evaluationView .evaluation-part-card-head strong { color:#19384c; font-size:22px; font-weight:950; }
+#evaluationView .evaluation-part-card-meta { display:flex; align-items:center; justify-content:space-between; gap:8px; margin-top:10px; }
+#evaluationView .evaluation-part-card-meta b { font-size:15px; color:#0b7451; }
+#evaluationView .evaluation-part-card-pending { font-size:11px; font-weight:800; color:#b05c2e; }
+#evaluationView .evaluation-part-card-pending.ok { color:#547264; }
+#evaluationView .evaluation-score-mobile-list { display:none; }
+#evaluationView .evaluation-score-mobile-group {
+  border:1px solid #dae6ee; border-radius:16px; overflow:hidden; background:#fff; margin-bottom:12px;
+}
+#evaluationView .evaluation-score-mobile-group-head {
+  display:flex; align-items:center; justify-content:space-between; gap:8px; padding:12px 14px; background:#f7fbff; border-bottom:1px solid #e4edf3;
+}
+#evaluationView .evaluation-score-mobile-group-head span { display:block; color:#5e7587; font-size:11px; font-weight:800; }
+#evaluationView .evaluation-score-mobile-group-head strong { display:block; color:#173a50; font-size:21px; font-weight:950; }
+#evaluationView .evaluation-score-mobile-group-head em { font-style:normal; color:#6f7f89; font-size:11px; font-weight:800; }
+#evaluationView .evaluation-score-mobile-items { display:grid; gap:0; }
+#evaluationView .evaluation-score-mobile-item { padding:12px 14px; border-top:1px solid #edf2f5; }
+#evaluationView .evaluation-score-mobile-item-head { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; margin-bottom:8px; }
+#evaluationView .evaluation-score-mobile-item-head strong { color:#1d3344; font-size:14px; font-weight:900; }
+#evaluationView .evaluation-score-mobile-item-head b { color:#1d6fb8; font-size:14px; font-weight:900; }
+#evaluationView .evaluation-score-mobile-line { display:grid; grid-template-columns: 74px minmax(0,1fr); gap:8px; margin-top:4px; }
+#evaluationView .evaluation-score-mobile-line span { color:#6d7d88; font-size:11px; font-weight:800; }
+#evaluationView .evaluation-score-mobile-line strong { color:#344b5b; font-size:12px; font-weight:800; line-height:1.45; }
+#evaluationView .evaluation-policy-editor-list { gap: 12px !important; }
+#evaluationView .evaluation-policy-editor-row { padding: 14px !important; border-radius: 16px !important; }
+#evaluationView .evaluation-policy-row-head strong { font-size:16px !important; }
+#evaluationView .evaluation-product-rule-editor input { min-height: 40px; }
+
+@media (max-width: 1100px) {
+  #evaluationView .evaluation-part-score-cards { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 850px) {
+  #evaluationView .evaluation-toolbar { top: 8px; border-radius: 18px; }
+  #evaluationView .evaluation-guide-grid { grid-template-columns: 1fr; padding: 0 14px 10px; }
+  #evaluationView .evaluation-section-nav { padding: 0 14px 14px; }
+  #evaluationView .evaluation-summary-grid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  #evaluationView .evaluation-input-groups { gap: 12px !important; }
+  #evaluationView .evaluation-input-group, #evaluationView .evaluation-input-group-wide { padding: 14px !important; }
+  #evaluationView .evaluation-input-group h3 { font-size: 18px !important; }
+  #evaluationView .evaluation-part-score-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 0 14px 12px; }
+  #evaluationView .evaluation-score-mobile-list { display:block; padding: 0 14px 14px; }
+  #evaluationView .evaluation-score-table-wrap { display:none; }
+  #evaluationView .evaluation-product-tables-grid { grid-template-columns: 1fr !important; }
+  #evaluationView .evaluation-policy-settings-head,
+  #evaluationView .evaluation-policy-settings-panel .panel-head { gap: 8px !important; }
+}
+@media (max-width: 560px) {
+  #evaluationView .evaluation-summary-grid { grid-template-columns: 1fr !important; }
+  #evaluationView .evaluation-part-score-cards { grid-template-columns: 1fr; }
+  #evaluationView .evaluation-section-nav .ghost-button { flex: 1 1 calc(50% - 4px); }
+}
