@@ -7486,10 +7486,106 @@ function clearPayrollData() {
 
 
 
-// V10.45 쿠쿠 웹시스템 연결 - 로그인 세션 및 재고조회 1차 연동
+// V10.46 쿠쿠 웹시스템 연결 - PC 연결 모듈 버전 확인 + 로그인/재고조회
 const CUCKOO_LOGIN_PAGE_URL = "https://sales.cuckoo.co.kr/login";
+
+const CUCKOO_FRONT_VERSION = "V10.46";
+const CUCKOO_MIN_SERVER_VERSION = "V10.46";
+const CUCKOO_EXPECTED_API_VERSION = "1.1";
+
+function cuckooVersionNumber(value) {
+  const match = String(value || "").match(/(\d+(?:\.\d+)?)/);
+  return match ? Number(match[1]) : 0;
+}
+
+function isCuckooPcRuntimeHost() {
+  const host = String(window.location.hostname || "").toLowerCase();
+  return host === "127.0.0.1" || host === "localhost" || host === "::1";
+}
+
+function cuckooModuleMismatchMessage(status = 0) {
+  const suffix = status ? ` (응답 ${status})` : "";
+  return `현재 화면은 ${CUCKOO_FRONT_VERSION}이지만 PC 연결 모듈이 구버전이거나 실행되지 않았습니다${suffix}. 영업관리 프로그램을 완전히 종료한 뒤 ${CUCKOO_FRONT_VERSION} PC용 프로그램으로 다시 실행해 주세요.`;
+}
+
+async function cuckooRuntimeRequest() {
+  let response;
+  try {
+    response = await fetch(`/api/runtime?_=${Date.now()}`, { cache: "no-store" });
+  } catch (error) {
+    const wrapped = new Error("PC 연결 모듈에 접속할 수 없습니다.");
+    wrapped.code = "BACKEND_UNAVAILABLE";
+    wrapped.cause = error;
+    throw wrapped;
+  }
+  const text = await response.text();
+  let payload = {};
+  try { payload = text ? JSON.parse(text) : {}; } catch { payload = {}; }
+  if (!response.ok || payload.ok === false) {
+    const error = new Error(payload.message || `연결 모듈 확인 실패 (${response.status})`);
+    error.code = payload.code || `HTTP_${response.status}`;
+    error.status = response.status;
+    error.payload = payload;
+    throw error;
+  }
+  return payload;
+}
+
+async function detectCuckooRuntime(force = false) {
+  const now = Date.now();
+  if (cuckooConnectionUi.runtimeBusy) return cuckooConnectionUi.connectorReady;
+  if (!force && cuckooConnectionUi.lastRuntimeCheckAt && now - cuckooConnectionUi.lastRuntimeCheckAt < 5000) return cuckooConnectionUi.connectorReady;
+
+  if (!isCuckooPcRuntimeHost()) {
+    cuckooConnectionUi.runtimeMode = "web";
+    cuckooConnectionUi.backendAvailable = false;
+    cuckooConnectionUi.connectorReady = false;
+    cuckooConnectionUi.serverVersion = "-";
+    cuckooConnectionUi.apiVersion = "-";
+    cuckooConnectionUi.message = "쿠쿠 로그인/세션 연동은 PC용 영업관리 프로그램에서만 사용할 수 있습니다.";
+    cuckooConnectionUi.lastRuntimeCheckAt = Date.now();
+    renderCuckooConnectionStatus();
+    return false;
+  }
+
+  cuckooConnectionUi.runtimeBusy = true;
+  renderCuckooConnectionStatus();
+  try {
+    const payload = await cuckooRuntimeRequest();
+    cuckooConnectionUi.runtimeMode = "pc";
+    cuckooConnectionUi.backendAvailable = true;
+    cuckooConnectionUi.serverVersion = payload.serverVersion || "확인 불가";
+    cuckooConnectionUi.apiVersion = payload.cuckooApiVersion || "-";
+    const versionOk = cuckooVersionNumber(payload.serverVersion) >= cuckooVersionNumber(CUCKOO_MIN_SERVER_VERSION);
+    const connectorOk = payload.cuckooConnector === true;
+    cuckooConnectionUi.connectorReady = versionOk && connectorOk;
+    if (!cuckooConnectionUi.connectorReady) cuckooConnectionUi.message = cuckooModuleMismatchMessage();
+  } catch (error) {
+    cuckooConnectionUi.runtimeMode = "pc";
+    cuckooConnectionUi.backendAvailable = false;
+    cuckooConnectionUi.connectorReady = false;
+    cuckooConnectionUi.serverVersion = "구버전/미확인";
+    cuckooConnectionUi.apiVersion = "-";
+    const status = Number(error?.status || String(error?.code || "").replace("HTTP_", "")) || 0;
+    cuckooConnectionUi.message = (status === 404 || status === 405)
+      ? cuckooModuleMismatchMessage(status)
+      : "PC 연결 모듈을 확인하지 못했습니다. 프로그램을 완전히 종료한 뒤 다시 실행해 주세요.";
+  } finally {
+    cuckooConnectionUi.runtimeBusy = false;
+    cuckooConnectionUi.lastRuntimeCheckAt = Date.now();
+    renderCuckooConnectionStatus();
+  }
+  return cuckooConnectionUi.connectorReady;
+}
+
 const cuckooConnectionUi = {
   backendAvailable: null,
+  connectorReady: false,
+  runtimeMode: "unknown",
+  serverVersion: "",
+  apiVersion: "",
+  lastRuntimeCheckAt: 0,
+  runtimeBusy: false,
   connected: false,
   sessionActive: false,
   userMask: "",
@@ -7512,6 +7608,14 @@ function formatCuckooDateTime(value) {
 }
 
 async function cuckooApiRequest(path, options = {}) {
+  if (!cuckooConnectionUi.connectorReady) {
+    const ready = await detectCuckooRuntime(true);
+    if (!ready) {
+      const error = new Error(cuckooConnectionUi.message || cuckooModuleMismatchMessage());
+      error.code = cuckooConnectionUi.runtimeMode === "web" ? "PC_APP_REQUIRED" : "CONNECTOR_VERSION_MISMATCH";
+      throw error;
+    }
+  }
   let response;
   try {
     response = await fetch(`/api/cuckoo${path}`, {
@@ -7535,7 +7639,15 @@ async function cuckooApiRequest(path, options = {}) {
   if (!response.ok || payload.ok === false) {
     const error = new Error(payload.message || `연결 요청 실패 (${response.status})`);
     error.code = payload.code || `HTTP_${response.status}`;
+    error.status = response.status;
     error.payload = payload;
+    if (response.status === 404 || response.status === 405) {
+      cuckooConnectionUi.connectorReady = false;
+      cuckooConnectionUi.backendAvailable = false;
+      cuckooConnectionUi.message = cuckooModuleMismatchMessage(response.status);
+      error.message = cuckooConnectionUi.message;
+      error.code = "CONNECTOR_VERSION_MISMATCH";
+    }
     throw error;
   }
   return payload;
@@ -7558,19 +7670,31 @@ function renderCuckooConnectionStatus() {
   const message = $("#cuckooStatusMessage");
   const logoutBtn = $("#cuckooLogoutBtn");
   const queryBtn = $("#cuckooInventoryQueryBtn");
+  const loginBtn = $("#cuckooLoginBtn");
+  const runtimeMode = $("#cuckooRuntimeMode");
+  const serverVersion = $("#cuckooServerModuleVersion");
+  const frontVersion = $("#cuckooFrontVersion");
+  const apiVersion = $("#cuckooConnectorApiVersion");
+  const runtimeNotice = $("#cuckooRuntimeNotice");
   const diagBox = $("#cuckooDiagnosticBox");
   const diagText = $("#cuckooDiagnosticText");
 
   let label = "연결 안 됨";
   let className = "disconnected";
-  if (cuckooConnectionUi.backendAvailable === false) {
+  if (cuckooConnectionUi.runtimeMode === "web") {
     label = "PC 프로그램 필요";
     className = "unsupported";
+  } else if (cuckooConnectionUi.runtimeBusy || cuckooConnectionUi.statusBusy) {
+    label = "모듈 확인 중";
+    className = "checking";
+  } else if (!cuckooConnectionUi.connectorReady) {
+    label = "연결 모듈 확인 필요";
+    className = "warning";
   } else if (cuckooConnectionUi.connected) {
     label = "연결됨";
     className = "connected";
-  } else if (cuckooConnectionUi.statusBusy || cuckooConnectionUi.loginBusy) {
-    label = "연결 확인 중";
+  } else if (cuckooConnectionUi.loginBusy) {
+    label = "로그인 중";
     className = "checking";
   }
 
@@ -7580,19 +7704,34 @@ function renderCuckooConnectionStatus() {
   if (session) session.textContent = cuckooConnectionUi.sessionActive ? "JSESSIONID 활성" : "세션 없음";
   if (user) user.textContent = cuckooConnectionUi.userMask || "-";
   if (loginAt) loginAt.textContent = formatCuckooDateTime(cuckooConnectionUi.loginAt);
+  if (runtimeMode) runtimeMode.textContent = cuckooConnectionUi.runtimeMode === "pc" ? "PC 프로그램" : cuckooConnectionUi.runtimeMode === "web" ? "웹 배포본" : "확인 중";
+  if (serverVersion) serverVersion.textContent = cuckooConnectionUi.serverVersion || "확인 중";
+  if (frontVersion) frontVersion.textContent = CUCKOO_FRONT_VERSION;
+  if (apiVersion) apiVersion.textContent = cuckooConnectionUi.apiVersion || "-";
+  if (runtimeNotice) {
+    const noticeState = cuckooConnectionUi.runtimeMode === "web" ? "unsupported" : cuckooConnectionUi.connectorReady ? "ready" : cuckooConnectionUi.runtimeBusy ? "checking" : "warning";
+    runtimeNotice.className = `cuckoo-runtime-notice ${noticeState}`;
+    const title = runtimeNotice.querySelector("strong");
+    const copy = runtimeNotice.querySelector("span");
+    if (title) title.textContent = noticeState === "ready" ? "PC 연결 모듈 정상" : noticeState === "checking" ? "PC 연결 모듈 확인 중" : noticeState === "unsupported" ? "PC 프로그램에서 사용" : "연결 모듈 업데이트 필요";
+    if (copy) copy.textContent = noticeState === "ready" ? `화면 ${CUCKOO_FRONT_VERSION} · 연결 모듈 ${cuckooConnectionUi.serverVersion || "-"} · 로그인 테스트를 진행할 수 있습니다.` : (cuckooConnectionUi.message || "화면과 연결 모듈의 버전을 확인해 주세요.");
+  }
   if (message) {
     message.textContent = cuckooConnectionUi.message || (cuckooConnectionUi.connected
       ? "쿠쿠 웹시스템 연결이 정상입니다. 재고조회 테스트를 실행할 수 있습니다."
-      : "쿠쿠 계정으로 로그인하면 재고조회 기능이 활성화됩니다.");
+      : cuckooConnectionUi.connectorReady
+        ? "PC 연결 모듈이 정상입니다. 쿠쿠 계정으로 로그인해 주세요."
+        : "PC 연결 모듈을 먼저 확인해 주세요.");
     message.dataset.state = className;
   }
-  if (logoutBtn) logoutBtn.disabled = !cuckooConnectionUi.connected || cuckooConnectionUi.loginBusy;
-  if (queryBtn) queryBtn.disabled = !cuckooConnectionUi.connected || cuckooConnectionUi.inventoryBusy;
+  if (loginBtn) loginBtn.disabled = !cuckooConnectionUi.connectorReady || cuckooConnectionUi.loginBusy;
+  if (logoutBtn) logoutBtn.disabled = !cuckooConnectionUi.connectorReady || !cuckooConnectionUi.connected || cuckooConnectionUi.loginBusy;
+  if (queryBtn) queryBtn.disabled = !cuckooConnectionUi.connectorReady || !cuckooConnectionUi.connected || cuckooConnectionUi.inventoryBusy;
 
   if (diagBox && diagText) {
     if (cuckooConnectionUi.diagnostics) {
       diagBox.hidden = false;
-      diagText.textContent = Object.entries(cuckooConnectionUi.diagnostics)
+      diagText.textContent = Object.entries({ 실행환경: cuckooConnectionUi.runtimeMode, 화면버전: CUCKOO_FRONT_VERSION, 연결모듈: cuckooConnectionUi.serverVersion, 연동API: cuckooConnectionUi.apiVersion, ...cuckooConnectionUi.diagnostics })
         .filter(([, value]) => value !== undefined && value !== null && value !== "")
         .map(([key, value]) => `${key}: ${value}`)
         .join("\n");
@@ -7610,11 +7749,23 @@ async function refreshCuckooConnectionStatus(force = false) {
     renderCuckooConnectionStatus();
     return;
   }
+  const ready = await detectCuckooRuntime(force);
+  if (!ready) {
+    cuckooConnectionUi.connected = false;
+    cuckooConnectionUi.sessionActive = false;
+    cuckooConnectionUi.lastStatusAt = Date.now();
+    renderCuckooConnectionStatus();
+    return;
+  }
   cuckooConnectionUi.statusBusy = true;
   renderCuckooConnectionStatus();
   try {
     const payload = await cuckooApiRequest("/status");
+    cuckooConnectionUi.connectorReady = true;
+    cuckooConnectionUi.serverVersion = payload.serverVersion || cuckooConnectionUi.serverVersion;
+    cuckooConnectionUi.apiVersion = payload.cuckooApiVersion || cuckooConnectionUi.apiVersion;
     cuckooConnectionUi.backendAvailable = true;
+    cuckooConnectionUi.connectorReady = true;
     cuckooConnectionUi.connected = Boolean(payload.connected);
     cuckooConnectionUi.sessionActive = Boolean(payload.sessionActive);
     cuckooConnectionUi.userMask = payload.userMask || "";
@@ -7622,13 +7773,10 @@ async function refreshCuckooConnectionStatus(force = false) {
     cuckooConnectionUi.message = payload.message || "";
     cuckooConnectionUi.diagnostics = payload.diagnostics || null;
   } catch (error) {
-    cuckooConnectionUi.backendAvailable = false;
     cuckooConnectionUi.connected = false;
     cuckooConnectionUi.sessionActive = false;
-    cuckooConnectionUi.message = error?.code === "BACKEND_UNAVAILABLE" || String(error?.code || "").startsWith("HTTP_404")
-      ? "웹 배포본에서는 회사 사이트 세션 연결이 제한됩니다. 실제 로그인/재고조회는 PC용 영업관리 프로그램에서 실행해 주세요."
-      : (error?.message || "연결 상태를 확인하지 못했습니다.");
-    cuckooConnectionUi.diagnostics = null;
+    cuckooConnectionUi.message = error?.message || "연결 상태를 확인하지 못했습니다.";
+    cuckooConnectionUi.diagnostics = error?.payload?.diagnostics || null;
   } finally {
     cuckooConnectionUi.statusBusy = false;
     cuckooConnectionUi.lastStatusAt = Date.now();
@@ -7646,6 +7794,13 @@ function renderCuckooConnection() {
 async function loginCuckooSystem(event) {
   event?.preventDefault?.();
   if (cuckooConnectionUi.loginBusy) return;
+  if (!cuckooConnectionUi.connectorReady) {
+    const ready = await detectCuckooRuntime(true);
+    if (!ready) {
+      showToast(cuckooConnectionUi.message || cuckooModuleMismatchMessage());
+      return;
+    }
+  }
   const userInput = $("#cuckooUserIdInput");
   const passwordInput = $("#cuckooPasswordInput");
   const loginBtn = $("#cuckooLoginBtn");
@@ -7678,7 +7833,6 @@ async function loginCuckooSystem(event) {
     showToast(cuckooConnectionUi.connected ? "쿠쿠 시스템에 연결되었습니다." : "쿠쿠 시스템 로그인 상태를 확인해 주세요.");
   } catch (error) {
     if (passwordInput) passwordInput.value = "";
-    cuckooConnectionUi.backendAvailable = error?.code !== "BACKEND_UNAVAILABLE";
     cuckooConnectionUi.connected = false;
     cuckooConnectionUi.sessionActive = false;
     cuckooConnectionUi.message = error?.message || "쿠쿠 시스템 로그인에 실패했습니다.";
@@ -7753,7 +7907,7 @@ function renderCuckooInventoryResult(payload) {
 }
 
 async function queryCuckooInventory() {
-  if (!cuckooConnectionUi.connected || cuckooConnectionUi.inventoryBusy) return;
+  if (!cuckooConnectionUi.connectorReady || !cuckooConnectionUi.connected || cuckooConnectionUi.inventoryBusy) return;
   const queryBtn = $("#cuckooInventoryQueryBtn");
   const storeCode = String($("#cuckooStoreCodeInput")?.value || "").trim();
   const model = String($("#cuckooModelInput")?.value || "").trim();
@@ -10702,7 +10856,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.45",
+    version: "V10.46",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -13958,6 +14112,15 @@ function attachEvents() {
   $("#cuckooLoginForm")?.addEventListener("submit", loginCuckooSystem);
   $("#cuckooLogoutBtn")?.addEventListener("click", logoutCuckooSystem);
   $("#cuckooRefreshStatusBtn")?.addEventListener("click", () => refreshCuckooConnectionStatus(true));
+  $("#cuckooCheckModuleBtn")?.addEventListener("click", async () => {
+    await detectCuckooRuntime(true);
+    if (cuckooConnectionUi.connectorReady) {
+      await refreshCuckooConnectionStatus(true);
+      showToast(`PC 연결 모듈 ${cuckooConnectionUi.serverVersion || ""} 정상`);
+    } else {
+      showToast(cuckooConnectionUi.message || "PC 연결 모듈을 확인해 주세요.");
+    }
+  });
   $("#cuckooInventoryQueryBtn")?.addEventListener("click", queryCuckooInventory);
   $("#cuckooOpenLoginPageBtn")?.addEventListener("click", () => window.open(CUCKOO_LOGIN_PAGE_URL, "_blank", "noopener,noreferrer"));
   $$("#printManagerStats [data-manager-performance-tab]").forEach((button) => {
@@ -15146,7 +15309,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.45";
+const APP_VERSION = "v10.46";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;

@@ -23743,3 +23743,21 @@ body[data-view="records"] .record-form-row.row-basic {
   .cuckoo-roadmap-flow b { display:none; }
   .cuckoo-roadmap-note { padding:0 14px 14px; }
 }
+
+
+/* V10.46 쿠쿠 연결 모듈 진단 UX */
+.cuckoo-runtime-notice { margin:16px 20px 0; padding:12px 14px; border:1px solid #d8e5df; border-radius:12px; background:#f5f9f7; display:grid; gap:4px; }
+.cuckoo-runtime-notice strong { color:#21483a; font-size:13px; font-weight:950; }
+.cuckoo-runtime-notice span { color:#62756e; font-size:11px; line-height:1.5; font-weight:750; }
+.cuckoo-runtime-notice.ready { border-color:#b9ddcb; background:#edf9f3; }
+.cuckoo-runtime-notice.ready strong { color:#0d7650; }
+.cuckoo-runtime-notice.checking { border-color:#cddfec; background:#f1f7fb; }
+.cuckoo-runtime-notice.warning { border-color:#edcf9e; background:#fff8ea; }
+.cuckoo-runtime-notice.warning strong { color:#9b6200; }
+.cuckoo-runtime-notice.unsupported { border-color:#d9ddea; background:#f5f6fa; }
+.cuckoo-runtime-notice.unsupported strong { color:#626987; }
+.cuckoo-status-pill.warning { background:#fff1d9; color:#936000; }
+.cuckoo-status-pill.warning .cuckoo-status-dot { background:#d99616; box-shadow:0 0 0 4px rgba(217,150,22,.13); }
+.cuckoo-status-message[data-state="warning"] { background:#fff7e7; color:#8b5a00; }
+.cuckoo-status-head-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:flex-end; }
+@media (max-width:850px) { .cuckoo-runtime-notice { margin:12px 14px 0; } .cuckoo-status-head-actions { width:100%; justify-content:stretch; } .cuckoo-status-head-actions > button { flex:1 1 0; } }
