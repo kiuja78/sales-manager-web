@@ -7,7 +7,7 @@
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>영업관리 시스템</title>
-  <link rel="stylesheet" href="./styles.css?v=v1044-layout-update">
+  <link rel="stylesheet" href="./styles.css?v=v1045-cuckoo-connect">
   <link rel="stylesheet" href="./settings-v994.css?v=20260817-v999-top-layout">
   <link rel="icon" type="image/png" href="./assets/sales_manager_icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
@@ -22,7 +22,7 @@
     <p>체계적인 영업관리, 더 나은 성과의 시작</p>
     <div class="startup-intro-status"><span></span><span id="startupIntroStatus">업무 화면을 구성하고 있습니다</span></div>
     <div class="startup-intro-progress"><i id="startupIntroProgress"></i></div>
-    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.44</span></div>
+    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.45</span></div>
   </div>
 </div>
 
@@ -31,7 +31,7 @@
       <div class="brand" id="sidebarRefreshBtn" role="button" tabindex="0" title="새로고침">
         <div class="brand-mark brand-program-icon"><img src="./assets/sales_manager_icon.png" alt="영업관리 시스템"></div>
         <div class="brand-text">
-          <strong id="sidebarAppTitle">영업관리 시스템 V10.44</strong>
+          <strong id="sidebarAppTitle">영업관리 시스템 V10.45</strong>
           <em id="sidebarManagerLine">김건일 마스터</em>
         </div>
       </div>
@@ -39,6 +39,7 @@
       <nav class="nav" aria-label="주요 메뉴">
         <button class="nav-item active" data-view="dashboard">영업현황</button>
         <button class="nav-item" data-view="records">접수리스트</button>
+        <button class="nav-item" data-view="cuckoo">쿠쿠 시스템 연결</button>
         <button class="nav-item" data-view="checklist">업무체크리스트</button>
         <button class="nav-item" data-view="contactnote">만기컨텍리스트</button>
         <button class="nav-item" data-view="contactrequest">컨텍노트</button>
@@ -350,6 +351,136 @@
       </section>
 
 
+
+
+      <section class="view" id="cuckooView">
+        <div class="cuckoo-connect-page">
+          <section class="panel cuckoo-connect-hero">
+            <div class="cuckoo-connect-hero-copy">
+              <p class="eyebrow">CUCKOO WEB CONNECTION</p>
+              <h2>쿠쿠 시스템 연결</h2>
+              <p>쿠쿠 판매 웹시스템 계정으로 직접 로그인한 뒤, 설치점상품재고를 영업관리시스템에서 조회하는 1차 연동 화면입니다.</p>
+            </div>
+            <div class="cuckoo-status-pill disconnected" id="cuckooHeroStatus">
+              <span class="cuckoo-status-dot"></span>
+              <strong id="cuckooHeroStatusText">연결 안 됨</strong>
+            </div>
+          </section>
+
+          <div class="cuckoo-connect-grid">
+            <section class="panel cuckoo-login-panel">
+              <div class="panel-head cuckoo-panel-head">
+                <div>
+                  <span class="cuckoo-step-badge">1</span>
+                  <h2>쿠쿠 계정 로그인</h2>
+                  <p>아이디와 비밀번호는 저장하지 않습니다. 로그인 성공 후 세션만 프로그램 메모리에 유지합니다.</p>
+                </div>
+              </div>
+              <form id="cuckooLoginForm" class="cuckoo-login-form" autocomplete="off">
+                <label>아이디
+                  <input id="cuckooUserIdInput" type="text" inputmode="text" autocomplete="off" placeholder="쿠쿠 시스템 아이디" required>
+                </label>
+                <label>비밀번호
+                  <input id="cuckooPasswordInput" type="password" autocomplete="off" placeholder="비밀번호" required>
+                </label>
+                <div class="cuckoo-login-actions">
+                  <button class="primary-button" id="cuckooLoginBtn" type="submit">로그인</button>
+                  <button class="ghost-button" id="cuckooLogoutBtn" type="button" disabled>로그아웃</button>
+                  <button class="ghost-button" id="cuckooOpenLoginPageBtn" type="button">쿠쿠 로그인 페이지</button>
+                </div>
+              </form>
+              <div class="cuckoo-security-note">
+                <strong>보안 원칙</strong>
+                <span>비밀번호 미저장 · 세션 메모리 보관 · 프로그램 종료 시 세션 종료 · 사용자 권한 범위 내 조회</span>
+              </div>
+            </section>
+
+            <section class="panel cuckoo-status-panel">
+              <div class="panel-head cuckoo-panel-head">
+                <div>
+                  <span class="cuckoo-step-badge secondary">상태</span>
+                  <h2>연결 상태</h2>
+                  <p>현재 PC 프로그램과 쿠쿠 웹시스템의 연결 상태를 확인합니다.</p>
+                </div>
+                <button class="ghost-button small" id="cuckooRefreshStatusBtn" type="button">상태 새로고침</button>
+              </div>
+              <div class="cuckoo-status-grid">
+                <div><span>연결</span><strong id="cuckooConnectionStatus">확인 중</strong></div>
+                <div><span>세션</span><strong id="cuckooSessionStatus">-</strong></div>
+                <div><span>로그인 계정</span><strong id="cuckooLoginUser">-</strong></div>
+                <div><span>로그인 시각</span><strong id="cuckooLoginAt">-</strong></div>
+              </div>
+              <div class="cuckoo-status-message" id="cuckooStatusMessage">PC 프로그램의 연결 기능을 확인하고 있습니다.</div>
+              <details class="cuckoo-diagnostic" id="cuckooDiagnosticBox" hidden>
+                <summary>연동 진단 정보</summary>
+                <pre id="cuckooDiagnosticText"></pre>
+              </details>
+            </section>
+          </div>
+
+          <section class="panel cuckoo-inventory-panel">
+            <div class="panel-head cuckoo-panel-head">
+              <div>
+                <span class="cuckoo-step-badge">2</span>
+                <h2>설치점상품재고 조회 테스트</h2>
+                <p>로그인 후 쿠쿠 서버의 JSON 재고조회 요청을 사용해 실제 재고값을 확인합니다.</p>
+              </div>
+              <span class="cuckoo-test-label">1차 연동 테스트</span>
+            </div>
+            <div class="cuckoo-inventory-form">
+              <label>점포/설치점 코드
+                <input id="cuckooStoreCodeInput" type="text" value="SA02" placeholder="예: SA02">
+              </label>
+              <label>모델명
+                <input id="cuckooModelInput" type="text" value="CP-ABS100GWH(S)" placeholder="모델명">
+              </label>
+              <label>모델코드
+                <input id="cuckooModelCodeInput" type="text" value="5497618" placeholder="모델코드">
+              </label>
+              <label>조회일
+                <input id="cuckooInventoryDateInput" type="date">
+              </label>
+              <button class="primary-button cuckoo-inventory-query-btn" id="cuckooInventoryQueryBtn" type="button" disabled>재고조회</button>
+            </div>
+
+            <div class="cuckoo-inventory-result-empty" id="cuckooInventoryEmpty">
+              <strong>로그인 후 재고조회 버튼을 눌러주세요.</strong>
+              <span>테스트 기준 모델: CP-ABS100GWH(S) / 5497618</span>
+            </div>
+
+            <div class="cuckoo-inventory-results" id="cuckooInventoryResults" hidden>
+              <div class="cuckoo-inventory-summary">
+                <article><span>모델명</span><strong id="cuckooResultModel">-</strong></article>
+                <article><span>모델코드</span><strong id="cuckooResultModelCode">-</strong></article>
+                <article class="highlight"><span>전체재고</span><strong id="cuckooResultOnhand">0</strong></article>
+                <article><span>의뢰수량</span><strong id="cuckooResultOrderQty">0</strong></article>
+                <article><span>의뢰대비 값</span><strong id="cuckooResultAddTotal">0</strong></article>
+              </div>
+              <div class="table-wrap cuckoo-inventory-table-wrap">
+                <table class="cuckoo-inventory-table">
+                  <thead><tr><th>모델명</th><th>모델코드</th><th>제품구분</th><th>대분류</th><th>중분류</th><th>의뢰수량</th><th>전체재고</th><th>의뢰대비 값</th></tr></thead>
+                  <tbody id="cuckooInventoryTableBody"></tbody>
+                </table>
+              </div>
+              <div class="cuckoo-query-meta" id="cuckooInventoryQueryMeta"></div>
+            </div>
+          </section>
+
+          <section class="panel cuckoo-roadmap-panel">
+            <div class="panel-head cuckoo-panel-head">
+              <div>
+                <span class="cuckoo-step-badge muted">다음</span>
+                <h2>접수리스트 자동동기화 확장</h2>
+                <p>새 웹기반 접수시스템 오픈 후 동일한 방식으로 접수조회 JSON을 분석해 자동동기화로 확장합니다.</p>
+              </div>
+            </div>
+            <div class="cuckoo-roadmap-flow">
+              <span>쿠쿠 로그인</span><b>→</b><span>접수조회</span><b>→</b><span>신규/변경 비교</span><b>→</b><span>영업관리 DB</span><b>→</b><span>현황·프로모션·경영평가·급여</span>
+            </div>
+            <p class="cuckoo-roadmap-note">※ 기존 엑셀 가져오기는 안정화 전까지 백업/비상용으로 그대로 유지합니다.</p>
+          </section>
+        </div>
+      </section>
 
       <section class="view" id="analyticsView">
         <div class="analytics-page">
@@ -1794,7 +1925,7 @@
 
   <!-- 중요: Google Drive 연결 어댑터가 app.js보다 먼저 실행되어야 합니다. -->
   <script src="./web-adapter.js?v=20260829-google-drive-1"></script>
-  <script src="./app.js?v=v1044-layout-update"></script>
+  <script src="./app.js?v=v1045-cuckoo-connect"></script>
   <script src="./web-init.js?v=20260829-web-1"></script>
 
     
@@ -1835,6 +1966,7 @@
       <button type="button" data-mobile-more-view="evaluation"><span>평가</span><strong>경영평가</strong></button>
       <button type="button" data-mobile-more-view="renewalguide"><span>도표</span><strong>월별도표</strong></button>
       <button type="button" data-mobile-more-view="payroll"><span>급여</span><strong>급여계산</strong></button>
+      <button type="button" data-mobile-more-view="cuckoo"><span>연결</span><strong>쿠쿠 시스템</strong></button>
       <button type="button" data-mobile-more-view="settings"><span>설정</span><strong>사용자설정</strong></button>
     </div>
   </section>
