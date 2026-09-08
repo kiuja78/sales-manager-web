@@ -23745,7 +23745,7 @@ body[data-view="records"] .record-form-row.row-basic {
 }
 
 
-/* V10.55 쿠쿠 연결 모듈 진단 UX */
+/* V10.46 쿠쿠 연결 모듈 진단 UX */
 .cuckoo-runtime-notice { margin:16px 20px 0; padding:12px 14px; border:1px solid #d8e5df; border-radius:12px; background:#f5f9f7; display:grid; gap:4px; }
 .cuckoo-runtime-notice strong { color:#21483a; font-size:13px; font-weight:950; }
 .cuckoo-runtime-notice span { color:#62756e; font-size:11px; line-height:1.5; font-weight:750; }
