@@ -7486,11 +7486,11 @@ function clearPayrollData() {
 
 
 
-// V10.52 쿠쿠 웹시스템 연결 - PC 연결 모듈 버전 확인 + 로그인/재고조회
+// V10.53 쿠쿠 웹시스템 연결 - PC 연결 모듈 버전 확인 + 로그인/재고조회
 const CUCKOO_LOGIN_PAGE_URL = "https://sales.cuckoo.co.kr/login";
 
-const CUCKOO_FRONT_VERSION = "V10.52";
-const CUCKOO_MIN_SERVER_VERSION = "V10.52";
+const CUCKOO_FRONT_VERSION = "V10.53";
+const CUCKOO_MIN_SERVER_VERSION = "V10.53";
 const CUCKOO_EXPECTED_API_VERSION = "1.1";
 
 function cuckooVersionNumber(value) {
@@ -10856,7 +10856,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.52",
+    version: "V10.53",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -15309,7 +15309,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.52";
+const APP_VERSION = "v10.53";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
@@ -15537,6 +15537,8 @@ async function init() {
   if (recordsView && !recordsView.dataset.mobileRecordTab) recordsView.dataset.mobileRecordTab = "main";
   resetRecordForm();
   renderNow();
+  // V10.53 관리자 인증 복구: Google Drive 인증 제거 후 관리자 인증 진입 유지
+  window.setTimeout(openAdminAuth, 350);
   setSettingsVersionStatus(SALES_MANAGER_LATEST_VERSION, compareVersionText(APP_VERSION, SALES_MANAGER_LATEST_VERSION) < 0
     ? "새 버전이 있습니다. 업데이트 버튼을 눌러 바로 다운로드하세요."
     : "현재 최신 버전을 사용 중입니다.");
