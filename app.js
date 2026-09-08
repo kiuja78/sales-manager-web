@@ -15309,7 +15309,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.53";
+const APP_VERSION = "v10.54";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
@@ -15795,6 +15795,18 @@ window.shareKakaoImage = shareKakaoImage;
 // V10.48 관리자 인증 UI
 function openAdminAuth(){const m=document.getElementById('adminAuthModal');if(m)m.hidden=false;}
 function closeAdminAuth(){const m=document.getElementById('adminAuthModal');if(m)m.hidden=true;}
-document.addEventListener('click',e=>{if(e.target.id==='adminAuthConfirmBtn'){const v=document.getElementById('adminPasswordInput')?.value||'';if(!v){alert('관리자 비밀번호를 입력해주세요.');return;}closeAdminAuth();showToast('관리자 인증 완료');}});
+document.addEventListener('click',e=>{
+  if(e.target.id==='adminAuthConfirmBtn'){
+    const v=(document.getElementById('adminPasswordInput')?.value||'').trim();
+    if(!v){alert('관리자 비밀번호를 입력해주세요.');return;}
+    const savedPassword = localStorage.getItem('mjAdminPassword') || '1234';
+    if(v !== savedPassword){
+      alert('관리자 비밀번호가 올바르지 않습니다.');
+      return;
+    }
+    closeAdminAuth();
+    showToast('관리자 인증 완료');
+  }
+});
 
 init();
