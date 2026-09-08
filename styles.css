@@ -23763,3 +23763,10 @@ body[data-view="records"] .record-form-row.row-basic {
 @media (max-width:850px) { .cuckoo-runtime-notice { margin:12px 14px 0; } .cuckoo-status-head-actions { width:100%; justify-content:stretch; } .cuckoo-status-head-actions > button { flex:1 1 0; } }
 
 .admin-auth-modal{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center}.admin-auth-modal[hidden]{display:none}.admin-auth-backdrop{position:absolute;inset:0;background:rgba(0,0,0,.45)}.admin-auth-card{position:relative;width:360px;padding:32px;border-radius:20px;background:#fff;box-shadow:0 20px 50px rgba(0,0,0,.25);text-align:center}.admin-auth-card h2{margin:0 0 15px}.admin-auth-card span{display:block;margin:12px 0;color:#666}.admin-auth-card input{width:100%;box-sizing:border-box;padding:14px;border:1px solid #ddd;border-radius:10px}.admin-auth-card button{margin-top:15px;width:100%;padding:14px;border:0;border-radius:10px;background:#164e8a;color:#fff;font-weight:700}
+
+/* V10.49 경영평가 인쇄 개선 */
+@media print {
+ .evaluation-detail, .management-evaluation-detail { width:100% !important; font-size:12px !important; }
+ .evaluation-detail table, .management-evaluation-detail table { width:100% !important; table-layout:fixed; border-collapse:collapse; }
+ .evaluation-detail td, .evaluation-detail th, .management-evaluation-detail td, .management-evaluation-detail th { padding:8px !important; vertical-align:top; word-break:break-word; }
+}
