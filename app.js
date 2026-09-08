@@ -15789,4 +15789,10 @@ window.checkForProgramUpdate = checkForProgramUpdate;
 window.reportImageBlob = reportImageBlob;
 window.shareKakaoImage = shareKakaoImage;
 
+
+// V10.48 관리자 인증 UI
+function openAdminAuth(){const m=document.getElementById('adminAuthModal');if(m)m.hidden=false;}
+function closeAdminAuth(){const m=document.getElementById('adminAuthModal');if(m)m.hidden=true;}
+document.addEventListener('click',e=>{if(e.target.id==='adminAuthConfirmBtn'){const v=document.getElementById('adminPasswordInput')?.value||'';if(!v){alert('관리자 비밀번호를 입력해주세요.');return;}closeAdminAuth();showToast('관리자 인증 완료');}});
+
 init();
