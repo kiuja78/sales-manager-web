@@ -23644,39 +23644,3 @@ body[data-view="records"] .record-form-row.row-basic {
   .renewal-guide-preview-head { align-items:flex-start !important; flex-direction:column; }
 }
 @media (max-width:560px) { .payroll-summary-grid { grid-template-columns:1fr !important; } }
-
-/* V10.55 경영평가 출력 개선 - 보고서형 정리 */
-.evaluation-report-first .evaluation-summary-panel,
-.evaluation-report-first .evaluation-score-panel{
-  margin:12px 0;
-  border:1px solid #d9dfe8;
-  border-radius:12px;
-  padding:16px;
-  background:#fff;
-}
-.evaluation-report-first .evaluation-score-panel table,
-.evaluation-report-first table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:12px;
-}
-.evaluation-report-first th{
-  background:#f3f6fa;
-  font-weight:700;
-}
-.evaluation-report-first th,
-.evaluation-report-first td{
-  border:1px solid #dfe5ee;
-  padding:8px;
-  text-align:center;
-}
-.evaluation-report-first .evaluation-score-panel h3,
-.evaluation-report-first .evaluation-summary-panel h3{
-  margin:0 0 10px;
-  font-size:16px;
-}
-@media print{
- .evaluation-report-page{page-break-after:always;}
- .evaluation-report-first{font-size:12px;}
- .evaluation-report-first .evaluation-score-panel{page-break-inside:avoid;}
-}
