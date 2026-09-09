@@ -11264,7 +11264,7 @@ function updateRecordState(recordId, patch, message = "접수내역을 수정했
   // 수정 시에는 updatedAt만 기록하고, 접수일 정렬 순서는 변경하지 않습니다.
   record.updatedAt = new Date().toISOString();
   if (patch.category) record.category = normalizeCategory(record.category);
-  if (patch.activityType !== undefined) record.activityType = normalizeActivityType(record.activityType);
+  if (patch.activityType !== undefined) record.activityType = normalizeActivityType(patch.activityType);
   selectedRecordId = recordId;
   persistState();
   renderRecords();
