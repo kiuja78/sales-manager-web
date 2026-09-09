@@ -14852,7 +14852,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.57";
+const APP_VERSION = "v10.58";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
@@ -15332,25 +15332,18 @@ window.checkForProgramUpdate = checkForProgramUpdate;
 window.reportImageBlob = reportImageBlob;
 window.shareKakaoImage = shareKakaoImage;
 
-
-// V10.58 PROMOTION ADD BUTTON FIX
-// 동적으로 다시 생성되는 프로모션 추가 버튼 이벤트 위임 처리
-document.addEventListener("click", (event) => {
-  const btn = event.target.closest?.("#addCountRuleBtn, #addScoreRuleBtn, #addScoreRewardBtn, #addProductRuleBtn");
-  if (!btn) return;
-
-  if (btn.id === "addCountRuleBtn") {
-    renderCountRuleRows([...collectCountRuleRows(), { threshold: 1, reward: "", quantity: 1 }]);
-  }
-  if (btn.id === "addScoreRuleBtn") {
-    renderScoreRuleRows([...collectScoreRuleRows(), { title: "", keyword: "", keywords: [], excludeKeyword: "", excludeKeywords: [], score: 1 }]);
-  }
-  if (btn.id === "addScoreRewardBtn") {
-    renderScoreRewardRows([...collectScoreRewardRows(), { threshold: 1, reward: "", quantity: 1 }]);
-  }
-  if (btn.id === "addProductRuleBtn") {
-    renderProductRuleRows([...collectProductRuleRows(), { title: "", keyword: "", keywords: [], reward: "", quantity: 1 }]);
-  }
-});
-
 init();
+
+// V10.58 promo button delegated fallback fix
+(function(){
+  function addPromoRowFix(){
+    const id=event && event.target ? event.target.id : '';
+    try {
+      if(id==='addCountRuleBtn'){ renderCountRuleRows([...collectCountRuleRows(), { threshold: 1, reward: "", quantity: 1 }]); return; }
+      if(id==='addScoreRuleBtn'){ renderScoreRuleRows([...collectScoreRuleRows(), { title:"", keyword:"", keywords:[], excludeKeyword:"", excludeKeywords:[], score:1 }]); return; }
+      if(id==='addScoreRewardBtn'){ renderScoreRewardRows([...collectScoreRewardRows(), { threshold:1, reward:"", quantity:1 }]); return; }
+      if(id==='addProductRuleBtn'){ renderProductRuleRows([...collectProductRuleRows(), { title:"", keyword:"", keywords:[], reward:"", quantity:1 }]); return; }
+    } catch(e){ console.error('promo add fix', e); }
+  }
+  document.addEventListener('click', addPromoRowFix, true);
+})();
