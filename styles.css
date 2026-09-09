@@ -23564,7 +23564,7 @@ body[data-view="records"] .record-form-row.row-basic {
 }
 
 
-/* V10.44 급여계산 / 월별도표 단일 타이틀 + 영역형 레이아웃 */
+/* 급여계산 / 월별도표 단일 타이틀 + 영역형 레이아웃 */
 .payroll-page-v1044,
 .renewal-guide-page-v1044 { gap: 16px !important; }
 .payroll-workflow-panel,

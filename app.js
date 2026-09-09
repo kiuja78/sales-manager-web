@@ -3481,21 +3481,11 @@ function normalizeActivityType(value) {
 }
 
 function recordActivityType(record) {
-  const explicit = normalizeActivityType(
+  // 구분은 사용자가 직접 선택한 값만 사용합니다.
+  // 기타내용/메모에 '컨스' 또는 '지원' 문구가 있어도 자동으로 구분값을 만들지 않습니다.
+  return normalizeActivityType(
     record?.activityType ?? record?.distinction ?? record?.supportType ?? record?.consType ?? ""
   );
-  if (explicit) return explicit;
-
-  // 기존 데이터 호환: 예전에는 기타내용에 '컨스' 또는 '지원'을 직접 입력했습니다.
-  // 새 '구분' 필드가 비어 있을 때만 기존 기타내용을 그대로 해석합니다.
-  const legacy = String(record?.memo || "").normalize("NFKC").toLowerCase();
-  const compact = legacy.replace(/[\s._\-\/]+/g, "");
-  const hasCons = compact.includes("오다컨스") || compact.includes("컨스") || compact.includes("콘스");
-  const hasSupport = compact.includes("지원");
-  if (hasCons && !hasSupport) return "컨스";
-  if (hasSupport && !hasCons) return "지원";
-  if (hasCons && hasSupport) return "컨스/지원";
-  return "";
 }
 
 function activityTypeChipClass(value) {
@@ -3529,14 +3519,12 @@ function analyticsBaseRecordsForMonth(month) {
 }
 
 function analyticsActivityFlags(record) {
-  const text = analyticsActivityText(record);
-  const compact = text.replace(/[\s._\-\/]+/g, "");
-  const cons = compact.includes("오다컨스") || compact.includes("컨스") || compact.includes("콘스");
-  const support = compact.includes("지원");
+  // 접수리스트의 '구분' 직접 선택값만 집계합니다.
+  const type = recordActivityType(record);
   return {
-    cons,
+    cons: type === "컨스",
     orderCons: false,
-    support,
+    support: type === "지원",
     excludedFromPure: false
   };
 }
@@ -7030,7 +7018,7 @@ function printManagementEvaluation() {
 <style>
 @page{size:A4 portrait;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;padding:0;background:#fff;color:#17231e;font-family:"Malgun Gothic",Arial,sans-serif}body{font-size:9pt;line-height:1.35}.evaluation-report-page{position:relative;width:210mm;height:297mm;padding:13mm 13mm 12mm;overflow:hidden;background:#fff;break-after:page;page-break-after:always}.evaluation-report-page:last-child{break-after:auto;page-break-after:auto}.evaluation-report-header{height:24mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;padding-bottom:4mm;border-bottom:2px solid #214b3b;margin-bottom:5mm}.evaluation-report-kicker{color:#527b69;font-size:7pt;font-weight:900;letter-spacing:.16em;margin-bottom:1.2mm}.evaluation-report-header h1{margin:0;font-size:20pt;line-height:1.1;color:#173a2e;letter-spacing:-.04em}.evaluation-report-header p{margin:2mm 0 0;color:#5b6c64;font-size:8pt;font-weight:700}.evaluation-report-meta{min-width:42mm;text-align:right}.evaluation-report-meta strong{display:block;font-size:11pt;color:#173a2e}.evaluation-report-meta span{display:block;margin-top:1mm;color:#5b6c64;font-size:7.5pt;font-weight:700}.evaluation-report-section-note{margin:0 0 3mm;padding:2mm 3mm;border-left:3px solid #4b8069;background:#f1f6f3;color:#3d5148;font-size:8pt;font-weight:750}.evaluation-report-body{height:243mm;overflow:hidden}.evaluation-report-footer{position:absolute;left:13mm;right:13mm;bottom:5mm;padding-top:2mm;border-top:1px solid #c5d0cb;display:grid;grid-template-columns:1fr 1fr 12mm;gap:3mm;color:#708078;font-size:6.8pt}.evaluation-report-footer span:nth-child(2){text-align:center}.evaluation-report-footer strong{text-align:right;color:#214b3b}.panel{border:1px solid #b9c7c0;border-radius:3px;background:#fff;box-shadow:none;margin:0 0 4mm;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:2.2mm 3mm;border-bottom:1px solid #c8d2cd;background:#f0f5f2}.panel-head h2{margin:0;font-size:10pt;color:#1c4032;font-weight:900}.panel-head strong,.panel-head span{color:#53655d;font-size:7.5pt;font-weight:800}.evaluation-summary-grid{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:2.2mm;padding:2.5mm}.evaluation-summary-card{min-height:21mm;padding:2.6mm;border:1px solid #c2cec8;border-radius:3px;background:#fbfcfb;text-align:center}.evaluation-summary-card.main{background:#eef6f1;border-color:#7ca18e}.evaluation-summary-card span{display:block;color:#5b6b63;font-size:7.2pt;font-weight:800}.evaluation-summary-card strong{display:block;margin-top:1.8mm;color:#173a2e;font-size:14pt;line-height:1;font-weight:950}.evaluation-summary-card.main strong{font-size:18pt}.evaluation-score-panel{margin-top:3mm}.evaluation-score-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-score-table th,.evaluation-score-table td{border:1px solid #bcc7c2;padding:1.25mm .8mm;text-align:center;vertical-align:middle;overflow:hidden}.evaluation-score-table th{background:#edf3f0;color:#234536;font-size:6.7pt;font-weight:900}.evaluation-score-table td{font-size:6.5pt;font-weight:700;color:#25342e}.evaluation-score-table th:nth-child(1){width:14mm}.evaluation-score-table th:nth-child(2){width:14mm}.evaluation-score-table th:nth-child(3){width:16mm}.evaluation-score-table th:nth-child(4){width:31mm}.evaluation-score-table th:nth-child(5){width:27mm}.evaluation-score-table th:nth-child(6){width:48mm}.evaluation-score-table th:nth-child(7){width:16mm}.evaluation-score-table th:nth-child(8){width:16mm}.evaluation-part-name{background:#f5f8f6;font-weight:900;color:#214b3b}.evaluation-part-max,.evaluation-part-score{background:#f9fbfa}.evaluation-part-score strong{display:block;font-size:8.5pt}.evaluation-part-score span,.evaluation-part-score small{display:block;color:#66766e;font-size:5.8pt}.evaluation-score-cell{font-size:8.5pt;font-weight:950;color:#173a2e}.evaluation-detail-table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4mm}.evaluation-detail-table th,.evaluation-detail-table td{border:1px solid #bcc7c2;padding:1.8mm 1.2mm;font-size:7.2pt;vertical-align:middle}.evaluation-detail-table th{background:#edf3f0;color:#234536;font-weight:900;text-align:center}.evaluation-detail-table td{text-align:center}.evaluation-detail-table td:first-child{text-align:left;font-weight:900;color:#214b3b}.evaluation-detail-report{margin-top:3mm}.evaluation-detail-report .report-subheading{margin-bottom:2mm}..evaluation-product-tables-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-product-tables-grid table,.evaluation-policy-product-report table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-product-tables-grid th,.evaluation-product-tables-grid td,.evaluation-policy-product-report th,.evaluation-policy-product-report td{border:1px solid #bcc7c2;padding:1.5mm 1mm;text-align:center;vertical-align:middle;font-size:7pt}.evaluation-product-tables-grid th,.evaluation-policy-product-report th{background:#edf3f0;color:#234536;font-weight:900}.evaluation-product-total-row th,.evaluation-product-total-row td{background:#f0f5f2;font-weight:950}.evaluation-product-count-cell{font-weight:950;color:#173a2e}.evaluation-manual-report,.evaluation-policy-report,.evaluation-policy-product-report{margin:0}.report-subheading{font-size:12pt;font-weight:950;color:#173a2e;padding:2mm 0 2.5mm;border-bottom:2px solid #214b3b;margin-bottom:2.5mm}.report-intro{margin:0 0 3mm;color:#5b6c64;font-size:7.8pt;font-weight:700}.evaluation-manual-table,.evaluation-policy-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-manual-table th,.evaluation-manual-table td,.evaluation-policy-table th,.evaluation-policy-table td{border:1px solid #bcc7c2;padding:1.7mm 1.2mm;vertical-align:middle}.evaluation-manual-table th,.evaluation-policy-table th{background:#edf3f0;color:#234536;font-size:7pt;font-weight:900;text-align:center}.evaluation-manual-table td{font-size:7.4pt}.evaluation-manual-table th:nth-child(1){width:32mm}.evaluation-manual-table th:nth-child(2){width:auto}.evaluation-manual-table th:nth-child(3){width:38mm}.manual-part{background:#f7faf8;font-weight:900;color:#214b3b}.manual-value{text-align:center;font-weight:950;color:#173a2e}.evaluation-policy-table{font-size:6.6pt}.evaluation-policy-table th,.evaluation-policy-table td{padding:1.5mm .9mm;text-align:center;overflow-wrap:anywhere}.evaluation-policy-table th:nth-child(1){width:27mm}.evaluation-policy-table th:nth-child(2){width:15mm}.evaluation-policy-table th:nth-child(3){width:40mm}.evaluation-policy-table th:nth-child(4){width:27mm}.evaluation-policy-table th:nth-child(5){width:17mm}.evaluation-policy-table th:nth-child(6){width:24mm}.evaluation-policy-table th:nth-child(7){width:18mm}.evaluation-policy-table th:nth-child(8){width:auto}.policy-item-title{font-weight:900;color:#214b3b;background:#f7faf8}.evaluation-policy-product-report{margin-top:5mm}.evaluation-policy-product-report h3{margin:0 0 1.5mm;font-size:8.5pt;color:#214b3b}.evaluation-policy-product-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-print-value{font-weight:900}.report-empty{padding:12mm;text-align:center;color:#718078;border:1px dashed #b9c7c0}.evaluation-report-first .evaluation-score-panel{margin-bottom:0}.evaluation-report-policy .evaluation-policy-report{margin-bottom:0}@media print{.evaluation-report-page{break-inside:avoid;page-break-inside:avoid}}
 
-/* V10.56 Evaluation Report Design Upgrade */
+/* V10.57 Evaluation Report Design Upgrade */
 .evaluation-report-first .evaluation-summary-grid{grid-template-columns:1.6fr repeat(3,1fr);gap:3mm;}
 .evaluation-report-first .evaluation-summary-card{border-radius:8px;padding:4mm;min-height:25mm;background:#fff;}
 .evaluation-report-first .evaluation-summary-card.main{background:linear-gradient(135deg,#e8f3ff,#f7fbff);border:2px solid #2f6fb5;}
@@ -7625,7 +7613,7 @@ function renderCommonControls() {
 
   setOptions($("#categoryInput"), categories, $("#categoryInput").value);
   const activityTypeInput = $("#activityTypeInput");
-  if (activityTypeInput) setOptions(activityTypeInput, activityTypes.map((value) => ({ value, label: value || "선택" })), activityTypeInput.value);
+  if (activityTypeInput) setOptions(activityTypeInput, activityTypes.map((value) => ({ value, label: value || "-" })), activityTypeInput.value);
   setOptions($("#statusInput"), statuses, $("#statusInput").value);
   updateSellerInputOptions($("#sellerInput")?.value || "");
 
@@ -9011,7 +8999,7 @@ function recordPrintHtml(records) {
         <td class="status">${escapeHtml(compactValue(record.status))}</td>
         <td class="manager">${escapeHtml(compactValue(record.manager))}</td>
         <td class="category">${escapeHtml(compactValue(record.category))}</td>
-        <td class="activity">${escapeHtml(recordActivityType(record) || "-")}</td>
+        <td class="activity">${escapeHtml(recordActivityType(record) || "")}</td>
         <td class="count">${formatNumber(record.count)}</td>
         <td class="customer-no">${record.previousCustomer ? `<span>${escapeHtml(record.previousCustomer)}</span><br>` : ""}<strong>${escapeHtml(compactValue(record.customerNo))}</strong></td>
         <td class="customer"><strong>${escapeHtml(compactValue(record.customerName))}</strong>${phone ? `<br><span>${escapeHtml(phone)}</span>` : ""}</td>
@@ -9616,7 +9604,7 @@ function mobileRecordCardHtml(record, index, total, membership = false) {
           <div class="mobile-record-detail-row"><span>기존 고객번호</span><strong>${escapeHtml(previousNo || "-")}</strong></div>
           <div class="mobile-record-detail-row"><span>신규 고객번호</span><strong>${escapeHtml(newNo || "-")}</strong></div>
           <div class="mobile-record-detail-row"><span>${sellerLabel}</span><strong>${escapeHtml(sellerValue)}</strong></div>
-          ${!membership ? `<div class="mobile-record-detail-row"><span>구분</span><strong>${escapeHtml(activityType || "-")}</strong></div>` : ""}
+          ${!membership ? `<div class="mobile-record-detail-row"><span>구분</span><strong>${escapeHtml(activityType || "")}</strong></div>` : ""}
           <div class="mobile-record-detail-row"><span>기타내용</span><strong>${escapeHtml(compactValue(record.memo, "-"))}</strong></div>
         </div>
       </div>
@@ -9816,7 +9804,7 @@ function renderRecords() {
         <td class="status-col" data-edit-type="status"><span class="status-pill ${statusClass(record.status)} ${typeof statusColorClass === "function" ? statusColorClass(record.status) : ""}">${escapeHtml(compactValue(record.status))}</span></td>
         <td class="manager-col" data-edit-type="manager"><strong>${escapeHtml(compactValue(record.manager))}</strong></td>
         <td class="category-col" data-edit-type="category"><span class="category-chip ${typeof categoryColorClass === "function" ? categoryColorClass(record.category) : ""}">${escapeHtml(compactValue(record.category))}</span></td>
-        <td class="activity-col" data-edit-type="activity-type"><span class="activity-type-chip ${activityTypeChipClass(recordActivityType(record))}">${escapeHtml(recordActivityType(record) || "-")}</span></td>
+        <td class="activity-col" data-edit-type="activity-type">${recordActivityType(record) ? `<span class="activity-type-chip ${activityTypeChipClass(recordActivityType(record))}">${escapeHtml(recordActivityType(record))}</span>` : ""}</td>
         <td class="count-col" data-edit-type="count"><strong>${formatNumber(record.count)}</strong></td>
         <td class="customer-no-col" data-edit-type="customer-no-pair">
           ${previousNo ? `<span class="old-no">${escapeHtml(previousNo)}</span>` : `<span class="old-no muted-text">기존 없음</span>`}
@@ -10425,7 +10413,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.56",
+    version: "V10.57",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -11264,7 +11252,7 @@ function updateRecordState(recordId, patch, message = "접수내역을 수정했
   // 수정 시에는 updatedAt만 기록하고, 접수일 정렬 순서는 변경하지 않습니다.
   record.updatedAt = new Date().toISOString();
   if (patch.category) record.category = normalizeCategory(record.category);
-  if (patch.activityType !== undefined) record.activityType = normalizeActivityType(patch.activityType);
+  if (patch.activityType !== undefined) record.activityType = normalizeActivityType(record.activityType);
   selectedRecordId = recordId;
   persistState();
   renderRecords();
@@ -11276,7 +11264,7 @@ function updateRecordState(recordId, patch, message = "접수내역을 수정했
 function buildInlineEditor(type, record) {
   const recordMonth = recordGoalMonth(record);
   const managers = managerInputNames(record.manager, recordMonth, true);
-  const selectMarkup = (field, current, values) => `<select class="cell-input" data-field="${field}">${values.map((value) => `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(value)}</option>`).join("")}</select>`;
+  const selectMarkup = (field, current, values, emptyLabel = "") => `<select class="cell-input" data-field="${field}">${values.map((value) => `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(value || emptyLabel)}</option>`).join("")}</select>`;
   if (type === "date-pair") return `
     <div class="cell-editor-stack">
       <input class="cell-input" data-field="receivedDate" type="date" value="${escapeHtml(record.receivedDate || "")}">
@@ -11285,7 +11273,7 @@ function buildInlineEditor(type, record) {
   if (type === "status") return selectMarkup("status", record.status, statuses);
   if (type === "manager") return selectMarkup("manager", record.manager, managers);
   if (type === "category") return selectMarkup("category", normalizeCategory(record.category), categories);
-  if (type === "activity-type") return selectMarkup("activityType", activityTypes.includes(recordActivityType(record)) ? recordActivityType(record) : "", activityTypes);
+  if (type === "activity-type") return selectMarkup("activityType", activityTypes.includes(recordActivityType(record)) ? recordActivityType(record) : "", activityTypes, "-");
   if (type === "count") return `<input class="cell-input" data-field="count" type="number" min="0" step="0.5" value="${escapeHtml(record.count ?? 0)}">`;
   if (type === "customer-no-pair") return `
     <div class="cell-editor-stack">
@@ -14864,7 +14852,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.56";
+const APP_VERSION = "v10.57";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
