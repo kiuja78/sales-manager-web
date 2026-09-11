@@ -1339,6 +1339,30 @@ tbody tr:hover {
   min-height: 36px;
 }
 
+.record-list-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.record-select-col {
+  width: 34px !important;
+  min-width: 34px;
+  text-align: center !important;
+}
+
+.record-select-checkbox {
+  width: 17px;
+  height: 17px;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--primary, #1f6b57);
+}
+
+#bulkDeleteRecordsBtn {
+  white-space: nowrap;
+}
+
 .record-table {
   min-width: 0;
   width: 100%;

@@ -22,7 +22,7 @@
     <p>체계적인 영업관리, 더 나은 성과의 시작</p>
     <div class="startup-intro-status"><span></span><span id="startupIntroStatus">업무 화면을 구성하고 있습니다</span></div>
     <div class="startup-intro-progress"><i id="startupIntroProgress"></i></div>
-    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.59</span></div>
+    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.61</span></div>
   </div>
 </div>
 
@@ -31,7 +31,7 @@
       <div class="brand" id="sidebarRefreshBtn" role="button" tabindex="0" title="새로고침">
         <div class="brand-mark brand-program-icon"><img src="./assets/sales_manager_icon.png" alt="영업관리 시스템"></div>
         <div class="brand-text">
-          <strong id="sidebarAppTitle">영업관리 시스템 V10.59</strong>
+          <strong id="sidebarAppTitle">영업관리 시스템 V10.61</strong>
           <em id="sidebarManagerLine">김건일 마스터</em>
         </div>
       </div>
@@ -600,7 +600,7 @@
                 <h2>접수 내역</h2>
                 <span id="recordListCount">0건</span>
               </div>
-              <button class="ghost-button small" type="button" id="printRecordsBtn">출력하기</button>
+              <div class="record-list-head-actions"><button class="danger-button small" type="button" id="bulkDeleteRecordsBtn" disabled>선택 삭제 <span id="selectedRecordCount">0</span></button><button class="ghost-button small" type="button" id="printRecordsBtn">출력하기</button></div>
             </div>
 
             <div class="record-filter-row record-period-filter-row record-filter-compact-row">
@@ -650,7 +650,7 @@
               <table class="record-table">
                 <thead>
                   <tr>
-                    <th class="seq-col">순번</th>
+                    <th class="record-select-col"><input type="checkbox" id="selectAllRecords" aria-label="현재 목록 전체 선택"></th><th class="seq-col">순번</th>
                     <th class="date-col">접수일<br><span>설치요청일</span></th>
                     <th class="status-col"><select id="recordStatusFilter" class="header-filter header-title-filter" aria-label="상태 필터"></select></th>
                     <th class="manager-col"><select id="recordManagerFilter" class="header-filter header-title-filter" aria-label="매니저 필터"></select></th>

@@ -554,6 +554,7 @@ let state = loadState();
 let currentView = "dashboard";
 let managerPerformanceMode = "assigned";
 let selectedRecordId = "";
+const selectedRecordIds = new Set();
 let recordSequenceSort = "desc";
 let promoListFilter = "all";
 let calendarDragStart = "";
@@ -1707,12 +1708,14 @@ function defaultTeamName() {
 
 function normalizeTeamHistoryForNames(history, fallbackTeam, joinedMonth, teamNames = configuredTeamNames()) {
   const names = teamNames.length ? teamNames : ["원팀"];
-  const fallback = names.includes(normalizeTeamName(fallbackTeam)) ? normalizeTeamName(fallbackTeam) : names[0];
+  const explicitFallback = normalizeTeamName(fallbackTeam);
+  const fallback = explicitFallback || names[0];
   const source = Array.isArray(history) ? history : [];
   const normalized = source.map((item) => {
     const team = normalizeTeamName(item?.team);
     return {
-      team: names.includes(team) ? team : fallback,
+      // 저장된 소속팀을 현재 팀 목록의 첫 팀으로 강제 치환하지 않습니다.
+      team: team || fallback,
       startMonth: normalizeManagerMonth(item?.startMonth),
       endMonth: normalizeManagerMonth(item?.endMonth)
     };
@@ -1729,7 +1732,8 @@ function normalizeManagerTeamHistory(history, fallbackTeam = defaultTeamName(), 
 
 function normalizeManager(manager = {}) {
   const names = configuredTeamNames();
-  const fallbackTeam = names.includes(normalizeTeamName(manager.team)) ? normalizeTeamName(manager.team) : names[0];
+  const explicitTeam = normalizeTeamName(manager.team);
+  const fallbackTeam = explicitTeam || names[0] || "원팀";
   const joinedMonth = normalizeManagerMonth(manager.joinedMonth || manager.startMonth);
   const inactiveMonth = normalizeManagerMonth(manager.inactiveMonth || manager.endMonth);
   const status = manager.status === "inactive" || manager.active === false ? "inactive" : "active";
@@ -1738,7 +1742,8 @@ function normalizeManager(manager = {}) {
   return {
     id: manager.id || uid("m"),
     name: String(manager.name || "").trim(),
-    team: latestHistory?.team || fallbackTeam,
+    // 명시적으로 저장된 manager.team을 우선합니다.
+    team: explicitTeam || latestHistory?.team || fallbackTeam,
     areas: Array.isArray(manager.areas)
       ? manager.areas.map((item) => String(item || "").trim()).filter(Boolean)
       : String(manager.areas || "").split(",").map((item) => item.trim()).filter(Boolean),
@@ -7018,7 +7023,7 @@ function printManagementEvaluation() {
 <style>
 @page{size:A4 portrait;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;padding:0;background:#fff;color:#17231e;font-family:"Malgun Gothic",Arial,sans-serif}body{font-size:9pt;line-height:1.35}.evaluation-report-page{position:relative;width:210mm;height:297mm;padding:13mm 13mm 12mm;overflow:hidden;background:#fff;break-after:page;page-break-after:always}.evaluation-report-page:last-child{break-after:auto;page-break-after:auto}.evaluation-report-header{height:24mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;padding-bottom:4mm;border-bottom:2px solid #214b3b;margin-bottom:5mm}.evaluation-report-kicker{color:#527b69;font-size:7pt;font-weight:900;letter-spacing:.16em;margin-bottom:1.2mm}.evaluation-report-header h1{margin:0;font-size:20pt;line-height:1.1;color:#173a2e;letter-spacing:-.04em}.evaluation-report-header p{margin:2mm 0 0;color:#5b6c64;font-size:8pt;font-weight:700}.evaluation-report-meta{min-width:42mm;text-align:right}.evaluation-report-meta strong{display:block;font-size:11pt;color:#173a2e}.evaluation-report-meta span{display:block;margin-top:1mm;color:#5b6c64;font-size:7.5pt;font-weight:700}.evaluation-report-section-note{margin:0 0 3mm;padding:2mm 3mm;border-left:3px solid #4b8069;background:#f1f6f3;color:#3d5148;font-size:8pt;font-weight:750}.evaluation-report-body{height:243mm;overflow:hidden}.evaluation-report-footer{position:absolute;left:13mm;right:13mm;bottom:5mm;padding-top:2mm;border-top:1px solid #c5d0cb;display:grid;grid-template-columns:1fr 1fr 12mm;gap:3mm;color:#708078;font-size:6.8pt}.evaluation-report-footer span:nth-child(2){text-align:center}.evaluation-report-footer strong{text-align:right;color:#214b3b}.panel{border:1px solid #b9c7c0;border-radius:3px;background:#fff;box-shadow:none;margin:0 0 4mm;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:2.2mm 3mm;border-bottom:1px solid #c8d2cd;background:#f0f5f2}.panel-head h2{margin:0;font-size:10pt;color:#1c4032;font-weight:900}.panel-head strong,.panel-head span{color:#53655d;font-size:7.5pt;font-weight:800}.evaluation-summary-grid{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:2.2mm;padding:2.5mm}.evaluation-summary-card{min-height:21mm;padding:2.6mm;border:1px solid #c2cec8;border-radius:3px;background:#fbfcfb;text-align:center}.evaluation-summary-card.main{background:#eef6f1;border-color:#7ca18e}.evaluation-summary-card span{display:block;color:#5b6b63;font-size:7.2pt;font-weight:800}.evaluation-summary-card strong{display:block;margin-top:1.8mm;color:#173a2e;font-size:14pt;line-height:1;font-weight:950}.evaluation-summary-card.main strong{font-size:18pt}.evaluation-score-panel{margin-top:3mm}.evaluation-score-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-score-table th,.evaluation-score-table td{border:1px solid #bcc7c2;padding:1.25mm .8mm;text-align:center;vertical-align:middle;overflow:hidden}.evaluation-score-table th{background:#edf3f0;color:#234536;font-size:6.7pt;font-weight:900}.evaluation-score-table td{font-size:6.5pt;font-weight:700;color:#25342e}.evaluation-score-table th:nth-child(1){width:14mm}.evaluation-score-table th:nth-child(2){width:14mm}.evaluation-score-table th:nth-child(3){width:16mm}.evaluation-score-table th:nth-child(4){width:31mm}.evaluation-score-table th:nth-child(5){width:27mm}.evaluation-score-table th:nth-child(6){width:48mm}.evaluation-score-table th:nth-child(7){width:16mm}.evaluation-score-table th:nth-child(8){width:16mm}.evaluation-part-name{background:#f5f8f6;font-weight:900;color:#214b3b}.evaluation-part-max,.evaluation-part-score{background:#f9fbfa}.evaluation-part-score strong{display:block;font-size:8.5pt}.evaluation-part-score span,.evaluation-part-score small{display:block;color:#66766e;font-size:5.8pt}.evaluation-score-cell{font-size:8.5pt;font-weight:950;color:#173a2e}.evaluation-detail-table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4mm}.evaluation-detail-table th,.evaluation-detail-table td{border:1px solid #bcc7c2;padding:1.8mm 1.2mm;font-size:7.2pt;vertical-align:middle}.evaluation-detail-table th{background:#edf3f0;color:#234536;font-weight:900;text-align:center}.evaluation-detail-table td{text-align:center}.evaluation-detail-table td:first-child{text-align:left;font-weight:900;color:#214b3b}.evaluation-detail-report{margin-top:3mm}.evaluation-detail-report .report-subheading{margin-bottom:2mm}..evaluation-product-tables-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-product-tables-grid table,.evaluation-policy-product-report table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-product-tables-grid th,.evaluation-product-tables-grid td,.evaluation-policy-product-report th,.evaluation-policy-product-report td{border:1px solid #bcc7c2;padding:1.5mm 1mm;text-align:center;vertical-align:middle;font-size:7pt}.evaluation-product-tables-grid th,.evaluation-policy-product-report th{background:#edf3f0;color:#234536;font-weight:900}.evaluation-product-total-row th,.evaluation-product-total-row td{background:#f0f5f2;font-weight:950}.evaluation-product-count-cell{font-weight:950;color:#173a2e}.evaluation-manual-report,.evaluation-policy-report,.evaluation-policy-product-report{margin:0}.report-subheading{font-size:12pt;font-weight:950;color:#173a2e;padding:2mm 0 2.5mm;border-bottom:2px solid #214b3b;margin-bottom:2.5mm}.report-intro{margin:0 0 3mm;color:#5b6c64;font-size:7.8pt;font-weight:700}.evaluation-manual-table,.evaluation-policy-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-manual-table th,.evaluation-manual-table td,.evaluation-policy-table th,.evaluation-policy-table td{border:1px solid #bcc7c2;padding:1.7mm 1.2mm;vertical-align:middle}.evaluation-manual-table th,.evaluation-policy-table th{background:#edf3f0;color:#234536;font-size:7pt;font-weight:900;text-align:center}.evaluation-manual-table td{font-size:7.4pt}.evaluation-manual-table th:nth-child(1){width:32mm}.evaluation-manual-table th:nth-child(2){width:auto}.evaluation-manual-table th:nth-child(3){width:38mm}.manual-part{background:#f7faf8;font-weight:900;color:#214b3b}.manual-value{text-align:center;font-weight:950;color:#173a2e}.evaluation-policy-table{font-size:6.6pt}.evaluation-policy-table th,.evaluation-policy-table td{padding:1.5mm .9mm;text-align:center;overflow-wrap:anywhere}.evaluation-policy-table th:nth-child(1){width:27mm}.evaluation-policy-table th:nth-child(2){width:15mm}.evaluation-policy-table th:nth-child(3){width:40mm}.evaluation-policy-table th:nth-child(4){width:27mm}.evaluation-policy-table th:nth-child(5){width:17mm}.evaluation-policy-table th:nth-child(6){width:24mm}.evaluation-policy-table th:nth-child(7){width:18mm}.evaluation-policy-table th:nth-child(8){width:auto}.policy-item-title{font-weight:900;color:#214b3b;background:#f7faf8}.evaluation-policy-product-report{margin-top:5mm}.evaluation-policy-product-report h3{margin:0 0 1.5mm;font-size:8.5pt;color:#214b3b}.evaluation-policy-product-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-print-value{font-weight:900}.report-empty{padding:12mm;text-align:center;color:#718078;border:1px dashed #b9c7c0}.evaluation-report-first .evaluation-score-panel{margin-bottom:0}.evaluation-report-policy .evaluation-policy-report{margin-bottom:0}@media print{.evaluation-report-page{break-inside:avoid;page-break-inside:avoid}}
 
-/* V10.59 Evaluation Report Design Upgrade */
+/* V10.61 Evaluation Report Design Upgrade */
 .evaluation-report-first .evaluation-summary-grid{grid-template-columns:1.6fr repeat(3,1fr);gap:3mm;}
 .evaluation-report-first .evaluation-summary-card{border-radius:8px;padding:4mm;min-height:25mm;background:#fff;}
 .evaluation-report-first .evaluation-summary-card.main{background:linear-gradient(135deg,#e8f3ff,#f7fbff);border:2px solid #2f6fb5;}
@@ -8720,6 +8725,36 @@ function normalizedPhoneDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function currentUserTeamName(month = currentDashboardMonth()) {
+  const configured = configuredTeamNames();
+  const explicit = normalizeTeamName(state?.appMeta?.userTeam);
+  if (explicit) return explicit;
+
+  const masterName = String(state?.appMeta?.masterName || "").trim();
+  if (masterName) {
+    const manager = managerByName(masterName);
+    if (manager?.name) return currentTeamForManager(manager);
+  }
+
+  return configured[0] || "원팀";
+}
+
+function currentTeamForManager(managerOrName) {
+  const manager = typeof managerOrName === "string" ? managerByName(managerOrName) : managerOrName;
+  if (!manager?.name) return "";
+  const normalized = normalizeManager(manager);
+  return normalizeTeamName(normalized.team) || managerTeamForMonth(normalized, currentDashboardMonth());
+}
+
+function recordBelongsToCurrentUserTeam(record, month = "") {
+  const managerName = String(record?.manager || "").trim();
+  if (!managerName) return false;
+  const manager = managerByName(managerName);
+  if (!manager) return false;
+  const targetMonth = normalizeManagerMonth(month) || currentDashboardMonth();
+  return currentTeamForManager(manager) === currentUserTeamName(targetMonth);
+}
+
 function filteredRecordSetForList() {
   const statusFilter = $("#recordStatusFilter")?.value || "";
   const managerFilter = $("#recordManagerFilter")?.value || "";
@@ -8728,8 +8763,11 @@ function filteredRecordSetForList() {
   const simpleSearch = ($("#recordSimpleSearch")?.value || "").trim().toLowerCase();
   const simpleSearchDigits = normalizedPhoneDigits(simpleSearch);
 
+  const teamScoped = state?.appMeta?.teamScopedRecords !== false;
+
   return recordsByRecordPeriod()
     .filter((record) => !isMembershipRecord(record))
+    .filter((record) => !teamScoped || recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, currentDashboardMonth())))
     .filter((record) => {
       if (!simpleSearch) return true;
       const searchableText = [
@@ -9776,6 +9814,43 @@ function statusCountSummary(records, labels = {}) {
   return parts.join(" / ");
 }
 
+function recordSelectionKey(record) {
+  return String(record?.id || promoRecordKey(record) || "");
+}
+
+function updateBulkRecordDeleteUI(visibleRecords = []) {
+  const selectedVisible = visibleRecords.filter((record) => selectedRecordIds.has(recordSelectionKey(record))).length;
+  const count = selectedRecordIds.size;
+  const button = $("#bulkDeleteRecordsBtn");
+  if (button) {
+    button.disabled = count === 0;
+    button.innerHTML = `선택 삭제 <span id="selectedRecordCount">${count}</span>`;
+  }
+  const selectAll = $("#selectAllRecords");
+  if (selectAll) {
+    selectAll.checked = visibleRecords.length > 0 && selectedVisible === visibleRecords.length;
+    selectAll.indeterminate = selectedVisible > 0 && selectedVisible < visibleRecords.length;
+  }
+}
+
+function deleteSelectedRecords() {
+  const keys = new Set(selectedRecordIds);
+  if (!keys.size) return;
+  const targetRecords = (state.records || []).filter((record) => keys.has(recordSelectionKey(record)));
+  if (!targetRecords.length) {
+    selectedRecordIds.clear();
+    updateBulkRecordDeleteUI([]);
+    return;
+  }
+  const ok = window.confirm(`선택한 ${targetRecords.length}건의 접수 내역을 삭제하시겠습니까?\n삭제한 데이터는 되돌릴 수 없습니다.`);
+  if (!ok) return;
+  state.records = (state.records || []).filter((record) => !keys.has(recordSelectionKey(record)));
+  if (selectedRecordId && keys.has(String(selectedRecordId))) selectedRecordId = "";
+  selectedRecordIds.clear();
+  resetRecordForm();
+  saveState(`${targetRecords.length}건의 접수 내역을 삭제했습니다.`);
+}
+
 function renderRecords() {
   const records = visibleRecordsForCurrentFilters();
 
@@ -9788,8 +9863,10 @@ function renderRecords() {
       const statusKey = compactValue(record.status, "접수");
       const selectedClass = selectedRecordId === record.id ? " selected-record-row" : "";
       const sequence = records.length - index;
+      const recordKey = recordSelectionKey(record);
       return `
-      <tr class="clickable-row clean-record-row status-${escapeHtml(statusKey)}${record.seller ? " seller-selected-row" : ""}${selectedClass}" data-record-id="${escapeHtml(promoRecordKey(record))}" title="순번을 클릭하면 상하 이동 버튼이 보입니다.">
+      <tr class="clickable-row clean-record-row status-${escapeHtml(statusKey)}${record.seller ? " seller-selected-row" : ""}${selectedClass}" data-record-id="${escapeHtml(recordKey)}" title="순번을 클릭하면 상하 이동 버튼이 보입니다.">
+        <td class="record-select-col"><input type="checkbox" class="record-select-checkbox" data-record-select="${escapeHtml(recordKey)}" aria-label="접수 내역 선택" ${selectedRecordIds.has(recordKey) ? "checked" : ""}></td>
         <td class="seq-col" data-edit-type="none">
           <div class="seq-cell seq-cell-vertical">
             <button class="row-move-button row-move-up" type="button" data-move="up" title="위로">▲</button>
@@ -9820,9 +9897,10 @@ function renderRecords() {
       </tr>
     `;
     }).join("")
-    : `<tr><td colspan="12" class="empty">조건에 맞는 접수 내역이 없습니다.</td></tr>`;
+    : `<tr><td colspan="13" class="empty">조건에 맞는 접수 내역이 없습니다.</td></tr>`;
 
   renderMobileRecordCards(records);
+  updateBulkRecordDeleteUI(records);
 }
 
 
@@ -10413,7 +10491,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.59",
+    version: "V10.61",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -14379,6 +14457,11 @@ function attachEvents() {
   });
 
   $("#recordTableBody").addEventListener("click", (event) => {
+    const checkbox = event.target.closest(".record-select-checkbox");
+    if (checkbox) {
+      event.stopPropagation();
+      return;
+    }
     const row = event.target.closest("[data-record-id]");
     if (!row) return;
 
@@ -14415,6 +14498,28 @@ function attachEvents() {
     if (event.target.closest("input, select, textarea, button")) return;
     enterRecordCellEdit(cell);
   });
+
+  $("#recordTableBody").addEventListener("change", (event) => {
+    const checkbox = event.target.closest(".record-select-checkbox");
+    if (!checkbox) return;
+    const key = String(checkbox.dataset.recordSelect || "");
+    if (!key) return;
+    if (checkbox.checked) selectedRecordIds.add(key);
+    else selectedRecordIds.delete(key);
+    updateBulkRecordDeleteUI(visibleRecordsForCurrentFilters());
+  });
+
+  $("#selectAllRecords")?.addEventListener("change", (event) => {
+    const visibleRecords = visibleRecordsForCurrentFilters();
+    visibleRecords.forEach((record) => {
+      const key = recordSelectionKey(record);
+      if (event.target.checked) selectedRecordIds.add(key);
+      else selectedRecordIds.delete(key);
+    });
+    renderRecords();
+  });
+
+  $("#bulkDeleteRecordsBtn")?.addEventListener("click", deleteSelectedRecords);
 
   $("#recordTableBody").addEventListener("keydown", (event) => {
     const cell = event.target.closest("td.editing-cell");
@@ -14852,7 +14957,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.59";
+const APP_VERSION = "v10.61";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
@@ -15334,7 +15439,7 @@ window.shareKakaoImage = shareKakaoImage;
 
 init();
 
-// V10.59 promo button delegated fallback fix
+// V10.61 promo button delegated fallback fix
 (function(){
   function addPromoRowFix(){
     const id=event && event.target ? event.target.id : '';
