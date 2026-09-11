@@ -17391,26 +17391,6 @@ body[data-view="settings"] .version-update-actions {
   flex-wrap: wrap !important;
 }
 
-/* 8. 모바일 조회 연동 */
-#settingsView .mobile-sync-grid,
-#settingsView .mobile-sync-url-field {
-  width: 100% !important;
-  min-width: 0 !important;
-  max-width: 100% !important;
-  box-sizing: border-box !important;
-}
-
-#settingsView .section-save-row,
-#settingsView .version-update-actions {
-  display: flex !important;
-  flex-wrap: wrap !important;
-  justify-content: flex-end !important;
-  gap: 8px !important;
-  width: 100% !important;
-  min-width: 0 !important;
-  box-sizing: border-box !important;
-}
-
 @media (max-width: 1080px) {
   #settingsView .menu-toggle-grid,
   #settingsView .goal-index-grid,
