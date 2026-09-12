@@ -1863,16 +1863,36 @@ function applyManagerStatusChange(manager, nextStatus, effectiveMonth) {
   const status = nextStatus === "inactive" ? "inactive" : "active";
   const month = normalizeManagerMonth(effectiveMonth) || monthIso();
   const history = normalizeStatusHistory(normalized.statusHistory, normalized.status, normalized.joinedMonth).map((item) => ({ ...item }));
+  const currentMonth = monthIso();
+  const currentEntry = historyEntryForMonth(history, currentMonth, "status");
+
+  // 적용월을 현재 이력보다 과거로 옮기는 것은 '새 이력 추가'가 아니라
+  // 현재 행의 상태 시작월을 앞당기는 수정입니다. 기존 현재 이력을 미래로 남기면
+  // 비활성/재직이 다음 달에 다시 원래 상태로 돌아가는 문제가 발생합니다.
+  if (currentEntry && month <= (currentEntry.startMonth || currentMonth)) {
+    const others = history.filter((item) => item !== currentEntry);
+    const prior = others.filter((item) => item.startMonth && item.startMonth < month)
+      .sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")));
+    const future = others.filter((item) => item.startMonth && item.startMonth > month)
+      .sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")));
+    const nextStart = future[0]?.startMonth || "";
+    if (prior[0] && (!prior[0].endMonth || prior[0].endMonth >= month)) prior[0].endMonth = shiftMonth(month, -1);
+    const moved = { ...currentEntry, status, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" };
+    return normalizeStatusHistory([...prior, moved, ...future], status, normalized.joinedMonth);
+  }
+
   const prior = history.filter((item) => item.startMonth && item.startMonth < month);
   const future = history.filter((item) => item.startMonth && item.startMonth > month);
+  const exact = history.find((item) => item.startMonth === month);
   const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
   const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
-  if (nextStart && status === "active" && future[0]?.status === "active") {
-    // 중복 활성 이력은 새 경계가 필요하지 않으므로 이후 이력을 그대로 유지합니다.
+  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
+  if (exact) {
+    exact.status = status;
+    exact.endMonth = nextStart ? shiftMonth(nextStart, -1) : "";
+    return normalizeStatusHistory(history, status, normalized.joinedMonth);
   }
-  const newEntry = { status, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" };
-  return normalizeStatusHistory([...prior, newEntry, ...future], status, normalized.joinedMonth);
+  return normalizeStatusHistory([...prior, { status, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future], status, normalized.joinedMonth);
 }
 
 function managerHistoryLabel(managerOrName) {
@@ -1899,33 +1919,59 @@ function applyManagerTeamChange(manager, nextTeam, effectiveMonth) {
   const names = configuredTeamNames();
   const team = names.includes(normalizeTeamName(nextTeam)) ? normalizeTeamName(nextTeam) : defaultTeamName();
   const month = normalizeManagerMonth(effectiveMonth) || monthIso();
-  const history = normalizeManagerTeamHistory(normalized.teamHistory, normalized.team, normalized.joinedMonth).map((item) => ({ ...item }));
+  const history = normalizeManagerTeamHistory(normalized.teamHistory, normalized.team, normalized.joinedMonth)
+    .map((item) => ({ ...item }));
 
-  // 적용월은 팀이 실제로 바뀌는 경우뿐 아니라, 같은 팀이라도 사용자가 지정한
-  // 새로운 소속 시작월 자체를 보존해야 합니다. 기존 코드는 같은 팀이면 history를
-  // 그대로 반환해 적용월이 현재월로 되돌아가는 원인이 되었습니다.
+  // 이 입력창은 '새 이력 추가'가 아니라 현재 행의 팀/적용월을 수정하는 UI입니다.
+  // 따라서 기존 최신/현재 이력의 시작월을 사용자가 과거로 옮긴 경우에는 기존 이력을
+  // 미래 이력으로 남겨두지 않고 그 이력 자체의 시작월을 이동시켜야 합니다.
+  // 이전 구현은 09월 이력에서 적용월을 08월로 바꾸면 08월 새 이력 + 09월 기존 이력을
+  // 동시에 만들어 09월에 다시 원래 팀으로 돌아오는 현상이 발생했습니다.
+  const sorted = history.slice().sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")));
+  const currentEntry = sorted.find((item) => !item.endMonth || item.endMonth >= monthIso()) || sorted[0];
+  const currentStart = currentEntry?.startMonth || normalized.joinedMonth || monthIso();
+
+  // 현재 행이 나타내는 기존 이력의 시작월을 직접 이동하는 경우
+  // (특히 적용월을 현재/과거 월로 변경하는 경우) 해당 이력을 수정합니다.
+  if (currentEntry && month <= currentStart) {
+    const others = history.filter((item) => item !== currentEntry);
+    const prior = others.filter((item) => item.startMonth && item.startMonth < month)
+      .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")));
+    const future = others.filter((item) => item.startMonth && item.startMonth > month)
+      .sort((a, b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")));
+    const nextStart = future[0]?.startMonth || "";
+    const movedEntry = {
+      ...currentEntry,
+      team,
+      startMonth: month,
+      endMonth: nextStart ? shiftMonth(nextStart, -1) : ""
+    };
+    if (prior[0] && (!prior[0].endMonth || prior[0].endMonth >= month)) {
+      prior[0].endMonth = shiftMonth(month, -1);
+    }
+    return normalizeManagerTeamHistory([...prior, movedEntry, ...future], team, normalized.joinedMonth);
+  }
+
+  // 미래월로 새 팀 이동을 예약하는 경우에는 현재 이력을 유지하고 새 경계를 추가합니다.
   const prior = history.filter((item) => item.startMonth && item.startMonth < month);
   const future = history.filter((item) => item.startMonth && item.startMonth > month);
   const exact = history.find((item) => item.startMonth === month);
-  const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
+  const previous = prior.slice().sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  const nextStart = future.slice().sort((a, b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
 
   if (previous && (!previous.endMonth || previous.endMonth >= month)) {
     previous.endMonth = shiftMonth(month, -1);
   }
-
   if (exact) {
     exact.team = team;
     exact.endMonth = nextStart ? shiftMonth(nextStart, -1) : "";
     return normalizeManagerTeamHistory(history, team, normalized.joinedMonth);
   }
-
-  const newEntry = {
-    team,
-    startMonth: month,
-    endMonth: nextStart ? shiftMonth(nextStart, -1) : ""
-  };
-  return normalizeManagerTeamHistory([...prior, newEntry, ...future], team, normalized.joinedMonth);
+  return normalizeManagerTeamHistory([
+    ...prior,
+    { team, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" },
+    ...future
+  ], team, normalized.joinedMonth);
 }
 
 function managerDisplayOrderValue(managerOrName) {
@@ -10474,14 +10520,28 @@ function renderPromotionManagerDetail(promo = activePromotion()) {
 
 
 
+function historyEntryForMonth(history, targetMonth, valueKey) {
+  const month = normalizeManagerMonth(targetMonth) || monthIso();
+  const source = Array.isArray(history) ? history : [];
+  const matching = source
+    .filter((item) => (!item.startMonth || item.startMonth <= month) && (!item.endMonth || month <= item.endMonth))
+    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (matching) return matching;
+  const first = source.slice().sort((a, b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0];
+  return first || null;
+}
+
 function managerSettingsRowMarkup(rawManager, targetMonth, isNew = false) {
   const manager = normalizeManager(rawManager);
   const areasText = (manager.areas || []).join(", ");
-  const latestTeamAssignment = manager.teamHistory.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  const latestStatusAssignment = manager.statusHistory.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  const displayTeam = latestTeamAssignment?.team || manager.team;
-  const displayEffectiveMonth = latestTeamAssignment?.startMonth || manager.joinedMonth || targetMonth;
-  const displayStatus = latestStatusAssignment?.status || manager.status;
+  // 화면에는 '가장 최근 이력'이 아니라 현재 설정에서 선택한 조회월에 실제 적용되는
+  // 팀/상태 이력을 표시합니다. 이전 구현은 최신(미래 포함) 이력을 무조건 표시하여
+  // 2026-09에서 2026-08로 적용월을 변경해도 다시 09로 돌아가는 것처럼 보였습니다.
+  const targetTeamAssignment = historyEntryForMonth(manager.teamHistory, targetMonth, "team");
+  const targetStatusAssignment = historyEntryForMonth(manager.statusHistory, targetMonth, "status");
+  const displayTeam = targetTeamAssignment?.team || manager.team;
+  const displayEffectiveMonth = targetTeamAssignment?.startMonth || manager.joinedMonth || targetMonth;
+  const displayStatus = targetStatusAssignment?.status || manager.status;
   const statusLabel = displayStatus === "inactive" ? "비활성" : "재직";
   const historyText = managerHistoryLabel(manager) || "소속이력 없음";
   const teamSelect = configuredTeamNames().map((team) =>
@@ -10575,12 +10635,23 @@ function setMasterTeamForMonth(team, effectiveMonth) {
   const normalizedTeam = normalizeTeamName(team);
   if (!normalizedTeam) return;
   const history = masterTeamHistory().map((item) => ({ ...item }));
-  const prior = history.filter((item) => item.startMonth && item.startMonth < month);
-  const future = history.filter((item) => item.startMonth && item.startMonth > month);
-  const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
-  const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
-  state.appMeta.masterTeamHistory = [...prior, { team: normalizedTeam, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future];
+  const currentEntry = historyEntryForMonth(history, monthIso(), "team");
+
+  if (currentEntry && month <= (currentEntry.startMonth || monthIso())) {
+    const others = history.filter((item) => item !== currentEntry);
+    const prior = others.filter((item) => item.startMonth && item.startMonth < month).sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")));
+    const future = others.filter((item) => item.startMonth && item.startMonth > month).sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")));
+    const nextStart = future[0]?.startMonth || "";
+    if (prior[0] && (!prior[0].endMonth || prior[0].endMonth >= month)) prior[0].endMonth = shiftMonth(month, -1);
+    state.appMeta.masterTeamHistory = [...prior, { ...currentEntry, team: normalizedTeam, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future];
+  } else {
+    const prior = history.filter((item) => item.startMonth && item.startMonth < month);
+    const future = history.filter((item) => item.startMonth && item.startMonth > month);
+    const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+    if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
+    const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
+    state.appMeta.masterTeamHistory = [...prior, { team: normalizedTeam, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future];
+  }
   state.appMeta.userTeam = normalizedTeam;
 }
 
@@ -10589,12 +10660,23 @@ function setTeamOperationMode(mode, effectiveMonth = "") {
   if (!state.appMeta) state.appMeta = {};
   const month = normalizeManagerMonth(effectiveMonth) || goalSettingsMonth() || currentDashboardMonth() || monthIso();
   const history = teamOperationHistory().map((item) => ({ ...item }));
-  const prior = history.filter((item) => item.startMonth && item.startMonth < month);
-  const future = history.filter((item) => item.startMonth && item.startMonth > month);
-  const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
-  const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
-  state.appMeta.teamOperationHistory = [...prior, { value: normalized, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future];
+  const currentEntry = historyEntryForMonth(history, monthIso(), "value");
+
+  if (currentEntry && month <= (currentEntry.startMonth || monthIso())) {
+    const others = history.filter((item) => item !== currentEntry);
+    const prior = others.filter((item) => item.startMonth && item.startMonth < month).sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")));
+    const future = others.filter((item) => item.startMonth && item.startMonth > month).sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")));
+    const nextStart = future[0]?.startMonth || "";
+    if (prior[0] && (!prior[0].endMonth || prior[0].endMonth >= month)) prior[0].endMonth = shiftMonth(month, -1);
+    state.appMeta.teamOperationHistory = [...prior, { ...currentEntry, value: normalized, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future];
+  } else {
+    const prior = history.filter((item) => item.startMonth && item.startMonth < month);
+    const future = history.filter((item) => item.startMonth && item.startMonth > month);
+    const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+    if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
+    const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
+    state.appMeta.teamOperationHistory = [...prior, { value: normalized, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future];
+  }
   state.appMeta.teamOperationMode = normalized;
 
   const existing = normalizeTeamNames(state?.teamNames, state?.managers || []);
@@ -10608,7 +10690,6 @@ function setTeamOperationMode(mode, effectiveMonth = "") {
   invalidateManagerCaches();
   persistState();
   render();
-  showToast(`${formatMonthLabel(month)}부터 ${normalized}팀 운영으로 설정했습니다.`);
 }
 
 function renderTeamOperationSettings() {
@@ -11480,8 +11561,8 @@ function collectManagerSettings() {
     if (existing) {
       const teamHistory = applyManagerTeamChange(existing, nextTeam, effectiveMonth);
       const statusHistory = applyManagerStatusChange(existing, nextStatus, effectiveMonth);
-      const latestTeam = teamHistory.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0]?.team || nextTeam;
-      const latestStatus = statusHistory.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0]?.status || nextStatus;
+      const latestTeam = managerTeamForMonth({ ...existing, team: existing.team, teamHistory }, monthIso()) || nextTeam;
+      const latestStatus = managerStatusForMonth({ ...existing, status: existing.status, statusHistory }, monthIso()) || nextStatus;
       const latestInactive = latestStatus === "inactive"
         ? (statusHistory.slice().filter((item) => item.status === "inactive").sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0]?.startMonth || "")
         : "";
@@ -15169,7 +15250,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.70";
+const APP_VERSION = "v10.71";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
