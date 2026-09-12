@@ -983,6 +983,25 @@ function recordGoalMonth(record = {}, fallbackMonth = "") {
   return goalMonthForDate(record.receivedDate || record.installDate || "", fallbackMonth);
 }
 
+// 매니저의 '적용월'은 화면상 달력월(예: 2026-09)으로 저장하지만,
+// 영업 데이터에서는 그 목표월의 산정기간 시작일부터 적용됩니다.
+// 따라서 2026-09 적용은 9/1이 아니라 9월 목표산정기간 시작일(예: 8/28)부터
+// 해당 팀/재직 상태가 적용됩니다. 실제 날짜를 직접 비교하지 않고 목표월을
+// 먼저 계산한 뒤 이력의 월을 조회하면 모든 영업 메뉴가 같은 기준을 사용합니다.
+function organizationMonthForDate(dateText, fallbackMonth = "") {
+  return goalMonthForDate(dateText, fallbackMonth);
+}
+
+function managerTeamForDate(managerOrName, dateText, fallbackMonth = "") {
+  const goalMonth = organizationMonthForDate(dateText, fallbackMonth);
+  return managerTeamForMonth(managerOrName, goalMonth);
+}
+
+function managerStatusForDate(managerOrName, dateText, fallbackMonth = "") {
+  const goalMonth = organizationMonthForDate(dateText, fallbackMonth);
+  return managerStatusForMonth(managerOrName, goalMonth);
+}
+
 function calculatedGoals(month = $("#monthFilter")?.value || monthIso()) {
   const setting = monthSetting(month);
   const account = toNumber(setting.accountCount);
@@ -8929,14 +8948,20 @@ function currentTeamForManager(managerOrName, month = currentDashboardMonth()) {
   return normalizeTeamName(managerTeamForMonth(manager, month));
 }
 
+// 영업 관련 팀 판정의 기준은 '달력월'이 아니라 '목표월'입니다.
+// 예: 2026년 9월 목표산정기간이 8/28~9/28이고 매니저 적용월이 9월이면
+// 8/28부터 발생한 접수도 9월 목표월에 속하므로 9월의 팀/재직 이력을 사용합니다.
+// 따라서 접수에 저장된 managerTeamAtRecord는 보조/레거시 정보로만 사용하고,
+// 정상 데이터는 항상 접수일 -> 목표월 -> 해당 목표월의 조직이력 순으로 계산합니다.
 function recordBelongsToCurrentUserTeam(record, month = "") {
   const manager = managerById(record?.managerId) || managerByName(record?.managerNameAtRecord || record?.manager);
   if (!manager) return false;
   const targetMonth = normalizeManagerMonth(month) || recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
+  // 매니저 적용월/상태 이력은 목표월 단위로 적용됩니다.
   if (!managerIsActiveForMonth(manager, targetMonth)) return false;
   if (teamOperationMode(targetMonth) === "1") return true;
-  const recordTeam = normalizeTeamName(record?.managerTeamAtRecord);
-  const managerTeam = recordTeam || currentTeamForManager(manager, targetMonth);
+  const managerTeam = currentTeamForManager(manager, targetMonth);
+  if (!managerTeam) return false;
   return managerTeam === currentUserTeamName(targetMonth);
 }
 
@@ -15264,7 +15289,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.72";
+const APP_VERSION = "v10.73";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
