@@ -7769,6 +7769,19 @@ function renderTopbar() {
   $("#viewTitle").textContent = titles[currentView] || "영업현황";
 }
 
+function availableRecordManagerNamesForFilter() {
+  const names = new Set();
+  const records = recordsByRecordPeriod();
+  records.forEach((record) => {
+    if (!record || isMembershipRecord(record)) return;
+    const targetMonth = recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
+    if (!recordBelongsToCurrentUserTeam(record, targetMonth)) return;
+    const name = String(record.managerNameAtRecord || record.manager || "").trim();
+    if (name) names.add(name);
+  });
+  return sortManagerNamesByDisplayOrder([...names]);
+}
+
 function renderCommonControls() {
   const managers = allManagerNames();
   const salesManagers = teamManagerNames(currentDashboardMonth());
@@ -7792,7 +7805,8 @@ function renderCommonControls() {
   const recordCategoryFilter = $("#recordCategoryFilter");
   const recordSellerFilter = $("#recordSellerFilter");
   if (recordStatusFilter) setOptions(recordStatusFilter, [{ value: "", label: "상태" }, ...statuses.map((status) => ({ value: status, label: status }))], recordStatusFilter.value);
-  if (recordManagerFilter) setOptions(recordManagerFilter, [{ value: "", label: "매니저" }, ...managers.map((name) => ({ value: name, label: name }))], recordManagerFilter.value);
+  const recordManagerNames = availableRecordManagerNamesForFilter();
+  if (recordManagerFilter) setOptions(recordManagerFilter, [{ value: "", label: "매니저" }, ...recordManagerNames.map((name) => ({ value: name, label: name }))], recordManagerFilter.value);
   if (recordCategoryFilter) setOptions(recordCategoryFilter, [{ value: "", label: "판매종류" }, ...mainCategories.map((category) => ({ value: category, label: category }))], recordCategoryFilter.value);
   if (recordSellerFilter) setOptions(recordSellerFilter, [{ value: "", label: "실판매자" }, ...Array.from(new Set([...sellerRoles.filter(Boolean), ...managers])).map((role) => ({ value: role, label: role }))], recordSellerFilter.value);
 
@@ -15250,7 +15264,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.71";
+const APP_VERSION = "v10.72";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
