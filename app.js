@@ -5554,18 +5554,29 @@ function renderAnalyticsMonthStatusRows(settings) {
   const wrap = $("#analyticsMonthStatusRows");
   if (!wrap) return;
   const months = analyticsMonthStatusDisplayMonths(settings);
-  wrap.innerHTML = months.map((month) => {
-    const hasData = analyticsMonthHasData(month);
-    const value = settings.monthDataStatus?.[month] || "auto";
-    return `<div class="analytics-setting-row analytics-month-status-row" data-analytics-month="${month}">
-      <strong>${escapeHtml(formatMonthLabel(month))}</strong>
-      ${hasData ? `<span class="analytics-auto-badge">접수자료 있음 · 완료</span>` : `<select class="analytics-month-status-select" data-month="${month}">
-        <option value="auto" ${value === "auto" ? "selected" : ""}>자동</option>
-        <option value="미입력" ${value === "미입력" ? "selected" : ""}>미입력</option>
-        <option value="입력완료" ${value === "입력완료" ? "selected" : ""}>입력완료</option>
-      </select>`}
+  const end = monthIso();
+  const years = [...new Set(months.map((month) => month.slice(0, 4)))];
+  wrap.innerHTML = `
+    <div class="analytics-month-status-toolbar">
+      <span><strong>${months.length ? escapeHtml(years[0] + (years.length > 1 ? ` · ${years.at(-1)}` : "") ) : ""}</strong> · 최근 ${months.length}개월</span>
+      <small>● 자료 있음 · ○ 자료 없음</small>
+    </div>
+    <div class="analytics-month-status-grid">
+      ${months.map((month) => {
+        const hasData = analyticsMonthHasData(month);
+        const value = settings.monthDataStatus?.[month] || "auto";
+        return `<div class="analytics-month-tile ${hasData ? "has-data" : ""}" data-analytics-month="${month}">
+          <strong>${escapeHtml(formatMonthLabel(month).replace(/^\d{4}년\s*/, ""))}</strong>
+          ${hasData
+            ? `<span class="analytics-auto-badge">● 자료 있음</span>`
+            : `<select class="analytics-month-status-select" data-month="${month}" aria-label="${escapeHtml(formatMonthLabel(month))} 상태">
+                <option value="auto" ${value === "auto" ? "selected" : ""}>○ 자동</option>
+                <option value="미입력" ${value === "미입력" ? "selected" : ""}>○ 미입력</option>
+                <option value="입력완료" ${value === "입력완료" ? "selected" : ""}>● 완료</option>
+              </select>`}
+        </div>`;
+      }).join("") || `<div class="analytics-empty-choice">선택할 월이 없습니다.</div>`}
     </div>`;
-  }).join("") || `<div class="analytics-empty-choice">선택할 월이 없습니다.</div>`;
 }
 
 function renderAnalyticsAliasRows(settings) {
@@ -7023,7 +7034,7 @@ function printManagementEvaluation() {
 <style>
 @page{size:A4 portrait;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;padding:0;background:#fff;color:#17231e;font-family:"Malgun Gothic",Arial,sans-serif}body{font-size:9pt;line-height:1.35}.evaluation-report-page{position:relative;width:210mm;height:297mm;padding:13mm 13mm 12mm;overflow:hidden;background:#fff;break-after:page;page-break-after:always}.evaluation-report-page:last-child{break-after:auto;page-break-after:auto}.evaluation-report-header{height:24mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;padding-bottom:4mm;border-bottom:2px solid #214b3b;margin-bottom:5mm}.evaluation-report-kicker{color:#527b69;font-size:7pt;font-weight:900;letter-spacing:.16em;margin-bottom:1.2mm}.evaluation-report-header h1{margin:0;font-size:20pt;line-height:1.1;color:#173a2e;letter-spacing:-.04em}.evaluation-report-header p{margin:2mm 0 0;color:#5b6c64;font-size:8pt;font-weight:700}.evaluation-report-meta{min-width:42mm;text-align:right}.evaluation-report-meta strong{display:block;font-size:11pt;color:#173a2e}.evaluation-report-meta span{display:block;margin-top:1mm;color:#5b6c64;font-size:7.5pt;font-weight:700}.evaluation-report-section-note{margin:0 0 3mm;padding:2mm 3mm;border-left:3px solid #4b8069;background:#f1f6f3;color:#3d5148;font-size:8pt;font-weight:750}.evaluation-report-body{height:243mm;overflow:hidden}.evaluation-report-footer{position:absolute;left:13mm;right:13mm;bottom:5mm;padding-top:2mm;border-top:1px solid #c5d0cb;display:grid;grid-template-columns:1fr 1fr 12mm;gap:3mm;color:#708078;font-size:6.8pt}.evaluation-report-footer span:nth-child(2){text-align:center}.evaluation-report-footer strong{text-align:right;color:#214b3b}.panel{border:1px solid #b9c7c0;border-radius:3px;background:#fff;box-shadow:none;margin:0 0 4mm;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:2.2mm 3mm;border-bottom:1px solid #c8d2cd;background:#f0f5f2}.panel-head h2{margin:0;font-size:10pt;color:#1c4032;font-weight:900}.panel-head strong,.panel-head span{color:#53655d;font-size:7.5pt;font-weight:800}.evaluation-summary-grid{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:2.2mm;padding:2.5mm}.evaluation-summary-card{min-height:21mm;padding:2.6mm;border:1px solid #c2cec8;border-radius:3px;background:#fbfcfb;text-align:center}.evaluation-summary-card.main{background:#eef6f1;border-color:#7ca18e}.evaluation-summary-card span{display:block;color:#5b6b63;font-size:7.2pt;font-weight:800}.evaluation-summary-card strong{display:block;margin-top:1.8mm;color:#173a2e;font-size:14pt;line-height:1;font-weight:950}.evaluation-summary-card.main strong{font-size:18pt}.evaluation-score-panel{margin-top:3mm}.evaluation-score-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-score-table th,.evaluation-score-table td{border:1px solid #bcc7c2;padding:1.25mm .8mm;text-align:center;vertical-align:middle;overflow:hidden}.evaluation-score-table th{background:#edf3f0;color:#234536;font-size:6.7pt;font-weight:900}.evaluation-score-table td{font-size:6.5pt;font-weight:700;color:#25342e}.evaluation-score-table th:nth-child(1){width:14mm}.evaluation-score-table th:nth-child(2){width:14mm}.evaluation-score-table th:nth-child(3){width:16mm}.evaluation-score-table th:nth-child(4){width:31mm}.evaluation-score-table th:nth-child(5){width:27mm}.evaluation-score-table th:nth-child(6){width:48mm}.evaluation-score-table th:nth-child(7){width:16mm}.evaluation-score-table th:nth-child(8){width:16mm}.evaluation-part-name{background:#f5f8f6;font-weight:900;color:#214b3b}.evaluation-part-max,.evaluation-part-score{background:#f9fbfa}.evaluation-part-score strong{display:block;font-size:8.5pt}.evaluation-part-score span,.evaluation-part-score small{display:block;color:#66766e;font-size:5.8pt}.evaluation-score-cell{font-size:8.5pt;font-weight:950;color:#173a2e}.evaluation-detail-table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4mm}.evaluation-detail-table th,.evaluation-detail-table td{border:1px solid #bcc7c2;padding:1.8mm 1.2mm;font-size:7.2pt;vertical-align:middle}.evaluation-detail-table th{background:#edf3f0;color:#234536;font-weight:900;text-align:center}.evaluation-detail-table td{text-align:center}.evaluation-detail-table td:first-child{text-align:left;font-weight:900;color:#214b3b}.evaluation-detail-report{margin-top:3mm}.evaluation-detail-report .report-subheading{margin-bottom:2mm}..evaluation-product-tables-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-product-tables-grid table,.evaluation-policy-product-report table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-product-tables-grid th,.evaluation-product-tables-grid td,.evaluation-policy-product-report th,.evaluation-policy-product-report td{border:1px solid #bcc7c2;padding:1.5mm 1mm;text-align:center;vertical-align:middle;font-size:7pt}.evaluation-product-tables-grid th,.evaluation-policy-product-report th{background:#edf3f0;color:#234536;font-weight:900}.evaluation-product-total-row th,.evaluation-product-total-row td{background:#f0f5f2;font-weight:950}.evaluation-product-count-cell{font-weight:950;color:#173a2e}.evaluation-manual-report,.evaluation-policy-report,.evaluation-policy-product-report{margin:0}.report-subheading{font-size:12pt;font-weight:950;color:#173a2e;padding:2mm 0 2.5mm;border-bottom:2px solid #214b3b;margin-bottom:2.5mm}.report-intro{margin:0 0 3mm;color:#5b6c64;font-size:7.8pt;font-weight:700}.evaluation-manual-table,.evaluation-policy-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-manual-table th,.evaluation-manual-table td,.evaluation-policy-table th,.evaluation-policy-table td{border:1px solid #bcc7c2;padding:1.7mm 1.2mm;vertical-align:middle}.evaluation-manual-table th,.evaluation-policy-table th{background:#edf3f0;color:#234536;font-size:7pt;font-weight:900;text-align:center}.evaluation-manual-table td{font-size:7.4pt}.evaluation-manual-table th:nth-child(1){width:32mm}.evaluation-manual-table th:nth-child(2){width:auto}.evaluation-manual-table th:nth-child(3){width:38mm}.manual-part{background:#f7faf8;font-weight:900;color:#214b3b}.manual-value{text-align:center;font-weight:950;color:#173a2e}.evaluation-policy-table{font-size:6.6pt}.evaluation-policy-table th,.evaluation-policy-table td{padding:1.5mm .9mm;text-align:center;overflow-wrap:anywhere}.evaluation-policy-table th:nth-child(1){width:27mm}.evaluation-policy-table th:nth-child(2){width:15mm}.evaluation-policy-table th:nth-child(3){width:40mm}.evaluation-policy-table th:nth-child(4){width:27mm}.evaluation-policy-table th:nth-child(5){width:17mm}.evaluation-policy-table th:nth-child(6){width:24mm}.evaluation-policy-table th:nth-child(7){width:18mm}.evaluation-policy-table th:nth-child(8){width:auto}.policy-item-title{font-weight:900;color:#214b3b;background:#f7faf8}.evaluation-policy-product-report{margin-top:5mm}.evaluation-policy-product-report h3{margin:0 0 1.5mm;font-size:8.5pt;color:#214b3b}.evaluation-policy-product-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-print-value{font-weight:900}.report-empty{padding:12mm;text-align:center;color:#718078;border:1px dashed #b9c7c0}.evaluation-report-first .evaluation-score-panel{margin-bottom:0}.evaluation-report-policy .evaluation-policy-report{margin-bottom:0}@media print{.evaluation-report-page{break-inside:avoid;page-break-inside:avoid}}
 
-/* V10.61 Evaluation Report Design Upgrade */
+/* V10.63 Evaluation Report Design Upgrade */
 .evaluation-report-first .evaluation-summary-grid{grid-template-columns:1.6fr repeat(3,1fr);gap:3mm;}
 .evaluation-report-first .evaluation-summary-card{border-radius:8px;padding:4mm;min-height:25mm;background:#fff;}
 .evaluation-report-first .evaluation-summary-card.main{background:linear-gradient(135deg,#e8f3ff,#f7fbff);border:2px solid #2f6fb5;}
@@ -10378,7 +10389,7 @@ function managerSettingsRowMarkup(rawManager, targetMonth, isNew = false) {
 }
 
 function teamSettingsRowMarkup(team, index) {
-  return `<div class="team-setting-row" data-team-index="${index}" data-original-team="${escapeHtml(team)}"><span class="team-setting-number">${index + 1}</span><input class="team-setting-name" value="${escapeHtml(team)}" placeholder="팀 이름"><button class="ghost-button small remove-team-setting" type="button" ${configuredTeamNames().length <= 1 ? "disabled" : ""}>삭제</button></div>`;
+  return `<div class="team-setting-row" data-team-index="${index}" data-original-team="${escapeHtml(team)}"><div class="team-setting-label"><span class="team-setting-number">${index + 1}</span><strong>팀 ${index + 1}</strong></div><input class="team-setting-name" value="${escapeHtml(team)}" placeholder="실제 팀 이름 (예: A팀, B팀)"><button class="ghost-button small remove-team-setting" type="button" ${configuredTeamNames().length <= 1 ? "disabled" : ""}>삭제</button></div>`;
 }
 
 function renderTeamSettings() {
@@ -10491,7 +10502,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.61",
+    version: "V10.63",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -10684,20 +10695,31 @@ async function importFullBackupFile(file) {
     showToast("백업 데이터 적용 중...");
     state = normalizeState(data);
     invalidateManagerCaches();
-    showToast(`백업 데이터 적용 완료 · 접수내역 ${Array.isArray(state.records) ? state.records.length : 0}건`);
+    const restoredRecordCount = Array.isArray(state.records) ? state.records.length : 0;
+    showToast(`백업 데이터 적용 완료 · 접수내역 ${restoredRecordCount}건`);
 
-    showToast("전체 백업 복원 중 · Google Drive에 저장하고 있습니다...");
-    await persistState({ ensureManagers: true, immediateServer: true });
+    // GitHub Pages(사용자 웹버전)에는 /api/state 서버가 존재하지 않습니다.
+    // 이 경우 localStorage에 복원된 데이터를 정상적으로 유지하고, 서버 검증은 건너뜁니다.
+    const isGitHubPages = /(^|\.)github\.io$/i.test(String(location.hostname || ""));
+    const canUseStateApi = !isGitHubPages && location.protocol !== "file:";
+    let verifyRecordCount = restoredRecordCount;
 
-    const verifyResponse = await fetch(STATE_API_URL, { cache: "no-store" });
-    if (!verifyResponse.ok) {
-      throw new Error(`Google Drive 저장 확인 실패 (${verifyResponse.status})`);
-    }
-    const verifyData = await verifyResponse.json();
-    const verifyRecordCount = Array.isArray(verifyData.records) ? verifyData.records.length : 0;
-    const expectedRecordCount = Array.isArray(state.records) ? state.records.length : 0;
-    if (verifyRecordCount !== expectedRecordCount) {
-      throw new Error(`저장 검증 불일치: expected=${expectedRecordCount}, actual=${verifyRecordCount}`);
+    if (canUseStateApi) {
+      showToast("전체 백업 복원 중 · 서버 저장을 확인하고 있습니다...");
+      await persistState({ ensureManagers: true, immediateServer: true });
+      const verifyResponse = await fetch(STATE_API_URL, { cache: "no-store" });
+      if (!verifyResponse.ok) {
+        throw new Error(`서버 저장 확인 실패 (${verifyResponse.status})`);
+      }
+      const verifyData = await verifyResponse.json();
+      verifyRecordCount = Array.isArray(verifyData.records) ? verifyData.records.length : 0;
+      if (verifyRecordCount !== restoredRecordCount) {
+        throw new Error(`저장 검증 불일치: expected=${restoredRecordCount}, actual=${verifyRecordCount}`);
+      }
+    } else {
+      // persistState()가 기본적으로 localStorage에 먼저 저장하므로 웹 정적 배포에서도 복원이 유지됩니다.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      showToast("전체 백업 복원 완료 · 현재 브라우저에 안전하게 저장했습니다.");
     }
 
     selectedRecordId = "";
@@ -10709,7 +10731,10 @@ async function importFullBackupFile(file) {
     renderNow();
     setMobileSyncStatus("백업에서 모바일 동기화 설정까지 복원되었습니다.", "success");
     showToast(`전체 백업 복원 완료 · 접수내역 ${verifyRecordCount}건`);
-    window.alert(`전체 백업 복원이 완료되었습니다.\n\n접수내역 ${verifyRecordCount}건이 Google Drive에 저장되었습니다.`);
+    const restoreTargetMessage = canUseStateApi
+      ? `접수내역 ${verifyRecordCount}건이 서버 저장까지 확인되었습니다.`
+      : `접수내역 ${verifyRecordCount}건이 현재 브라우저에 저장되었습니다.`;
+    window.alert(`전체 백업 복원이 완료되었습니다.\n\n${restoreTargetMessage}`);
     return true;
   } catch (error) {
     console.error("[BACKUP IMPORT] restore/save failed", error);
@@ -14957,7 +14982,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.61";
+const APP_VERSION = "v10.63";
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
@@ -15439,7 +15464,7 @@ window.shareKakaoImage = shareKakaoImage;
 
 init();
 
-// V10.61 promo button delegated fallback fix
+// V10.63 promo button delegated fallback fix
 (function(){
   function addPromoRowFix(){
     const id=event && event.target ? event.target.id : '';

@@ -22,7 +22,7 @@
     <p>체계적인 영업관리, 더 나은 성과의 시작</p>
     <div class="startup-intro-status"><span></span><span id="startupIntroStatus">업무 화면을 구성하고 있습니다</span></div>
     <div class="startup-intro-progress"><i id="startupIntroProgress"></i></div>
-    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.61</span></div>
+    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.63</span></div>
   </div>
 </div>
 
@@ -31,7 +31,7 @@
       <div class="brand" id="sidebarRefreshBtn" role="button" tabindex="0" title="새로고침">
         <div class="brand-mark brand-program-icon"><img src="./assets/sales_manager_icon.png" alt="영업관리 시스템"></div>
         <div class="brand-text">
-          <strong id="sidebarAppTitle">영업관리 시스템 V10.61</strong>
+          <strong id="sidebarAppTitle">영업관리 시스템 V10.63</strong>
           <em id="sidebarManagerLine">김건일 마스터</em>
         </div>
       </div>
@@ -1460,11 +1460,11 @@
             <div class="version-update-box">
               <div class="version-update-row">
                 <span>현재 버전</span>
-                <strong id="settingsCurrentVersionLabel">V10.6</strong>
+                <strong id="settingsCurrentVersionLabel">V10.63</strong>
               </div>
               <div class="version-update-row">
                 <span>최신 버전</span>
-                <strong id="settingsLatestVersionLabel">V10.6</strong>
+                <strong id="settingsLatestVersionLabel">V10.63</strong>
               </div>
               <div class="form-actions version-update-actions">
                 <button class="ghost-button" id="checkVersionBtn" type="button">버전 확인</button>
@@ -1548,13 +1548,15 @@
 
 <section class="panel settings-card team-settings-card">
             <div class="panel-head"><h2>팀 설정</h2></div>
-            <p class="mobile-sync-help">지국 운영 형태에 맞게 팀 수와 팀 이름을 설정합니다. 한 팀이면 원팀으로, 두 팀이면 원하는 이름으로 설정할 수 있습니다.</p>
+            <p class="mobile-sync-help">지국에서 사용하는 팀 수와 팀 이름을 설정합니다. <b>팀 번호는 시스템 구분용</b>이며, 실제 접수·매니저 화면에는 아래에 입력한 팀 이름이 표시됩니다.</p>
             <div class="team-preset-actions">
-              <span>빠른 설정</span>
-              <button class="ghost-button small team-preset-single" type="button">1팀 · 원팀</button>
-              <button class="ghost-button small team-preset-dual" type="button">2팀 · A팀 / B팀</button>
+              <span>운영 형태</span>
+              <button class="ghost-button small team-preset-single" type="button">1팀 운영 · 원팀</button>
+              <button class="ghost-button small team-preset-dual" type="button">2팀 운영 · A팀 / B팀</button>
+              <span class="team-setting-hint">예: 내가 B팀이라면 <b>2팀 이름을 B팀</b>으로 설정하면 됩니다.</span>
             </div>
 
+            <div class="team-setting-guide"><strong>팀 번호는 고정된 순번입니다.</strong><span>1팀/2팀은 시스템 내부 구분이고, 실제 사용하는 이름은 아래 입력칸에서 정합니다.</span></div>
             <div id="teamSettingsList" class="team-settings-list"></div>
             <div class="form-actions section-save-row">
               <button class="ghost-button" id="editTeamSettingsBtn" type="button">팀 설정 수정</button>
@@ -1594,7 +1596,7 @@
               </section>
 
               <section class="analytics-setting-step">
-                <div class="analytics-setting-step-head"><b>2</b><strong>월별 데이터 상태</strong></div>
+                <div class="analytics-setting-step-head"><b>2</b><strong>월별 데이터 상태</strong><span class="analytics-step-help">최근 월을 한눈에 확인하고 필요한 월만 선택합니다.</span></div>
                 <div class="analytics-choice-row">
                   <label class="analytics-choice-card"><input type="radio" name="analyticsMonthStatusMode" value="auto" checked><span><b>자동 판정</b><small>접수 데이터가 있는 월은 자동 완료</small></span></label>
                   <label class="analytics-choice-card"><input type="radio" name="analyticsMonthStatusMode" value="manual"><span><b>월별 선택</b><small>필요한 월만 상태를 직접 선택</small></span></label>
