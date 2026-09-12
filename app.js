@@ -393,7 +393,7 @@ function normalizeManagementEvaluationPolicy(value = {}, month = "") {
   const highValueProducts = (Array.isArray(source.highValueProducts) ? source.highValueProducts : defaults.highValueProducts)
     .map((item) => normalizeManagementEvaluationProductRule(item, "high"));
 
-  // V10.69: 2026-09에 기존 8월형 3개 정책(창문형/매트리스/정수기)이 자동 복사돼 있던 경우만
+  // V10.70: 2026-09에 기존 8월형 3개 정책(창문형/매트리스/정수기)이 자동 복사돼 있던 경우만
   // 새 9월 정책 템플릿으로 안전하게 전환한다. 사용자가 별도로 커스텀한 9월 정책은 유지한다.
   const sourcePolicyItems = Array.isArray(source.policyItems) ? source.policyItems : null;
   const legacySeptember = month === "2026-09" && sourcePolicyItems && sourcePolicyItems.length === 3
@@ -1464,7 +1464,7 @@ function isWaterPurifierCpRecord(record) {
 }
 
 function isWaterPurifierSalesRecord(record) {
-  // V10.69 공식 정수기 판매실적 기준:
+  // V10.70 공식 정수기 판매실적 기준:
   // 취소가 아니고, 제품명이 CP-로 시작하며,
   // 판매종류가 신규/패키지/재렌탈/일시불인 실제 영업접수행만 인정합니다.
   // 맴버쉽/멤버십은 별도 멤버십 실적이므로 절대 포함하지 않습니다.
@@ -1900,14 +1900,31 @@ function applyManagerTeamChange(manager, nextTeam, effectiveMonth) {
   const team = names.includes(normalizeTeamName(nextTeam)) ? normalizeTeamName(nextTeam) : defaultTeamName();
   const month = normalizeManagerMonth(effectiveMonth) || monthIso();
   const history = normalizeManagerTeamHistory(normalized.teamHistory, normalized.team, normalized.joinedMonth).map((item) => ({ ...item }));
+
+  // 적용월은 팀이 실제로 바뀌는 경우뿐 아니라, 같은 팀이라도 사용자가 지정한
+  // 새로운 소속 시작월 자체를 보존해야 합니다. 기존 코드는 같은 팀이면 history를
+  // 그대로 반환해 적용월이 현재월로 되돌아가는 원인이 되었습니다.
   const prior = history.filter((item) => item.startMonth && item.startMonth < month);
   const future = history.filter((item) => item.startMonth && item.startMonth > month);
+  const exact = history.find((item) => item.startMonth === month);
   const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
   const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
-  const currentAtMonth = managerTeamForMonth(normalized, month);
-  if (currentAtMonth === team) return normalizeManagerTeamHistory(history, normalized.team, normalized.joinedMonth);
-  const newEntry = { team, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" };
+
+  if (previous && (!previous.endMonth || previous.endMonth >= month)) {
+    previous.endMonth = shiftMonth(month, -1);
+  }
+
+  if (exact) {
+    exact.team = team;
+    exact.endMonth = nextStart ? shiftMonth(nextStart, -1) : "";
+    return normalizeManagerTeamHistory(history, team, normalized.joinedMonth);
+  }
+
+  const newEntry = {
+    team,
+    startMonth: month,
+    endMonth: nextStart ? shiftMonth(nextStart, -1) : ""
+  };
   return normalizeManagerTeamHistory([...prior, newEntry, ...future], team, normalized.joinedMonth);
 }
 
@@ -2312,7 +2329,7 @@ function waterPurifierMonthRecords(month = currentDashboardMonth()) {
 }
 
 function waterPurifierEvaluationMetrics(month = currentDashboardMonth()) {
-  // V10.69: 대시보드와 경영평가 모두 동일한 실제 CP- 영업접수행 목록을 사용합니다.
+  // V10.70: 대시보드와 경영평가 모두 동일한 실제 CP- 영업접수행 목록을 사용합니다.
   // 월별 목표산정기간 내 CP- 제품 중 신규/패키지/재렌탈/일시불 영업접수행만 1행=1건으로 집계합니다.
   const period = monthPeriod(month);
   const sourceRecords = waterPurifierMonthRecords(month);
@@ -2323,7 +2340,7 @@ function waterPurifierEvaluationMetrics(month = currentDashboardMonth()) {
   ) || defaultManagementEvaluationPolicyItem("rate");
   const targetRate = toNumber(policyItem.targetRate) || 55;
   const goal = (toNumber(goals.newGoal) + toNumber(goals.rentalGoal)) * (targetRate / 100);
-  const current = sourceRecords.length; // V10.69: 이미 CP- + 실제 영업종류만 필터된 목록
+  const current = sourceRecords.length; // V10.70: 이미 CP- + 실제 영업종류만 필터된 목록
   const achievementRate = goal > 0 ? current / goal * 100 : 0;
   return { month, current, goal, targetRate, achievementRate, period };
 }
@@ -6394,7 +6411,7 @@ function managementEvaluationMetrics(month = managementEvaluationMonth()) {
     : toNumber(inspectionCompleted) / inspectionDenominator * 100;
   const happyTalkRate = input.happyTalkRate;
 
-  // V10.69: 정책이행 각 항목의 판매종류/포함/필수/제외 조건은 항목 자체 설정으로 판단한다.
+  // V10.70: 정책이행 각 항목의 판매종류/포함/필수/제외 조건은 항목 자체 설정으로 판단한다.
   const policyItems = policy.policyItems.map((item) =>
     managementEvaluationPolicyItemMetrics(records, goals, input, item, month)
   );
@@ -7112,7 +7129,7 @@ function printManagementEvaluation() {
 <style>
 @page{size:A4 portrait;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;padding:0;background:#fff;color:#17231e;font-family:"Malgun Gothic",Arial,sans-serif}body{font-size:9pt;line-height:1.35}.evaluation-report-page{position:relative;width:210mm;height:297mm;padding:13mm 13mm 12mm;overflow:hidden;background:#fff;break-after:page;page-break-after:always}.evaluation-report-page:last-child{break-after:auto;page-break-after:auto}.evaluation-report-header{height:24mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;padding-bottom:4mm;border-bottom:2px solid #214b3b;margin-bottom:5mm}.evaluation-report-kicker{color:#527b69;font-size:7pt;font-weight:900;letter-spacing:.16em;margin-bottom:1.2mm}.evaluation-report-header h1{margin:0;font-size:20pt;line-height:1.1;color:#173a2e;letter-spacing:-.04em}.evaluation-report-header p{margin:2mm 0 0;color:#5b6c64;font-size:8pt;font-weight:700}.evaluation-report-meta{min-width:42mm;text-align:right}.evaluation-report-meta strong{display:block;font-size:11pt;color:#173a2e}.evaluation-report-meta span{display:block;margin-top:1mm;color:#5b6c64;font-size:7.5pt;font-weight:700}.evaluation-report-section-note{margin:0 0 3mm;padding:2mm 3mm;border-left:3px solid #4b8069;background:#f1f6f3;color:#3d5148;font-size:8pt;font-weight:750}.evaluation-report-body{height:243mm;overflow:hidden}.evaluation-report-footer{position:absolute;left:13mm;right:13mm;bottom:5mm;padding-top:2mm;border-top:1px solid #c5d0cb;display:grid;grid-template-columns:1fr 1fr 12mm;gap:3mm;color:#708078;font-size:6.8pt}.evaluation-report-footer span:nth-child(2){text-align:center}.evaluation-report-footer strong{text-align:right;color:#214b3b}.panel{border:1px solid #b9c7c0;border-radius:3px;background:#fff;box-shadow:none;margin:0 0 4mm;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:2.2mm 3mm;border-bottom:1px solid #c8d2cd;background:#f0f5f2}.panel-head h2{margin:0;font-size:10pt;color:#1c4032;font-weight:900}.panel-head strong,.panel-head span{color:#53655d;font-size:7.5pt;font-weight:800}.evaluation-summary-grid{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:2.2mm;padding:2.5mm}.evaluation-summary-card{min-height:21mm;padding:2.6mm;border:1px solid #c2cec8;border-radius:3px;background:#fbfcfb;text-align:center}.evaluation-summary-card.main{background:#eef6f1;border-color:#7ca18e}.evaluation-summary-card span{display:block;color:#5b6b63;font-size:7.2pt;font-weight:800}.evaluation-summary-card strong{display:block;margin-top:1.8mm;color:#173a2e;font-size:14pt;line-height:1;font-weight:950}.evaluation-summary-card.main strong{font-size:18pt}.evaluation-score-panel{margin-top:3mm}.evaluation-score-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-score-table th,.evaluation-score-table td{border:1px solid #bcc7c2;padding:1.25mm .8mm;text-align:center;vertical-align:middle;overflow:hidden}.evaluation-score-table th{background:#edf3f0;color:#234536;font-size:6.7pt;font-weight:900}.evaluation-score-table td{font-size:6.5pt;font-weight:700;color:#25342e}.evaluation-score-table th:nth-child(1){width:14mm}.evaluation-score-table th:nth-child(2){width:14mm}.evaluation-score-table th:nth-child(3){width:16mm}.evaluation-score-table th:nth-child(4){width:31mm}.evaluation-score-table th:nth-child(5){width:27mm}.evaluation-score-table th:nth-child(6){width:48mm}.evaluation-score-table th:nth-child(7){width:16mm}.evaluation-score-table th:nth-child(8){width:16mm}.evaluation-part-name{background:#f5f8f6;font-weight:900;color:#214b3b}.evaluation-part-max,.evaluation-part-score{background:#f9fbfa}.evaluation-part-score strong{display:block;font-size:8.5pt}.evaluation-part-score span,.evaluation-part-score small{display:block;color:#66766e;font-size:5.8pt}.evaluation-score-cell{font-size:8.5pt;font-weight:950;color:#173a2e}.evaluation-detail-table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4mm}.evaluation-detail-table th,.evaluation-detail-table td{border:1px solid #bcc7c2;padding:1.8mm 1.2mm;font-size:7.2pt;vertical-align:middle}.evaluation-detail-table th{background:#edf3f0;color:#234536;font-weight:900;text-align:center}.evaluation-detail-table td{text-align:center}.evaluation-detail-table td:first-child{text-align:left;font-weight:900;color:#214b3b}.evaluation-detail-report{margin-top:3mm}.evaluation-detail-report .report-subheading{margin-bottom:2mm}..evaluation-product-tables-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-product-tables-grid table,.evaluation-policy-product-report table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-product-tables-grid th,.evaluation-product-tables-grid td,.evaluation-policy-product-report th,.evaluation-policy-product-report td{border:1px solid #bcc7c2;padding:1.5mm 1mm;text-align:center;vertical-align:middle;font-size:7pt}.evaluation-product-tables-grid th,.evaluation-policy-product-report th{background:#edf3f0;color:#234536;font-weight:900}.evaluation-product-total-row th,.evaluation-product-total-row td{background:#f0f5f2;font-weight:950}.evaluation-product-count-cell{font-weight:950;color:#173a2e}.evaluation-manual-report,.evaluation-policy-report,.evaluation-policy-product-report{margin:0}.report-subheading{font-size:12pt;font-weight:950;color:#173a2e;padding:2mm 0 2.5mm;border-bottom:2px solid #214b3b;margin-bottom:2.5mm}.report-intro{margin:0 0 3mm;color:#5b6c64;font-size:7.8pt;font-weight:700}.evaluation-manual-table,.evaluation-policy-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-manual-table th,.evaluation-manual-table td,.evaluation-policy-table th,.evaluation-policy-table td{border:1px solid #bcc7c2;padding:1.7mm 1.2mm;vertical-align:middle}.evaluation-manual-table th,.evaluation-policy-table th{background:#edf3f0;color:#234536;font-size:7pt;font-weight:900;text-align:center}.evaluation-manual-table td{font-size:7.4pt}.evaluation-manual-table th:nth-child(1){width:32mm}.evaluation-manual-table th:nth-child(2){width:auto}.evaluation-manual-table th:nth-child(3){width:38mm}.manual-part{background:#f7faf8;font-weight:900;color:#214b3b}.manual-value{text-align:center;font-weight:950;color:#173a2e}.evaluation-policy-table{font-size:6.6pt}.evaluation-policy-table th,.evaluation-policy-table td{padding:1.5mm .9mm;text-align:center;overflow-wrap:anywhere}.evaluation-policy-table th:nth-child(1){width:27mm}.evaluation-policy-table th:nth-child(2){width:15mm}.evaluation-policy-table th:nth-child(3){width:40mm}.evaluation-policy-table th:nth-child(4){width:27mm}.evaluation-policy-table th:nth-child(5){width:17mm}.evaluation-policy-table th:nth-child(6){width:24mm}.evaluation-policy-table th:nth-child(7){width:18mm}.evaluation-policy-table th:nth-child(8){width:auto}.policy-item-title{font-weight:900;color:#214b3b;background:#f7faf8}.evaluation-policy-product-report{margin-top:5mm}.evaluation-policy-product-report h3{margin:0 0 1.5mm;font-size:8.5pt;color:#214b3b}.evaluation-policy-product-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-print-value{font-weight:900}.report-empty{padding:12mm;text-align:center;color:#718078;border:1px dashed #b9c7c0}.evaluation-report-first .evaluation-score-panel{margin-bottom:0}.evaluation-report-policy .evaluation-policy-report{margin-bottom:0}@media print{.evaluation-report-page{break-inside:avoid;page-break-inside:avoid}}
 
-/* V10.69 Evaluation Report Design Upgrade */
+/* V10.70 Evaluation Report Design Upgrade */
 .evaluation-report-first .evaluation-summary-grid{grid-template-columns:1.6fr repeat(3,1fr);gap:3mm;}
 .evaluation-report-first .evaluation-summary-card{border-radius:8px;padding:4mm;min-height:25mm;background:#fff;}
 .evaluation-report-first .evaluation-summary-card.main{background:linear-gradient(135deg,#e8f3ff,#f7fbff);border:2px solid #2f6fb5;}
@@ -9321,7 +9338,7 @@ function mobileOnlyViewport() {
 }
 
 
-/* V10.69 모바일 화면 2차 정밀 보정 */
+/* V10.70 모바일 화면 2차 정밀 보정 */
 function mobileHeaderLabels(table) {
   if (!table) return [];
 
@@ -15152,7 +15169,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.69";
+const APP_VERSION = "v10.70";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
