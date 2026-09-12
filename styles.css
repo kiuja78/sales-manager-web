@@ -23648,8 +23648,8 @@ body[data-view="records"] .record-form-row.row-basic {
   .renewal-guide-preview-head { align-items:flex-start !important; flex-direction:column; }
 }
 @media (max-width:560px) { .payroll-summary-grid { grid-template-columns:1fr !important; } }
-\n\n/* V10.64 compact team / monthly management UI */\n.team-setting-guide {\n  display:flex; align-items:center; gap:10px; margin:10px 0 8px; padding:9px 12px;\n  border:1px solid #dbe7e1; border-radius:10px; background:#f7fbf9; color:#486258; font-size:12px;\n}\n.team-setting-guide strong { color:#245d4b; }\n.team-setting-hint { margin-left:4px; padding:6px 9px; border-radius:8px; background:#eef7f3; color:#326b58; font-size:12px; }\n.team-settings-list { gap:10px; }\n.team-setting-row { display:grid; grid-template-columns:90px minmax(180px, 1fr) auto; align-items:center; gap:10px; }\n.team-setting-label { display:flex; align-items:center; gap:8px; color:#49675c; }\n.team-setting-label .team-setting-number { display:inline-flex; width:34px; height:34px; align-items:center; justify-content:center; border:1px solid #d8e5df; border-radius:9px; background:#f6faf8; font-weight:700; }\n.analytics-step-help { margin-left:auto; color:#71847c; font-size:12px; font-weight:400; }\n.analytics-month-status-toolbar { display:flex; justify-content:space-between; align-items:center; margin:10px 0 8px; padding:8px 11px; border-radius:9px; background:#f6faf8; color:#526c61; font-size:12px; }\n.analytics-month-status-toolbar small { color:#6c7e77; }\n.analytics-month-status-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }\n.analytics-month-tile { min-width:0; min-height:62px; padding:8px 9px; border:1px solid #dce7e2; border-radius:10px; background:#fff; display:flex; flex-direction:column; justify-content:center; gap:6px; }\n.analytics-month-tile strong { color:#36564b; font-size:13px; }\n.analytics-month-tile.has-data { background:#f3faf6; border-color:#cfe3d9; }\n.analytics-month-tile .analytics-auto-badge { display:inline-flex; align-self:flex-start; padding:3px 6px; border-radius:999px; background:#e6f4ed; color:#2e765c; font-size:10px; white-space:nowrap; }\n.analytics-month-status-select { width:100%; min-width:0; height:28px; padding:2px 5px; font-size:11px; }\n@media (max-width: 760px) {\n  .team-setting-row { grid-template-columns:76px minmax(120px,1fr) auto; }\n  .team-setting-hint { display:block; width:100%; margin:5px 0 0; }\n  .analytics-month-status-toolbar { align-items:flex-start; gap:8px; flex-direction:column; }\n  .analytics-month-status-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }\n}\n
-/* V10.64 compact team + monthly settings polish */
+\n\n/* V10.65 compact team / monthly management UI */\n.team-setting-guide {\n  display:flex; align-items:center; gap:10px; margin:10px 0 8px; padding:9px 12px;\n  border:1px solid #dbe7e1; border-radius:10px; background:#f7fbf9; color:#486258; font-size:12px;\n}\n.team-setting-guide strong { color:#245d4b; }\n.team-setting-hint { margin-left:4px; padding:6px 9px; border-radius:8px; background:#eef7f3; color:#326b58; font-size:12px; }\n.team-settings-list { gap:10px; }\n.team-setting-row { display:grid; grid-template-columns:90px minmax(180px, 1fr) auto; align-items:center; gap:10px; }\n.team-setting-label { display:flex; align-items:center; gap:8px; color:#49675c; }\n.team-setting-label .team-setting-number { display:inline-flex; width:34px; height:34px; align-items:center; justify-content:center; border:1px solid #d8e5df; border-radius:9px; background:#f6faf8; font-weight:700; }\n.analytics-step-help { margin-left:auto; color:#71847c; font-size:12px; font-weight:400; }\n.analytics-month-status-toolbar { display:flex; justify-content:space-between; align-items:center; margin:10px 0 8px; padding:8px 11px; border-radius:9px; background:#f6faf8; color:#526c61; font-size:12px; }\n.analytics-month-status-toolbar small { color:#6c7e77; }\n.analytics-month-status-grid { display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; }\n.analytics-month-tile { min-width:0; min-height:62px; padding:8px 9px; border:1px solid #dce7e2; border-radius:10px; background:#fff; display:flex; flex-direction:column; justify-content:center; gap:6px; }\n.analytics-month-tile strong { color:#36564b; font-size:13px; }\n.analytics-month-tile.has-data { background:#f3faf6; border-color:#cfe3d9; }\n.analytics-month-tile .analytics-auto-badge { display:inline-flex; align-self:flex-start; padding:3px 6px; border-radius:999px; background:#e6f4ed; color:#2e765c; font-size:10px; white-space:nowrap; }\n.analytics-month-status-select { width:100%; min-width:0; height:28px; padding:2px 5px; font-size:11px; }\n@media (max-width: 760px) {\n  .team-setting-row { grid-template-columns:76px minmax(120px,1fr) auto; }\n  .team-setting-hint { display:block; width:100%; margin:5px 0 0; }\n  .analytics-month-status-toolbar { align-items:flex-start; gap:8px; flex-direction:column; }\n  .analytics-month-status-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }\n}\n
+/* V10.65 compact team + monthly settings polish */
 .team-preset-actions { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .team-setting-mode-title { font-weight:700; color:#3f5f54; margin-right:2px; }
 .team-setting-guide-v2 { flex-direction:column; align-items:flex-start; gap:3px; }
@@ -23660,4 +23660,62 @@ body[data-view="records"] .record-form-row.row-basic {
 .analytics-month-tile { min-height:58px; }
 @media (max-width:760px) {
   .analytics-month-status-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+
+/* V10.65: 월 목표지수 영역의 팀 운영 형태를 컴팩트하게 표시 */
+.goal-team-operation {
+  margin-top: 14px;
+  padding: 12px 14px;
+  border: 1px solid #d9e7e2;
+  border-radius: 12px;
+  background: #f8fbfa;
+}
+.goal-team-operation-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.goal-team-operation-head strong { display:block; font-size: 15px; }
+.goal-team-operation-head small { display:block; margin-top:4px; color:#6d7d78; }
+.goal-team-operation-buttons { display:flex; gap:8px; flex-shrink:0; }
+.goal-team-operation-buttons .primary-button { box-shadow: none; }
+.goal-team-operation-help { margin:8px 0 0; color:#71807c; font-size:12px; }
+@media (max-width: 760px) {
+  .goal-team-operation-head { align-items: flex-start; flex-direction: column; }
+  .goal-team-operation-buttons { width:100%; }
+  .goal-team-operation-buttons button { flex:1; }
+}
+
+/* V10.66 settings simplification: team operation is part of monthly goals */
+.goal-index-layout {
+  display:grid !important;
+  grid-template-columns:minmax(0, 1fr) minmax(260px, 320px);
+  gap:14px;
+  align-items:stretch;
+}
+.goal-index-fields { min-width:0; display:grid; gap:10px; align-content:start; }
+.goal-team-operation {
+  margin-top:0 !important;
+  height:100%;
+  box-sizing:border-box;
+  display:flex;
+  flex-direction:column;
+  justify-content:center;
+}
+.goal-team-operation-head { align-items:flex-start; flex-direction:column; gap:10px; }
+.goal-team-operation-buttons { width:100%; }
+.goal-team-operation-buttons button { flex:1; min-height:42px; }
+.goal-team-operation-help { line-height:1.5; }
+.analytics-month-status-wrap { width:100%; }
+.analytics-month-status-grid {
+  display:grid !important;
+  grid-template-columns:repeat(6,minmax(0,1fr));
+  gap:8px;
+  max-height:none;
+}
+.analytics-month-tile { min-width:0; }
+@media (max-width:900px) {
+  .goal-index-layout { grid-template-columns:1fr; }
+  .goal-team-operation { height:auto; }
 }
