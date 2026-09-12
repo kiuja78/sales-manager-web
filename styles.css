@@ -23648,8 +23648,8 @@ body[data-view="records"] .record-form-row.row-basic {
   .renewal-guide-preview-head { align-items:flex-start !important; flex-direction:column; }
 }
 @media (max-width:560px) { .payroll-summary-grid { grid-template-columns:1fr !important; } }
-/* V10.68 organization history UI cleanup */
-/* V10.66 settings simplification: team operation is part of monthly goals */
+/* V10.69 organization history UI cleanup */
+/* V10.69 settings simplification: team operation is part of monthly goals */
 .goal-index-layout {
   display:grid !important;
   grid-template-columns:minmax(0, 1fr) minmax(260px, 320px);

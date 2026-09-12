@@ -393,7 +393,7 @@ function normalizeManagementEvaluationPolicy(value = {}, month = "") {
   const highValueProducts = (Array.isArray(source.highValueProducts) ? source.highValueProducts : defaults.highValueProducts)
     .map((item) => normalizeManagementEvaluationProductRule(item, "high"));
 
-  // V10.68: 2026-09에 기존 8월형 3개 정책(창문형/매트리스/정수기)이 자동 복사돼 있던 경우만
+  // V10.69: 2026-09에 기존 8월형 3개 정책(창문형/매트리스/정수기)이 자동 복사돼 있던 경우만
   // 새 9월 정책 템플릿으로 안전하게 전환한다. 사용자가 별도로 커스텀한 9월 정책은 유지한다.
   const sourcePolicyItems = Array.isArray(source.policyItems) ? source.policyItems : null;
   const legacySeptember = month === "2026-09" && sourcePolicyItems && sourcePolicyItems.length === 3
@@ -659,10 +659,20 @@ async function loadPersistedState() {
     const loaded = await response.json();
     const hasServerData = Array.isArray(loaded.records) || Array.isArray(loaded.managers) || loaded.appMeta || loaded.monthSettings;
     if (hasServerData) {
-      state = normalizeState(loaded);
-      invalidateManagerCaches();
-      touchStateRevision();
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      const localState = loadState();
+      const serverStamp = String(loaded?.appMeta?.lastStateUpdatedAt || "");
+      const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
+      if (localStamp && serverStamp && localStamp > serverStamp) {
+        state = localState;
+        invalidateManagerCaches();
+        touchStateRevision();
+        persistState({ immediateServer: true });
+      } else {
+        state = normalizeState(loaded);
+        invalidateManagerCaches();
+        touchStateRevision();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      }
     } else {
       state = loadState();
       invalidateManagerCaches();
@@ -680,7 +690,11 @@ function persistState(options = {}) {
   const ensureManagers = options.ensureManagers === true;
   const immediateServer = options.immediateServer === true;
 
-  if (ensureManagers) ensureManagerDataIntegrity(state);
+  // 모든 저장 시 데이터 무결성을 한 번 더 보장합니다. 부분 저장으로 과거 팀/상태 스냅샷이 누락되지 않게 합니다.
+  ensureManagerDataIntegrity(state);
+  state.appMeta = state.appMeta || {};
+  state.appMeta.lastStateUpdatedAt = new Date().toISOString();
+  state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
 
   const data = JSON.stringify(state);
   localStorage.setItem(STORAGE_KEY, data);
@@ -768,16 +782,22 @@ function normalizeState(loaded) {
     return normalizedRecord;
   });
   ensureManagerDataIntegrity(next);
-  // 조직 이력은 기존 데이터에서 안전하게 마이그레이션하고, 이후 변경은 월 단위로 누적합니다.
+  // 조직 이력은 기존 데이터에서 가능한 가장 이른 데이터 월을 기준으로 1회 마이그레이션하고, 이후 변경은 월 단위로 누적합니다.
+  const knownMonths = [
+    ...Object.keys(next.monthSettings || {}),
+    ...(next.records || []).map((record) => recordGoalMonth(record, "")),
+    ...(next.managers || []).map((manager) => manager.joinedMonth).filter(Boolean)
+  ].filter((month) => /^\d{4}-\d{2}$/.test(month)).sort();
+  const legacyStartMonth = knownMonths[0] || monthIso();
   if (!next.appMeta.teamOperationHistory || !Array.isArray(next.appMeta.teamOperationHistory)) {
     const legacyMode = String(next.appMeta.teamOperationMode || "").trim();
-    next.appMeta.teamOperationHistory = [{ value: legacyMode === "2" ? "2" : (legacyMode === "1" ? "1" : (next.teamNames.length >= 2 ? "2" : "1")), startMonth: monthIso(), endMonth: "" }];
+    next.appMeta.teamOperationHistory = [{ value: legacyMode === "2" ? "2" : (legacyMode === "1" ? "1" : (next.teamNames.length >= 2 ? "2" : "1")), startMonth: legacyStartMonth, endMonth: "" }];
   }
   if (!next.appMeta.masterTeamHistory || !Array.isArray(next.appMeta.masterTeamHistory)) {
     const legacyTeam = normalizeTeamName(next.appMeta.userTeam);
     const master = String(next.appMeta.masterName || "").trim() ? next.managers.find((item) => item.name === String(next.appMeta.masterName || "").trim()) : null;
-    const inferred = legacyTeam || (master ? managerTeamForMonth(master, monthIso()) : "");
-    next.appMeta.masterTeamHistory = inferred ? [{ team: inferred, startMonth: monthIso(), endMonth: "" }] : [];
+    const inferred = legacyTeam || (master ? managerTeamForMonth(master, legacyStartMonth) : "");
+    next.appMeta.masterTeamHistory = inferred ? [{ team: inferred, startMonth: legacyStartMonth, endMonth: "" }] : [];
   }
   ensureAllRecordManualOrder(next.records);
   return next;
@@ -1314,7 +1334,8 @@ function renderMembershipFilterOptions(records = []) {
   const period = membershipDatePeriod();
   const baseRecords = state.records.filter((record) => {
     if (!isMembershipRecord(record)) return false;
-    return inDateRange(record.receivedDate || "", period.start, period.end);
+    if (!inDateRange(record.receivedDate || "", period.start, period.end)) return false;
+    return recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, currentDashboardMonth()));
   });
   if (statusFilter) setOptions(statusFilter, optionListWithAll(baseRecords.map((record) => record.status), "전체 상태"), previous.status);
   if (managerFilter) setOptions(managerFilter, optionListWithAll(baseRecords.map((record) => record.manager), "전체 매니저"), previous.manager);
@@ -1443,7 +1464,7 @@ function isWaterPurifierCpRecord(record) {
 }
 
 function isWaterPurifierSalesRecord(record) {
-  // V10.68 공식 정수기 판매실적 기준:
+  // V10.69 공식 정수기 판매실적 기준:
   // 취소가 아니고, 제품명이 CP-로 시작하며,
   // 판매종류가 신규/패키지/재렌탈/일시불인 실제 영업접수행만 인정합니다.
   // 맴버쉽/멤버십은 별도 멤버십 실적이므로 절대 포함하지 않습니다.
@@ -1547,7 +1568,7 @@ function hundredPointPromotionScoresForManager(managerName, promo = hundredPoint
   // 100점 누적점수는 설치 여부와 무관하게, 취소되지 않은 대상 접수건 전체를 합산합니다.
   // 미설치 건은 현황의 미설치 건수로 계속 보여 주되 점수에서는 제외하지 않습니다.
   const records = (sourceRecords || state.records || [])
-    .filter((record) => promoCreditManagerName(record) === managerName)
+    .filter((record) => promoCreditManagerName(record, promotionReferenceMonth(promo)) === managerName)
     .filter((record) => promoBaseRecordMatches(record, promo));
   const values = rules.map((rule, ruleIndex) => records.reduce((sum, record) => {
     const matched = matchedPromoKeyword(record, promo);
@@ -1585,9 +1606,6 @@ function statusColorClass(status) {
 }
 
 
-function isMembershipRecord(record) {
-  return normalizeCategory(record?.category) === "맴버쉽";
-}
 
 function sellerOptionsForCategory(category, selectedValue = "") {
   if (normalizeCategory(category) === "맴버쉽") return membershipContactRoles;
@@ -1745,6 +1763,34 @@ function normalizeManagerTeamHistory(history, fallbackTeam = defaultTeamName(), 
   return normalizeTeamHistoryForNames(history, fallbackTeam, joinedMonth);
 }
 
+function normalizeStatusHistory(history, fallbackStatus = "active", joinedMonth = "") {
+  const source = Array.isArray(history) ? history : [];
+  const normalized = source.map((item) => ({
+    status: item?.status === "inactive" ? "inactive" : "active",
+    startMonth: normalizeManagerMonth(item?.startMonth),
+    endMonth: normalizeManagerMonth(item?.endMonth)
+  })).filter((item) => item.startMonth || item.status);
+  if (!normalized.length) {
+    normalized.push({ status: fallbackStatus === "inactive" ? "inactive" : "active", startMonth: normalizeManagerMonth(joinedMonth), endMonth: "" });
+  }
+  normalized.sort((a, b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")));
+  return normalized;
+}
+
+function managerStatusForMonth(managerOrName, month = currentDashboardMonth()) {
+  const manager = typeof managerOrName === "string" ? managerByName(managerOrName) : managerOrName;
+  if (!manager?.name) return "inactive";
+  const targetMonth = normalizeManagerMonth(month) || monthIso();
+  const history = normalizeStatusHistory(manager.statusHistory, manager.status === "inactive" ? "inactive" : "active", manager.joinedMonth);
+  const matching = history.filter((item) =>
+    (!item.startMonth || item.startMonth <= targetMonth) && (!item.endMonth || targetMonth <= item.endMonth)
+  ).sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (matching?.status) return matching.status;
+  const first = history[0];
+  if (first?.startMonth && targetMonth < first.startMonth) return "inactive";
+  return manager.status === "inactive" ? "inactive" : "active";
+}
+
 function normalizeManager(manager = {}) {
   const names = configuredTeamNames();
   const explicitTeam = normalizeTeamName(manager.team);
@@ -1754,10 +1800,15 @@ function normalizeManager(manager = {}) {
   const status = manager.status === "inactive" || manager.active === false ? "inactive" : "active";
   const teamHistory = normalizeTeamHistoryForNames(manager.teamHistory, fallbackTeam, joinedMonth, names);
   const latestHistory = [...teamHistory].sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  let statusHistory = normalizeStatusHistory(manager.statusHistory, status, joinedMonth);
+  // 구버전의 inactiveMonth만 존재하는 데이터는 기존 비활성 시작월을 이력으로 승격합니다.
+  if ((!Array.isArray(manager.statusHistory) || !manager.statusHistory.length) && inactiveMonth) {
+    const activeStart = joinedMonth || "";
+    statusHistory = [{ status: "active", startMonth: activeStart, endMonth: shiftMonth(inactiveMonth, -1) }, { status: "inactive", startMonth: inactiveMonth, endMonth: "" }];
+  }
   return {
     id: manager.id || uid("m"),
     name: String(manager.name || "").trim(),
-    // 명시적으로 저장된 manager.team을 우선합니다.
     team: explicitTeam || latestHistory?.team || fallbackTeam,
     areas: Array.isArray(manager.areas)
       ? manager.areas.map((item) => String(item || "").trim()).filter(Boolean)
@@ -1767,6 +1818,7 @@ function normalizeManager(manager = {}) {
     status,
     joinedMonth,
     inactiveMonth,
+    statusHistory,
     teamHistory,
     createdAt: String(manager.createdAt || ""),
     updatedAt: String(manager.updatedAt || "")
@@ -1785,17 +1837,7 @@ function managerByName(managerName, managers = state.managers || []) {
   return managerIndex(managers).byName.get(name) || null;
 }
 
-function managerById(managerId, managers = state.managers || []) {
-  const id = String(managerId || "").trim();
-  if (!id) return null;
-  return managerIndex(managers).byId.get(id) || null;
-}
 
-function managerByName(managerName, managers = state.managers || []) {
-  const name = String(managerName || "").trim();
-  if (!name) return null;
-  return managerIndex(managers).byName.get(name) || null;
-}
 
 function managerTeamForMonth(managerOrName, month = currentDashboardMonth()) {
   const manager = typeof managerOrName === "string" ? managerByName(managerOrName) : normalizeManager(managerOrName || {});
@@ -1809,16 +1851,28 @@ function managerTeamForMonth(managerOrName, month = currentDashboardMonth()) {
 }
 
 function managerIsActiveForMonth(managerOrName, month = currentDashboardMonth()) {
-  const manager = typeof managerOrName === "string"
-    ? managerByName(managerOrName)
-    : normalizeManager(managerOrName || {});
+  const manager = typeof managerOrName === "string" ? managerByName(managerOrName) : normalizeManager(managerOrName || {});
   if (!manager?.name) return false;
-
   const targetMonth = normalizeManagerMonth(month) || monthIso();
   if (manager.joinedMonth && targetMonth < manager.joinedMonth) return false;
-  if (manager.inactiveMonth && targetMonth >= manager.inactiveMonth) return false;
-  if (manager.status === "inactive" && !manager.inactiveMonth) return false;
-  return true;
+  return managerStatusForMonth(manager, targetMonth) === "active";
+}
+
+function applyManagerStatusChange(manager, nextStatus, effectiveMonth) {
+  const normalized = normalizeManager(manager);
+  const status = nextStatus === "inactive" ? "inactive" : "active";
+  const month = normalizeManagerMonth(effectiveMonth) || monthIso();
+  const history = normalizeStatusHistory(normalized.statusHistory, normalized.status, normalized.joinedMonth).map((item) => ({ ...item }));
+  const prior = history.filter((item) => item.startMonth && item.startMonth < month);
+  const future = history.filter((item) => item.startMonth && item.startMonth > month);
+  const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
+  const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
+  if (nextStart && status === "active" && future[0]?.status === "active") {
+    // 중복 활성 이력은 새 경계가 필요하지 않으므로 이후 이력을 그대로 유지합니다.
+  }
+  const newEntry = { status, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" };
+  return normalizeStatusHistory([...prior, newEntry, ...future], status, normalized.joinedMonth);
 }
 
 function managerHistoryLabel(managerOrName) {
@@ -1832,32 +1886,29 @@ function managerHistoryLabel(managerOrName) {
       : "기존";
     return `${period} ${item.team}`;
   });
-  if (manager.inactiveMonth) history.push(`${formatMonthLabel(manager.inactiveMonth)}부터 비활성`);
+  const statusHistory = normalizeStatusHistory(manager.statusHistory, manager.status, manager.joinedMonth);
+  statusHistory.forEach((item) => {
+    if (item.status === "inactive") history.push(`${formatMonthLabel(item.startMonth)}부터 비활성`);
+    else if (item.startMonth) history.push(`${formatMonthLabel(item.startMonth)}부터 재직`);
+  });
   return history.join(" · ");
 }
 
 function applyManagerTeamChange(manager, nextTeam, effectiveMonth) {
   const normalized = normalizeManager(manager);
   const names = configuredTeamNames();
-  const team = names.includes(normalizeTeamName(nextTeam)) ? normalizeTeamName(nextTeam) : names[0];
+  const team = names.includes(normalizeTeamName(nextTeam)) ? normalizeTeamName(nextTeam) : defaultTeamName();
   const month = normalizeManagerMonth(effectiveMonth) || monthIso();
-  if (normalized.team === team) return normalized.teamHistory;
-  const previousMonth = shiftMonth(month, -1);
-  const history = normalizeManagerTeamHistory(normalized.teamHistory, normalized.team, normalized.joinedMonth)
-    .filter((item) => !item.startMonth || item.startMonth < month)
-    .map((item) => ({ ...item }));
-  let previousAssignment = [...history].reverse().find((item) =>
-    (!item.startMonth || item.startMonth <= previousMonth) && (!item.endMonth || previousMonth <= item.endMonth)
-  );
-  if (!previousAssignment) {
-    previousAssignment = { team: normalized.team, startMonth: normalized.joinedMonth || "", endMonth: previousMonth };
-    history.push(previousAssignment);
-  } else {
-    previousAssignment.team = normalized.team;
-    previousAssignment.endMonth = previousMonth;
-  }
-  history.push({ team, startMonth: month, endMonth: "" });
-  return normalizeManagerTeamHistory(history, team, normalized.joinedMonth);
+  const history = normalizeManagerTeamHistory(normalized.teamHistory, normalized.team, normalized.joinedMonth).map((item) => ({ ...item }));
+  const prior = history.filter((item) => item.startMonth && item.startMonth < month);
+  const future = history.filter((item) => item.startMonth && item.startMonth > month);
+  const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
+  const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
+  const currentAtMonth = managerTeamForMonth(normalized, month);
+  if (currentAtMonth === team) return normalizeManagerTeamHistory(history, normalized.team, normalized.joinedMonth);
+  const newEntry = { team, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" };
+  return normalizeManagerTeamHistory([...prior, newEntry, ...future], team, normalized.joinedMonth);
 }
 
 function managerDisplayOrderValue(managerOrName) {
@@ -2027,6 +2078,7 @@ function ensureManagerDataIntegrity(targetState = state) {
         record.managerId = registeredManager.id;
         record.managerNameAtRecord = record.managerNameAtRecord || String(record.manager || registeredManager.name);
         record.managerTeamAtRecord = record.managerTeamAtRecord || managerTeamForMonth(registeredManager, recordMonth);
+        record.managerStatusAtRecord = record.managerStatusAtRecord || managerStatusForMonth(registeredManager, recordMonth);
       }
 
       const sellerManager = byId.get(String(record.sellerId || ""))
@@ -2260,7 +2312,7 @@ function waterPurifierMonthRecords(month = currentDashboardMonth()) {
 }
 
 function waterPurifierEvaluationMetrics(month = currentDashboardMonth()) {
-  // V10.68: 대시보드와 경영평가 모두 동일한 실제 CP- 영업접수행 목록을 사용합니다.
+  // V10.69: 대시보드와 경영평가 모두 동일한 실제 CP- 영업접수행 목록을 사용합니다.
   // 월별 목표산정기간 내 CP- 제품 중 신규/패키지/재렌탈/일시불 영업접수행만 1행=1건으로 집계합니다.
   const period = monthPeriod(month);
   const sourceRecords = waterPurifierMonthRecords(month);
@@ -2271,7 +2323,7 @@ function waterPurifierEvaluationMetrics(month = currentDashboardMonth()) {
   ) || defaultManagementEvaluationPolicyItem("rate");
   const targetRate = toNumber(policyItem.targetRate) || 55;
   const goal = (toNumber(goals.newGoal) + toNumber(goals.rentalGoal)) * (targetRate / 100);
-  const current = sourceRecords.length; // V10.68: 이미 CP- + 실제 영업종류만 필터된 목록
+  const current = sourceRecords.length; // V10.69: 이미 CP- + 실제 영업종류만 필터된 목록
   const achievementRate = goal > 0 ? current / goal * 100 : 0;
   return { month, current, goal, targetRate, achievementRate, period };
 }
@@ -6342,7 +6394,7 @@ function managementEvaluationMetrics(month = managementEvaluationMonth()) {
     : toNumber(inspectionCompleted) / inspectionDenominator * 100;
   const happyTalkRate = input.happyTalkRate;
 
-  // V10.68: 정책이행 각 항목의 판매종류/포함/필수/제외 조건은 항목 자체 설정으로 판단한다.
+  // V10.69: 정책이행 각 항목의 판매종류/포함/필수/제외 조건은 항목 자체 설정으로 판단한다.
   const policyItems = policy.policyItems.map((item) =>
     managementEvaluationPolicyItemMetrics(records, goals, input, item, month)
   );
@@ -7060,7 +7112,7 @@ function printManagementEvaluation() {
 <style>
 @page{size:A4 portrait;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;padding:0;background:#fff;color:#17231e;font-family:"Malgun Gothic",Arial,sans-serif}body{font-size:9pt;line-height:1.35}.evaluation-report-page{position:relative;width:210mm;height:297mm;padding:13mm 13mm 12mm;overflow:hidden;background:#fff;break-after:page;page-break-after:always}.evaluation-report-page:last-child{break-after:auto;page-break-after:auto}.evaluation-report-header{height:24mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;padding-bottom:4mm;border-bottom:2px solid #214b3b;margin-bottom:5mm}.evaluation-report-kicker{color:#527b69;font-size:7pt;font-weight:900;letter-spacing:.16em;margin-bottom:1.2mm}.evaluation-report-header h1{margin:0;font-size:20pt;line-height:1.1;color:#173a2e;letter-spacing:-.04em}.evaluation-report-header p{margin:2mm 0 0;color:#5b6c64;font-size:8pt;font-weight:700}.evaluation-report-meta{min-width:42mm;text-align:right}.evaluation-report-meta strong{display:block;font-size:11pt;color:#173a2e}.evaluation-report-meta span{display:block;margin-top:1mm;color:#5b6c64;font-size:7.5pt;font-weight:700}.evaluation-report-section-note{margin:0 0 3mm;padding:2mm 3mm;border-left:3px solid #4b8069;background:#f1f6f3;color:#3d5148;font-size:8pt;font-weight:750}.evaluation-report-body{height:243mm;overflow:hidden}.evaluation-report-footer{position:absolute;left:13mm;right:13mm;bottom:5mm;padding-top:2mm;border-top:1px solid #c5d0cb;display:grid;grid-template-columns:1fr 1fr 12mm;gap:3mm;color:#708078;font-size:6.8pt}.evaluation-report-footer span:nth-child(2){text-align:center}.evaluation-report-footer strong{text-align:right;color:#214b3b}.panel{border:1px solid #b9c7c0;border-radius:3px;background:#fff;box-shadow:none;margin:0 0 4mm;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:2.2mm 3mm;border-bottom:1px solid #c8d2cd;background:#f0f5f2}.panel-head h2{margin:0;font-size:10pt;color:#1c4032;font-weight:900}.panel-head strong,.panel-head span{color:#53655d;font-size:7.5pt;font-weight:800}.evaluation-summary-grid{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:2.2mm;padding:2.5mm}.evaluation-summary-card{min-height:21mm;padding:2.6mm;border:1px solid #c2cec8;border-radius:3px;background:#fbfcfb;text-align:center}.evaluation-summary-card.main{background:#eef6f1;border-color:#7ca18e}.evaluation-summary-card span{display:block;color:#5b6b63;font-size:7.2pt;font-weight:800}.evaluation-summary-card strong{display:block;margin-top:1.8mm;color:#173a2e;font-size:14pt;line-height:1;font-weight:950}.evaluation-summary-card.main strong{font-size:18pt}.evaluation-score-panel{margin-top:3mm}.evaluation-score-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-score-table th,.evaluation-score-table td{border:1px solid #bcc7c2;padding:1.25mm .8mm;text-align:center;vertical-align:middle;overflow:hidden}.evaluation-score-table th{background:#edf3f0;color:#234536;font-size:6.7pt;font-weight:900}.evaluation-score-table td{font-size:6.5pt;font-weight:700;color:#25342e}.evaluation-score-table th:nth-child(1){width:14mm}.evaluation-score-table th:nth-child(2){width:14mm}.evaluation-score-table th:nth-child(3){width:16mm}.evaluation-score-table th:nth-child(4){width:31mm}.evaluation-score-table th:nth-child(5){width:27mm}.evaluation-score-table th:nth-child(6){width:48mm}.evaluation-score-table th:nth-child(7){width:16mm}.evaluation-score-table th:nth-child(8){width:16mm}.evaluation-part-name{background:#f5f8f6;font-weight:900;color:#214b3b}.evaluation-part-max,.evaluation-part-score{background:#f9fbfa}.evaluation-part-score strong{display:block;font-size:8.5pt}.evaluation-part-score span,.evaluation-part-score small{display:block;color:#66766e;font-size:5.8pt}.evaluation-score-cell{font-size:8.5pt;font-weight:950;color:#173a2e}.evaluation-detail-table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4mm}.evaluation-detail-table th,.evaluation-detail-table td{border:1px solid #bcc7c2;padding:1.8mm 1.2mm;font-size:7.2pt;vertical-align:middle}.evaluation-detail-table th{background:#edf3f0;color:#234536;font-weight:900;text-align:center}.evaluation-detail-table td{text-align:center}.evaluation-detail-table td:first-child{text-align:left;font-weight:900;color:#214b3b}.evaluation-detail-report{margin-top:3mm}.evaluation-detail-report .report-subheading{margin-bottom:2mm}..evaluation-product-tables-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-product-tables-grid table,.evaluation-policy-product-report table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-product-tables-grid th,.evaluation-product-tables-grid td,.evaluation-policy-product-report th,.evaluation-policy-product-report td{border:1px solid #bcc7c2;padding:1.5mm 1mm;text-align:center;vertical-align:middle;font-size:7pt}.evaluation-product-tables-grid th,.evaluation-policy-product-report th{background:#edf3f0;color:#234536;font-weight:900}.evaluation-product-total-row th,.evaluation-product-total-row td{background:#f0f5f2;font-weight:950}.evaluation-product-count-cell{font-weight:950;color:#173a2e}.evaluation-manual-report,.evaluation-policy-report,.evaluation-policy-product-report{margin:0}.report-subheading{font-size:12pt;font-weight:950;color:#173a2e;padding:2mm 0 2.5mm;border-bottom:2px solid #214b3b;margin-bottom:2.5mm}.report-intro{margin:0 0 3mm;color:#5b6c64;font-size:7.8pt;font-weight:700}.evaluation-manual-table,.evaluation-policy-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-manual-table th,.evaluation-manual-table td,.evaluation-policy-table th,.evaluation-policy-table td{border:1px solid #bcc7c2;padding:1.7mm 1.2mm;vertical-align:middle}.evaluation-manual-table th,.evaluation-policy-table th{background:#edf3f0;color:#234536;font-size:7pt;font-weight:900;text-align:center}.evaluation-manual-table td{font-size:7.4pt}.evaluation-manual-table th:nth-child(1){width:32mm}.evaluation-manual-table th:nth-child(2){width:auto}.evaluation-manual-table th:nth-child(3){width:38mm}.manual-part{background:#f7faf8;font-weight:900;color:#214b3b}.manual-value{text-align:center;font-weight:950;color:#173a2e}.evaluation-policy-table{font-size:6.6pt}.evaluation-policy-table th,.evaluation-policy-table td{padding:1.5mm .9mm;text-align:center;overflow-wrap:anywhere}.evaluation-policy-table th:nth-child(1){width:27mm}.evaluation-policy-table th:nth-child(2){width:15mm}.evaluation-policy-table th:nth-child(3){width:40mm}.evaluation-policy-table th:nth-child(4){width:27mm}.evaluation-policy-table th:nth-child(5){width:17mm}.evaluation-policy-table th:nth-child(6){width:24mm}.evaluation-policy-table th:nth-child(7){width:18mm}.evaluation-policy-table th:nth-child(8){width:auto}.policy-item-title{font-weight:900;color:#214b3b;background:#f7faf8}.evaluation-policy-product-report{margin-top:5mm}.evaluation-policy-product-report h3{margin:0 0 1.5mm;font-size:8.5pt;color:#214b3b}.evaluation-policy-product-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-print-value{font-weight:900}.report-empty{padding:12mm;text-align:center;color:#718078;border:1px dashed #b9c7c0}.evaluation-report-first .evaluation-score-panel{margin-bottom:0}.evaluation-report-policy .evaluation-policy-report{margin-bottom:0}@media print{.evaluation-report-page{break-inside:avoid;page-break-inside:avoid}}
 
-/* V10.68 Evaluation Report Design Upgrade */
+/* V10.69 Evaluation Report Design Upgrade */
 .evaluation-report-first .evaluation-summary-grid{grid-template-columns:1.6fr repeat(3,1fr);gap:3mm;}
 .evaluation-report-first .evaluation-summary-card{border-radius:8px;padding:4mm;min-height:25mm;background:#fff;}
 .evaluation-report-first .evaluation-summary-card.main{background:linear-gradient(135deg,#e8f3ff,#f7fbff);border:2px solid #2f6fb5;}
@@ -7636,6 +7688,7 @@ function renderTopbar() {
 
   const sidebarAppTitle = $("#sidebarAppTitle");
   if (sidebarAppTitle) sidebarAppTitle.textContent = `영업관리 시스템 ${versionLabelForDisplay(APP_VERSION)}`;
+  applyProgramVersionToStaticLabels();
 
   const titles = {
     dashboard: "영업현황",
@@ -8199,7 +8252,7 @@ function renderDashboard() {
   $("#targetPeriodLabel").textContent = `${targetPeriod.start} ~ ${targetPeriod.end}`;
   $("#periodLabel").textContent = `${$("#startDateFilter").value} ~ ${$("#endDateFilter").value}`;
 
-  const salesManagers = teamManagers();
+  const salesManagers = teamManagers($("#monthFilter")?.value || monthIso());
   renderManagerPerformanceTable(records, salesManagers);
   renderDashboardManagerConditionSummary(records, salesManagers);
 }
@@ -8561,9 +8614,9 @@ function promoRecordScore(record, promo) {
   return matched ? toNumber(record.count) * matched.score : 0;
 }
 
-function promoCreditManagerName(record) {
+function promoCreditManagerName(record, month = "") {
   const seller = compactValue(record?.seller, "");
-  const teamNames = teamManagerNames();
+  const teamNames = teamManagerNames(month || recordGoalMonth(record, currentDashboardMonth()));
   if (seller && teamNames.includes(seller)) return seller;
   if (seller) return "";
   return compactValue(record?.manager, "");
@@ -8578,7 +8631,7 @@ function promoRecords(promo, managerName = "") {
   const month = promotionReferenceMonth(promo);
   return state.records
     .filter((record) => recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, month)))
-    .filter((record) => !managerName || promoCreditManagerName(record) === managerName)
+    .filter((record) => !managerName || promoCreditManagerName(record, month) === managerName)
     .filter((record) => recordMatchesPromo(record, promo, managerName));
 }
 
@@ -8587,7 +8640,7 @@ function promoPendingRecords(promo, managerName) {
   const month = promotionReferenceMonth(promo);
   return state.records
     .filter((record) => recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, month)))
-    .filter((record) => promoCreditManagerName(record) === managerName)
+    .filter((record) => promoCreditManagerName(record, month) === managerName)
     .filter((record) => promoBaseRecordMatches(record, promo))
     .filter((record) => !isInstalledRecord(record))
     .filter((record) => !isPromoRecordAccepted(record, promo));
@@ -8598,14 +8651,15 @@ function promoAllManagerRecords(promo, managerName) {
   const month = promotionReferenceMonth(promo);
   return state.records
     .filter((record) => recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, month)))
-    .filter((record) => promoCreditManagerName(record) === managerName)
+    .filter((record) => promoCreditManagerName(record, promotionReferenceMonth(promo)) === managerName)
     .filter((record) => promoBaseRecordMatches(record, promo));
 }
 
 
 function promoManagerStats(promo) {
   promo = normalizePromotion(promo);
-  return teamManagers().map((manager) => {
+  const month = promotionReferenceMonth(promo);
+  return teamManagers(month).map((manager) => {
     const allRecords = promoAllManagerRecords(promo, manager.name);
     const managerRecords = allRecords.filter((record) => isPromoRecordAccepted(record, promo));
     const pendingRecords = allRecords.filter((record) => !isInstalledRecord(record) && !isPromoRecordAccepted(record, promo));
@@ -8799,12 +8853,14 @@ function currentTeamForManager(managerOrName, month = currentDashboardMonth()) {
 }
 
 function recordBelongsToCurrentUserTeam(record, month = "") {
-  const managerName = String(record?.manager || "").trim();
-  if (!managerName) return false;
-  const manager = managerByName(managerName);
+  const manager = managerById(record?.managerId) || managerByName(record?.managerNameAtRecord || record?.manager);
   if (!manager) return false;
-  const targetMonth = normalizeManagerMonth(month) || currentDashboardMonth();
-  return teamOperationMode(targetMonth) === "1" || currentTeamForManager(manager, targetMonth) === currentUserTeamName(targetMonth);
+  const targetMonth = normalizeManagerMonth(month) || recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
+  if (!managerIsActiveForMonth(manager, targetMonth)) return false;
+  if (teamOperationMode(targetMonth) === "1") return true;
+  const recordTeam = normalizeTeamName(record?.managerTeamAtRecord);
+  const managerTeam = recordTeam || currentTeamForManager(manager, targetMonth);
+  return managerTeam === currentUserTeamName(targetMonth);
 }
 
 function filteredRecordSetForList() {
@@ -9265,7 +9321,7 @@ function mobileOnlyViewport() {
 }
 
 
-/* V10.68 모바일 화면 2차 정밀 보정 */
+/* V10.69 모바일 화면 2차 정밀 보정 */
 function mobileHeaderLabels(table) {
   if (!table) return [];
 
@@ -10236,7 +10292,8 @@ function renderPromotions() {
     }).join("")
     : `<div class="empty">현재 목표월 산정기간에 해당하는 프로모션이 없습니다.</div>`;
 
-  const managerOptions = [{ value: "", label: "전체 매니저" }, ...teamManagers().map((manager) => ({ value: manager.name, label: manager.name }))];
+  const promoMonth = activePromotion() ? promotionReferenceMonth(activePromotion()) : currentDashboardMonth();
+  const managerOptions = [{ value: "", label: "전체 매니저" }, ...teamManagers(promoMonth).map((manager) => ({ value: manager.name, label: manager.name }))];
   const managerScope = $("#promoManagerScopeInput");
   if (managerScope) setOptions(managerScope, managerOptions, managerScope.value);
 
@@ -10403,22 +10460,27 @@ function renderPromotionManagerDetail(promo = activePromotion()) {
 function managerSettingsRowMarkup(rawManager, targetMonth, isNew = false) {
   const manager = normalizeManager(rawManager);
   const areasText = (manager.areas || []).join(", ");
-  const statusLabel = manager.status === "inactive" ? "비활성" : "재직";
+  const latestTeamAssignment = manager.teamHistory.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  const latestStatusAssignment = manager.statusHistory.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  const displayTeam = latestTeamAssignment?.team || manager.team;
+  const displayEffectiveMonth = latestTeamAssignment?.startMonth || manager.joinedMonth || targetMonth;
+  const displayStatus = latestStatusAssignment?.status || manager.status;
+  const statusLabel = displayStatus === "inactive" ? "비활성" : "재직";
   const historyText = managerHistoryLabel(manager) || "소속이력 없음";
   const teamSelect = configuredTeamNames().map((team) =>
-    `<option value="${escapeHtml(team)}"${manager.team === team ? " selected" : ""}>${escapeHtml(team)}</option>`
+    `<option value="${escapeHtml(team)}"${displayTeam === team ? " selected" : ""}>${escapeHtml(team)}</option>`
   ).join("");
   const protection = isNew
     ? `<button class="ghost-button small cancel-new-manager" type="button">등록취소</button>`
     : `<div class="manager-row-actions"><button class="ghost-button small edit-manager-row" type="button">수정</button><button class="ghost-button small remove-manager" type="button">삭제</button></div>`;
   return `
-    <div class="manager-row manager-team-row ${manager.status === "inactive" ? "inactive-manager-row" : ""}" data-manager-id="${escapeHtml(manager.id)}" data-is-new="${isNew ? "true" : "false"}" data-display-order="${manager.displayOrder || 0}">
+    <div class="manager-row manager-team-row ${displayStatus === "inactive" ? "inactive-manager-row" : ""}" data-manager-id="${escapeHtml(manager.id)}" data-is-new="${isNew ? "true" : "false"}" data-display-order="${manager.displayOrder || 0}">
       <div class="manager-line manager-line-primary">
         <div class="manager-order-control"><span class="manager-order-number">${manager.displayOrder || "-"}</span><div><button class="ghost-button small manager-order-button manager-order-up" type="button" title="위로 이동">▲</button><button class="ghost-button small manager-order-button manager-order-down" type="button" title="아래로 이동">▼</button></div></div>
         <label>매니저<input class="manager-name" value="${escapeHtml(manager.name)}" placeholder="매니저 이름"></label>
         <label>해당팀<select class="manager-team">${teamSelect}</select></label>
-        <label>적용월<input class="manager-effective-month" type="month" value="${escapeHtml(targetMonth)}"></label>
-        <label>상태<select class="manager-status"><option value="active"${manager.status === "active" ? " selected" : ""}>재직</option><option value="inactive"${manager.status === "inactive" ? " selected" : ""}>비활성</option></select></label>
+        <label>적용월<input class="manager-effective-month" type="month" value="${escapeHtml(displayEffectiveMonth)}"></label>
+        <label>상태<select class="manager-status"><option value="active"${displayStatus === "active" ? " selected" : ""}>재직</option><option value="inactive"${displayStatus === "inactive" ? " selected" : ""}>비활성</option></select></label>
       </div>
       <div class="manager-line manager-line-secondary">
         <label>담당지역<input class="manager-areas" value="${escapeHtml(areasText)}" placeholder="예: 온천1동, 명륜동"></label>
@@ -10496,16 +10558,12 @@ function setMasterTeamForMonth(team, effectiveMonth) {
   const normalizedTeam = normalizeTeamName(team);
   if (!normalizedTeam) return;
   const history = masterTeamHistory().map((item) => ({ ...item }));
-  const previousMonth = shiftMonth(month, -1);
-  const previous = history.filter((item) => !item.startMonth || item.startMonth < month)
-    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  const next = history.filter((item) => !item.startMonth || item.startMonth >= month);
-  if (previous) {
-    previous.endMonth = previous.startMonth && previous.startMonth < month ? previousMonth : previous.endMonth;
-  }
-  const merged = history.filter((item) => item.startMonth && item.startMonth < month);
-  merged.push({ team: normalizedTeam, startMonth: month, endMonth: "" });
-  state.appMeta.masterTeamHistory = merged;
+  const prior = history.filter((item) => item.startMonth && item.startMonth < month);
+  const future = history.filter((item) => item.startMonth && item.startMonth > month);
+  const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
+  const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
+  state.appMeta.masterTeamHistory = [...prior, { team: normalizedTeam, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future];
   state.appMeta.userTeam = normalizedTeam;
 }
 
@@ -10514,13 +10572,12 @@ function setTeamOperationMode(mode, effectiveMonth = "") {
   if (!state.appMeta) state.appMeta = {};
   const month = normalizeManagerMonth(effectiveMonth) || goalSettingsMonth() || currentDashboardMonth() || monthIso();
   const history = teamOperationHistory().map((item) => ({ ...item }));
-  const previousMonth = shiftMonth(month, -1);
-  const previous = history.filter((item) => !item.startMonth || item.startMonth < month)
-    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
-  if (previous) previous.endMonth = previousMonth;
-  const merged = history.filter((item) => item.startMonth && item.startMonth < month);
-  merged.push({ value: normalized, startMonth: month, endMonth: "" });
-  state.appMeta.teamOperationHistory = merged;
+  const prior = history.filter((item) => item.startMonth && item.startMonth < month);
+  const future = history.filter((item) => item.startMonth && item.startMonth > month);
+  const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (previous && (!previous.endMonth || previous.endMonth >= month)) previous.endMonth = shiftMonth(month, -1);
+  const nextStart = future.slice().sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0]?.startMonth || "";
+  state.appMeta.teamOperationHistory = [...prior, { value: normalized, startMonth: month, endMonth: nextStart ? shiftMonth(nextStart, -1) : "" }, ...future];
   state.appMeta.teamOperationMode = normalized;
 
   const existing = normalizeTeamNames(state?.teamNames, state?.managers || []);
@@ -10560,10 +10617,16 @@ function renderSettings() {
   if (masterTeamInput) {
     const names = configuredTeamNames();
     masterTeamInput.innerHTML = names.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join("");
-    const currentTeam = masterTeamForMonth(currentDashboardMonth());
+    const history = masterTeamHistory();
+    const latestTeam = history.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0]?.team;
+    const currentTeam = latestTeam || masterTeamForMonth(currentDashboardMonth());
     masterTeamInput.value = names.includes(currentTeam) ? currentTeam : (names[0] || "");
   }
-  if (masterTeamEffectiveMonth) masterTeamEffectiveMonth.value = currentDashboardMonth();
+  if (masterTeamEffectiveMonth) {
+    const history = masterTeamHistory();
+    const latest = history.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+    masterTeamEffectiveMonth.value = latest?.startMonth || currentDashboardMonth();
+  }
   const masterTeamWrap = masterTeamInput?.closest("label");
   const masterTeamMonthWrap = masterTeamEffectiveMonth?.closest("label");
   const isDualOperation = teamOperationMode(currentDashboardMonth()) === "2";
@@ -10650,8 +10713,9 @@ function exportFullBackup() {
   const backup = {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
+    schemaVersion: STATE_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
-    version: "V10.68",
+    version: versionLabelForDisplay(APP_VERSION),
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -10818,7 +10882,7 @@ async function importFullBackupFile(file) {
   } catch (error) {
     console.error("[BACKUP IMPORT] read/parse failed", error);
     showToast("백업 파일을 읽지 못했습니다.");
-    window.alert("백업 파일을 읽지 못했습니다.\nV10.68에서 내보낸 JSON 전체 백업 파일인지 확인해주세요.");
+    window.alert("백업 파일을 읽지 못했습니다.\n현재 버전에서 내보낸 JSON 전체 백업 파일인지 확인해주세요.");
     return false;
   }
 
@@ -11398,19 +11462,23 @@ function collectManagerSettings() {
     let manager;
     if (existing) {
       const teamHistory = applyManagerTeamChange(existing, nextTeam, effectiveMonth);
-      let inactiveMonth = existing.inactiveMonth;
-      if (nextStatus === "inactive" && existing.status !== "inactive") inactiveMonth = effectiveMonth;
-      if (nextStatus === "active" && existing.status === "inactive") inactiveMonth = "";
+      const statusHistory = applyManagerStatusChange(existing, nextStatus, effectiveMonth);
+      const latestTeam = teamHistory.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0]?.team || nextTeam;
+      const latestStatus = statusHistory.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0]?.status || nextStatus;
+      const latestInactive = latestStatus === "inactive"
+        ? (statusHistory.slice().filter((item) => item.status === "inactive").sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0]?.startMonth || "")
+        : "";
 
       manager = normalizeManager({
         ...existing,
         name,
-        team: nextTeam,
+        team: latestTeam,
         areas,
         goal: existing.goal,
         displayOrder: rowIndex + 1,
-        status: nextStatus,
-        inactiveMonth,
+        status: latestStatus,
+        inactiveMonth: latestInactive,
+        statusHistory,
         teamHistory,
         updatedAt: nowIso
       });
@@ -11426,6 +11494,7 @@ function collectManagerSettings() {
         status: nextStatus,
         joinedMonth: effectiveMonth,
         inactiveMonth: nextStatus === "inactive" ? effectiveMonth : "",
+        statusHistory: [{ status: nextStatus, startMonth: effectiveMonth, endMonth: "" }],
         teamHistory: [{ team: nextTeam, startMonth: effectiveMonth, endMonth: "" }],
         createdAt: nowIso,
         updatedAt: nowIso
@@ -12375,12 +12444,13 @@ async function reportImageBlob() {
 function dashboardShareRecordsForManagerImage() {
   const start = $("#startDateFilter")?.value || "1900-01-01";
   const end = $("#endDateFilter")?.value || "2999-12-31";
+  const month = $("#monthFilter")?.value || monthIso();
   return state.records.filter((record) => {
     if (!record) return false;
     if (record.status === "취소") return false;
     const receivedDate = compactValue(record.receivedDate, "");
     if (!receivedDate) return false;
-    return inDateRange(receivedDate, start, end);
+    return recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, month)) && inDateRange(receivedDate, start, end);
   });
 }
 
@@ -12390,7 +12460,8 @@ function filteredDashboardRecords() {
 }
 
 function managerDashboardPayload(managerName) {
-  const manager = teamManagers().find((item) => item.name === managerName);
+  const month = $("#monthFilter")?.value || monthIso();
+  const manager = teamManagers(month).find((item) => item.name === managerName);
   if (!manager) return null;
 
   const dashboardRecords = dashboardShareRecordsForManagerImage();
@@ -14609,6 +14680,7 @@ function attachEvents() {
       managerId: managerByName($("#managerInput").value)?.id || existingRecord?.managerId || "",
       managerNameAtRecord: existingRecord?.managerNameAtRecord || $("#managerInput").value,
       managerTeamAtRecord: existingRecord?.managerTeamAtRecord || managerTeamForMonth($("#managerInput").value, receivedMonth),
+      managerStatusAtRecord: existingRecord?.managerStatusAtRecord || managerStatusForMonth($("#managerInput").value, receivedMonth),
       count: toNumber($("#countInput").value),
       previousCustomer: $("#previousCustomerInput").value.trim(),
       customerNo: $("#customerInput").value.trim(),
@@ -15080,7 +15152,8 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.67";
+const APP_VERSION = "v10.69";
+const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
@@ -15169,7 +15242,16 @@ function versionLabelForDisplay(version = APP_VERSION) {
   return normalized ? `V${normalized}` : APP_VERSION.toUpperCase();
 }
 
+function applyProgramVersionToStaticLabels() {
+  const label = versionLabelForDisplay(APP_VERSION);
+  const startup = $("#startupVersionLabel");
+  if (startup) startup.textContent = label;
+  const meta = document.querySelector('meta[name="app-version"]');
+  if (meta) meta.content = label;
+}
+
 function setSettingsVersionStatus(latestVersion = "", message = "") {
+  applyProgramVersionToStaticLabels();
   const currentNode = $("#settingsCurrentVersionLabel");
   const latestNode = $("#settingsLatestVersionLabel");
   const guideNode = $("#settingsUpdateGuide");
@@ -15556,22 +15638,10 @@ window.copyMobileSyncUrl = copyMobileSyncUrl;
 
 
 window.MJ_SALES_VERSION = APP_VERSION;
+window.MJ_SALES_SCHEMA_VERSION = STATE_SCHEMA_VERSION;
 window.checkForProgramUpdate = checkForProgramUpdate;
 window.reportImageBlob = reportImageBlob;
 window.shareKakaoImage = shareKakaoImage;
 
 init();
 
-// V10.68 promo button delegated fallback fix
-(function(){
-  function addPromoRowFix(){
-    const id=event && event.target ? event.target.id : '';
-    try {
-      if(id==='addCountRuleBtn'){ renderCountRuleRows([...collectCountRuleRows(), { threshold: 1, reward: "", quantity: 1 }]); return; }
-      if(id==='addScoreRuleBtn'){ renderScoreRuleRows([...collectScoreRuleRows(), { title:"", keyword:"", keywords:[], excludeKeyword:"", excludeKeywords:[], score:1 }]); return; }
-      if(id==='addScoreRewardBtn'){ renderScoreRewardRows([...collectScoreRewardRows(), { threshold:1, reward:"", quantity:1 }]); return; }
-      if(id==='addProductRuleBtn'){ renderProductRuleRows([...collectProductRuleRows(), { title:"", keyword:"", keywords:[], reward:"", quantity:1 }]); return; }
-    } catch(e){ console.error('promo add fix', e); }
-  }
-  document.addEventListener('click', addPromoRowFix, true);
-})();
