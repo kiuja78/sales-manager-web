@@ -393,7 +393,7 @@ function normalizeManagementEvaluationPolicy(value = {}, month = "") {
   const highValueProducts = (Array.isArray(source.highValueProducts) ? source.highValueProducts : defaults.highValueProducts)
     .map((item) => normalizeManagementEvaluationProductRule(item, "high"));
 
-  // V10.67: 2026-09에 기존 8월형 3개 정책(창문형/매트리스/정수기)이 자동 복사돼 있던 경우만
+  // V10.68: 2026-09에 기존 8월형 3개 정책(창문형/매트리스/정수기)이 자동 복사돼 있던 경우만
   // 새 9월 정책 템플릿으로 안전하게 전환한다. 사용자가 별도로 커스텀한 9월 정책은 유지한다.
   const sourcePolicyItems = Array.isArray(source.policyItems) ? source.policyItems : null;
   const legacySeptember = month === "2026-09" && sourcePolicyItems && sourcePolicyItems.length === 3
@@ -768,6 +768,17 @@ function normalizeState(loaded) {
     return normalizedRecord;
   });
   ensureManagerDataIntegrity(next);
+  // 조직 이력은 기존 데이터에서 안전하게 마이그레이션하고, 이후 변경은 월 단위로 누적합니다.
+  if (!next.appMeta.teamOperationHistory || !Array.isArray(next.appMeta.teamOperationHistory)) {
+    const legacyMode = String(next.appMeta.teamOperationMode || "").trim();
+    next.appMeta.teamOperationHistory = [{ value: legacyMode === "2" ? "2" : (legacyMode === "1" ? "1" : (next.teamNames.length >= 2 ? "2" : "1")), startMonth: monthIso(), endMonth: "" }];
+  }
+  if (!next.appMeta.masterTeamHistory || !Array.isArray(next.appMeta.masterTeamHistory)) {
+    const legacyTeam = normalizeTeamName(next.appMeta.userTeam);
+    const master = String(next.appMeta.masterName || "").trim() ? next.managers.find((item) => item.name === String(next.appMeta.masterName || "").trim()) : null;
+    const inferred = legacyTeam || (master ? managerTeamForMonth(master, monthIso()) : "");
+    next.appMeta.masterTeamHistory = inferred ? [{ team: inferred, startMonth: monthIso(), endMonth: "" }] : [];
+  }
   ensureAllRecordManualOrder(next.records);
   return next;
 }
@@ -1281,6 +1292,7 @@ function filteredMembershipRecordsByMonth() {
     const dateValue = record.receivedDate || "";
     if (filters.start && dateValue < filters.start) return false;
     if (filters.end && dateValue > filters.end) return false;
+    if (!recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, currentDashboardMonth()))) return false;
     if (filters.status && compactValue(record.status, "접수") !== filters.status) return false;
     if (filters.manager && compactValue(record.manager, "") !== filters.manager) return false;
     if (filters.contact && membershipRecordContact(record) !== filters.contact) return false;
@@ -1368,7 +1380,9 @@ function filteredRecords() {
       record.customerName, record.customerNo, record.previousCustomer, record.phone,
       record.product, record.manager, record.category, record.memo, record.seller
     ].join(" ").toLowerCase();
+    const recordMonth = recordGoalMonth(record, currentDashboardMonth());
     return inDateRange(record.receivedDate, filters.start, filters.end)
+      && recordBelongsToCurrentUserTeam(record, recordMonth)
       && (!filters.manager || record.manager === filters.manager)
       && (!filters.search || searchable.includes(filters.search));
   });
@@ -1429,7 +1443,7 @@ function isWaterPurifierCpRecord(record) {
 }
 
 function isWaterPurifierSalesRecord(record) {
-  // V10.67 공식 정수기 판매실적 기준:
+  // V10.68 공식 정수기 판매실적 기준:
   // 취소가 아니고, 제품명이 CP-로 시작하며,
   // 판매종류가 신규/패키지/재렌탈/일시불인 실제 영업접수행만 인정합니다.
   // 맴버쉽/멤버십은 별도 멤버십 실적이므로 절대 포함하지 않습니다.
@@ -1884,8 +1898,11 @@ function sortManagerNamesByDisplayOrder(names = []) {
 
 function teamManagers(month = currentDashboardMonth()) {
   const targetMonth = normalizeManagerMonth(month) || monthIso();
+  const operationMode = teamOperationMode(targetMonth);
+  const currentTeam = currentUserTeamName(targetMonth);
   return managerIndex().normalized
     .filter((manager) => managerIsActiveForMonth(manager, targetMonth))
+    .filter((manager) => operationMode === "1" || managerTeamForMonth(manager, targetMonth) === currentTeam)
     .slice()
     .sort((a, b) => {
       const orderDiff = managerDisplayOrderValue(a) - managerDisplayOrderValue(b);
@@ -2243,7 +2260,7 @@ function waterPurifierMonthRecords(month = currentDashboardMonth()) {
 }
 
 function waterPurifierEvaluationMetrics(month = currentDashboardMonth()) {
-  // V10.67: 대시보드와 경영평가 모두 동일한 실제 CP- 영업접수행 목록을 사용합니다.
+  // V10.68: 대시보드와 경영평가 모두 동일한 실제 CP- 영업접수행 목록을 사용합니다.
   // 월별 목표산정기간 내 CP- 제품 중 신규/패키지/재렌탈/일시불 영업접수행만 1행=1건으로 집계합니다.
   const period = monthPeriod(month);
   const sourceRecords = waterPurifierMonthRecords(month);
@@ -2254,7 +2271,7 @@ function waterPurifierEvaluationMetrics(month = currentDashboardMonth()) {
   ) || defaultManagementEvaluationPolicyItem("rate");
   const targetRate = toNumber(policyItem.targetRate) || 55;
   const goal = (toNumber(goals.newGoal) + toNumber(goals.rentalGoal)) * (targetRate / 100);
-  const current = sourceRecords.length; // V10.67: 이미 CP- + 실제 영업종류만 필터된 목록
+  const current = sourceRecords.length; // V10.68: 이미 CP- + 실제 영업종류만 필터된 목록
   const achievementRate = goal > 0 ? current / goal * 100 : 0;
   return { month, current, goal, targetRate, achievementRate, period };
 }
@@ -3520,6 +3537,7 @@ function analyticsBaseRecordsForMonth(month) {
   const period = monthPeriod(month);
   return (state.records || []).filter((record) => {
     if (!record || record.status === "취소" || isMembershipRecord(record)) return false;
+    if (!recordBelongsToCurrentUserTeam(record, month)) return false;
     return inDateRange(record.receivedDate || "", period.start, period.end);
   });
 }
@@ -3554,11 +3572,18 @@ function analyticsActualEntityNames() {
   };
   teamManagerNames().forEach(add);
   (state.records || []).forEach((record) => {
-    if (analyticsRecordMonth(record) < analyticsEffectiveStartMonth(settings)) return;
+    const recordMonth = analyticsRecordMonth(record);
+    if (recordMonth < analyticsEffectiveStartMonth(settings)) return;
+    if (!recordBelongsToCurrentUserTeam(record, recordMonth)) return;
     add(analyticsResolveSellerName(record));
   });
   ["지국장", "팀장"].forEach((role) => {
-    if ((state.records || []).some((record) => analyticsPersonKey(analyticsResolveSellerName(record)) === analyticsPersonKey(role))) add(role);
+    if ((state.records || []).some((record) => {
+      const recordMonth = analyticsRecordMonth(record);
+      return recordMonth >= analyticsEffectiveStartMonth(settings)
+        && recordBelongsToCurrentUserTeam(record, recordMonth)
+        && analyticsPersonKey(analyticsResolveSellerName(record)) === analyticsPersonKey(role);
+    })) add(role);
   });
   return sortManagerNamesByDisplayOrder(names);
 }
@@ -5910,7 +5935,7 @@ function managementEvaluationInput(month = managementEvaluationMonth()) {
 
 function managementEvaluationRecords(month = managementEvaluationMonth()) {
   const period = monthPeriod(month);
-  return (state.records || []).filter((record) => inDateRange(record.receivedDate || "", period.start, period.end));
+  return (state.records || []).filter((record) => recordBelongsToCurrentUserTeam(record, month) && inDateRange(record.receivedDate || "", period.start, period.end));
 }
 
 function managementEvaluationActiveRecords(month = managementEvaluationMonth()) {
@@ -6317,7 +6342,7 @@ function managementEvaluationMetrics(month = managementEvaluationMonth()) {
     : toNumber(inspectionCompleted) / inspectionDenominator * 100;
   const happyTalkRate = input.happyTalkRate;
 
-  // V10.67: 정책이행 각 항목의 판매종류/포함/필수/제외 조건은 항목 자체 설정으로 판단한다.
+  // V10.68: 정책이행 각 항목의 판매종류/포함/필수/제외 조건은 항목 자체 설정으로 판단한다.
   const policyItems = policy.policyItems.map((item) =>
     managementEvaluationPolicyItemMetrics(records, goals, input, item, month)
   );
@@ -7035,7 +7060,7 @@ function printManagementEvaluation() {
 <style>
 @page{size:A4 portrait;margin:0}*{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact}html,body{margin:0;padding:0;background:#fff;color:#17231e;font-family:"Malgun Gothic",Arial,sans-serif}body{font-size:9pt;line-height:1.35}.evaluation-report-page{position:relative;width:210mm;height:297mm;padding:13mm 13mm 12mm;overflow:hidden;background:#fff;break-after:page;page-break-after:always}.evaluation-report-page:last-child{break-after:auto;page-break-after:auto}.evaluation-report-header{height:24mm;display:flex;justify-content:space-between;align-items:flex-end;gap:10mm;padding-bottom:4mm;border-bottom:2px solid #214b3b;margin-bottom:5mm}.evaluation-report-kicker{color:#527b69;font-size:7pt;font-weight:900;letter-spacing:.16em;margin-bottom:1.2mm}.evaluation-report-header h1{margin:0;font-size:20pt;line-height:1.1;color:#173a2e;letter-spacing:-.04em}.evaluation-report-header p{margin:2mm 0 0;color:#5b6c64;font-size:8pt;font-weight:700}.evaluation-report-meta{min-width:42mm;text-align:right}.evaluation-report-meta strong{display:block;font-size:11pt;color:#173a2e}.evaluation-report-meta span{display:block;margin-top:1mm;color:#5b6c64;font-size:7.5pt;font-weight:700}.evaluation-report-section-note{margin:0 0 3mm;padding:2mm 3mm;border-left:3px solid #4b8069;background:#f1f6f3;color:#3d5148;font-size:8pt;font-weight:750}.evaluation-report-body{height:243mm;overflow:hidden}.evaluation-report-footer{position:absolute;left:13mm;right:13mm;bottom:5mm;padding-top:2mm;border-top:1px solid #c5d0cb;display:grid;grid-template-columns:1fr 1fr 12mm;gap:3mm;color:#708078;font-size:6.8pt}.evaluation-report-footer span:nth-child(2){text-align:center}.evaluation-report-footer strong{text-align:right;color:#214b3b}.panel{border:1px solid #b9c7c0;border-radius:3px;background:#fff;box-shadow:none;margin:0 0 4mm;overflow:hidden}.panel-head{display:flex;justify-content:space-between;align-items:center;padding:2.2mm 3mm;border-bottom:1px solid #c8d2cd;background:#f0f5f2}.panel-head h2{margin:0;font-size:10pt;color:#1c4032;font-weight:900}.panel-head strong,.panel-head span{color:#53655d;font-size:7.5pt;font-weight:800}.evaluation-summary-grid{display:grid;grid-template-columns:1.35fr repeat(3,1fr);gap:2.2mm;padding:2.5mm}.evaluation-summary-card{min-height:21mm;padding:2.6mm;border:1px solid #c2cec8;border-radius:3px;background:#fbfcfb;text-align:center}.evaluation-summary-card.main{background:#eef6f1;border-color:#7ca18e}.evaluation-summary-card span{display:block;color:#5b6b63;font-size:7.2pt;font-weight:800}.evaluation-summary-card strong{display:block;margin-top:1.8mm;color:#173a2e;font-size:14pt;line-height:1;font-weight:950}.evaluation-summary-card.main strong{font-size:18pt}.evaluation-score-panel{margin-top:3mm}.evaluation-score-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-score-table th,.evaluation-score-table td{border:1px solid #bcc7c2;padding:1.25mm .8mm;text-align:center;vertical-align:middle;overflow:hidden}.evaluation-score-table th{background:#edf3f0;color:#234536;font-size:6.7pt;font-weight:900}.evaluation-score-table td{font-size:6.5pt;font-weight:700;color:#25342e}.evaluation-score-table th:nth-child(1){width:14mm}.evaluation-score-table th:nth-child(2){width:14mm}.evaluation-score-table th:nth-child(3){width:16mm}.evaluation-score-table th:nth-child(4){width:31mm}.evaluation-score-table th:nth-child(5){width:27mm}.evaluation-score-table th:nth-child(6){width:48mm}.evaluation-score-table th:nth-child(7){width:16mm}.evaluation-score-table th:nth-child(8){width:16mm}.evaluation-part-name{background:#f5f8f6;font-weight:900;color:#214b3b}.evaluation-part-max,.evaluation-part-score{background:#f9fbfa}.evaluation-part-score strong{display:block;font-size:8.5pt}.evaluation-part-score span,.evaluation-part-score small{display:block;color:#66766e;font-size:5.8pt}.evaluation-score-cell{font-size:8.5pt;font-weight:950;color:#173a2e}.evaluation-detail-table{width:100%;border-collapse:collapse;table-layout:fixed;margin-bottom:4mm}.evaluation-detail-table th,.evaluation-detail-table td{border:1px solid #bcc7c2;padding:1.8mm 1.2mm;font-size:7.2pt;vertical-align:middle}.evaluation-detail-table th{background:#edf3f0;color:#234536;font-weight:900;text-align:center}.evaluation-detail-table td{text-align:center}.evaluation-detail-table td:first-child{text-align:left;font-weight:900;color:#214b3b}.evaluation-detail-report{margin-top:3mm}.evaluation-detail-report .report-subheading{margin-bottom:2mm}..evaluation-product-tables-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-product-tables-grid table,.evaluation-policy-product-report table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-product-tables-grid th,.evaluation-product-tables-grid td,.evaluation-policy-product-report th,.evaluation-policy-product-report td{border:1px solid #bcc7c2;padding:1.5mm 1mm;text-align:center;vertical-align:middle;font-size:7pt}.evaluation-product-tables-grid th,.evaluation-policy-product-report th{background:#edf3f0;color:#234536;font-weight:900}.evaluation-product-total-row th,.evaluation-product-total-row td{background:#f0f5f2;font-weight:950}.evaluation-product-count-cell{font-weight:950;color:#173a2e}.evaluation-manual-report,.evaluation-policy-report,.evaluation-policy-product-report{margin:0}.report-subheading{font-size:12pt;font-weight:950;color:#173a2e;padding:2mm 0 2.5mm;border-bottom:2px solid #214b3b;margin-bottom:2.5mm}.report-intro{margin:0 0 3mm;color:#5b6c64;font-size:7.8pt;font-weight:700}.evaluation-manual-table,.evaluation-policy-table{width:100%;border-collapse:collapse;table-layout:fixed}.evaluation-manual-table th,.evaluation-manual-table td,.evaluation-policy-table th,.evaluation-policy-table td{border:1px solid #bcc7c2;padding:1.7mm 1.2mm;vertical-align:middle}.evaluation-manual-table th,.evaluation-policy-table th{background:#edf3f0;color:#234536;font-size:7pt;font-weight:900;text-align:center}.evaluation-manual-table td{font-size:7.4pt}.evaluation-manual-table th:nth-child(1){width:32mm}.evaluation-manual-table th:nth-child(2){width:auto}.evaluation-manual-table th:nth-child(3){width:38mm}.manual-part{background:#f7faf8;font-weight:900;color:#214b3b}.manual-value{text-align:center;font-weight:950;color:#173a2e}.evaluation-policy-table{font-size:6.6pt}.evaluation-policy-table th,.evaluation-policy-table td{padding:1.5mm .9mm;text-align:center;overflow-wrap:anywhere}.evaluation-policy-table th:nth-child(1){width:27mm}.evaluation-policy-table th:nth-child(2){width:15mm}.evaluation-policy-table th:nth-child(3){width:40mm}.evaluation-policy-table th:nth-child(4){width:27mm}.evaluation-policy-table th:nth-child(5){width:17mm}.evaluation-policy-table th:nth-child(6){width:24mm}.evaluation-policy-table th:nth-child(7){width:18mm}.evaluation-policy-table th:nth-child(8){width:auto}.policy-item-title{font-weight:900;color:#214b3b;background:#f7faf8}.evaluation-policy-product-report{margin-top:5mm}.evaluation-policy-product-report h3{margin:0 0 1.5mm;font-size:8.5pt;color:#214b3b}.evaluation-policy-product-grid{display:grid;grid-template-columns:1fr 1fr;gap:4mm}.evaluation-print-value{font-weight:900}.report-empty{padding:12mm;text-align:center;color:#718078;border:1px dashed #b9c7c0}.evaluation-report-first .evaluation-score-panel{margin-bottom:0}.evaluation-report-policy .evaluation-policy-report{margin-bottom:0}@media print{.evaluation-report-page{break-inside:avoid;page-break-inside:avoid}}
 
-/* V10.67 Evaluation Report Design Upgrade */
+/* V10.68 Evaluation Report Design Upgrade */
 .evaluation-report-first .evaluation-summary-grid{grid-template-columns:1.6fr repeat(3,1fr);gap:3mm;}
 .evaluation-report-first .evaluation-summary-card{border-radius:8px;padding:4mm;min-height:25mm;background:#fff;}
 .evaluation-report-first .evaluation-summary-card.main{background:linear-gradient(135deg,#e8f3ff,#f7fbff);border:2px solid #2f6fb5;}
@@ -7285,7 +7310,13 @@ function payrollDateStack(receivedDate, installDate) {
 }
 
 function renderPayroll() {
-  const allRows = Array.isArray(state.payrollRecords) ? state.payrollRecords : [];
+  const payrollMonth = String(state.payrollMonth || $("#payrollMonthInput")?.value || currentDashboardMonth()).trim();
+  const allRows = (Array.isArray(state.payrollRecords) ? state.payrollRecords : []).filter((row) => {
+    if (teamOperationMode(payrollMonth) === "1") return true;
+    const seller = String(row?.seller || "").trim();
+    const manager = managerByName(seller);
+    return Boolean(manager && managerTeamForMonth(manager, payrollMonth) === currentUserTeamName(payrollMonth));
+  });
   const body = $("#payrollTableBody");
   const rowCount = $("#payrollRowCount");
   const summary = $("#payrollMatchSummary");
@@ -7295,7 +7326,7 @@ function renderPayroll() {
   const filter = $("#payrollSellerFilter");
   const managerInput = $("#payrollManagerInput");
   const selectedSeller = filter?.value || "ALL";
-  const managers = allManagerNames();
+  const managers = teamManagerNames(payrollMonth);
 
   if (managerInput) {
     const current = state.payrollManager || managerInput.value || state.appMeta?.masterName || managers[0] || "";
@@ -7448,7 +7479,13 @@ async function importPayrollFile(file) {
   state.payrollMonth = String($("#payrollMonthInput")?.value || state.payrollMonth || "").trim();
   try {
     const rows = await parsePayrollFile(file);
-    state.payrollRecords = rows;
+    const targetMonth = state.payrollMonth || currentDashboardMonth();
+    state.payrollRecords = rows.filter((row) => {
+      if (teamOperationMode(targetMonth) === "1") return true;
+      const seller = String(row?.seller || "").trim();
+      const manager = managerByName(seller);
+      return Boolean(manager && managerTeamForMonth(manager, targetMonth) === currentUserTeamName(targetMonth));
+    });
     persistState({ immediateServer: true });
     renderPayroll();
     renderPayrollArchives();
@@ -8532,15 +8569,24 @@ function promoCreditManagerName(record) {
   return compactValue(record?.manager, "");
 }
 
+function promotionReferenceMonth(promo) {
+  const value = promo?.startDate || promo?.endDate || currentDashboardMonth();
+  return normalizeManagerMonth(String(value).slice(0, 7)) || currentDashboardMonth();
+}
+
 function promoRecords(promo, managerName = "") {
+  const month = promotionReferenceMonth(promo);
   return state.records
+    .filter((record) => recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, month)))
     .filter((record) => !managerName || promoCreditManagerName(record) === managerName)
     .filter((record) => recordMatchesPromo(record, promo, managerName));
 }
 
 function promoPendingRecords(promo, managerName) {
   promo = normalizePromotion(promo);
+  const month = promotionReferenceMonth(promo);
   return state.records
+    .filter((record) => recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, month)))
     .filter((record) => promoCreditManagerName(record) === managerName)
     .filter((record) => promoBaseRecordMatches(record, promo))
     .filter((record) => !isInstalledRecord(record))
@@ -8549,7 +8595,9 @@ function promoPendingRecords(promo, managerName) {
 
 function promoAllManagerRecords(promo, managerName) {
   promo = normalizePromotion(promo);
+  const month = promotionReferenceMonth(promo);
   return state.records
+    .filter((record) => recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, month)))
     .filter((record) => promoCreditManagerName(record) === managerName)
     .filter((record) => promoBaseRecordMatches(record, promo));
 }
@@ -8739,23 +8787,15 @@ function normalizedPhoneDigits(value) {
 
 function currentUserTeamName(month = currentDashboardMonth()) {
   const configured = configuredTeamNames();
-  const explicit = normalizeTeamName(state?.appMeta?.userTeam);
-  if (explicit) return explicit;
-
-  const masterName = String(state?.appMeta?.masterName || "").trim();
-  if (masterName) {
-    const manager = managerByName(masterName);
-    if (manager?.name) return currentTeamForManager(manager);
-  }
-
-  return configured[0] || "원팀";
+  const targetMonth = normalizeManagerMonth(month) || currentDashboardMonth();
+  if (teamOperationMode(targetMonth) === "1") return "";
+  return masterTeamForMonth(targetMonth) || configured[0] || "원팀";
 }
 
-function currentTeamForManager(managerOrName) {
+function currentTeamForManager(managerOrName, month = currentDashboardMonth()) {
   const manager = typeof managerOrName === "string" ? managerByName(managerOrName) : managerOrName;
   if (!manager?.name) return "";
-  const normalized = normalizeManager(manager);
-  return normalizeTeamName(normalized.team) || managerTeamForMonth(normalized, currentDashboardMonth());
+  return normalizeTeamName(managerTeamForMonth(manager, month));
 }
 
 function recordBelongsToCurrentUserTeam(record, month = "") {
@@ -8764,7 +8804,7 @@ function recordBelongsToCurrentUserTeam(record, month = "") {
   const manager = managerByName(managerName);
   if (!manager) return false;
   const targetMonth = normalizeManagerMonth(month) || currentDashboardMonth();
-  return currentTeamForManager(manager) === currentUserTeamName(targetMonth);
+  return teamOperationMode(targetMonth) === "1" || currentTeamForManager(manager, targetMonth) === currentUserTeamName(targetMonth);
 }
 
 function filteredRecordSetForList() {
@@ -9225,7 +9265,7 @@ function mobileOnlyViewport() {
 }
 
 
-/* V10.67 모바일 화면 2차 정밀 보정 */
+/* V10.68 모바일 화면 2차 정밀 보정 */
 function mobileHeaderLabels(table) {
   if (!table) return [];
 
@@ -10389,15 +10429,116 @@ function managerSettingsRowMarkup(rawManager, targetMonth, isNew = false) {
     </div>`;
 }
 
-function teamOperationMode() {
+function normalizeMonthHistory(history, fallbackValue, defaultStartMonth = monthIso()) {
+  const source = Array.isArray(history) ? history : [];
+  const normalized = source.map((item) => ({
+    value: String(item?.value ?? fallbackValue ?? "").trim(),
+    startMonth: normalizeManagerMonth(item?.startMonth),
+    endMonth: normalizeManagerMonth(item?.endMonth)
+  })).filter((item) => item.value);
+  if (!normalized.length && fallbackValue) {
+    normalized.push({ value: String(fallbackValue).trim(), startMonth: defaultStartMonth, endMonth: "" });
+  }
+  normalized.sort((a, b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")));
+  return normalized;
+}
+
+function teamOperationHistory() {
+  if (!state.appMeta) state.appMeta = {};
+  const current = String(state.appMeta.teamOperationMode || "").trim();
+  const fallback = current === "2" ? "2" : (current === "1" ? "1" : "");
+  const history = normalizeMonthHistory(state.appMeta.teamOperationHistory, fallback, monthIso());
+  if (!history.length) history.push({ value: "1", startMonth: monthIso(), endMonth: "" });
+  return history;
+}
+
+function teamOperationMode(month = currentDashboardMonth()) {
+  const targetMonth = normalizeManagerMonth(month) || monthIso();
+  const history = teamOperationHistory();
+  const matching = history
+    .filter((item) => (!item.startMonth || item.startMonth <= targetMonth) && (!item.endMonth || targetMonth <= item.endMonth))
+    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (matching?.value === "1" || matching?.value === "2") return matching.value;
   const stored = String(state?.appMeta?.teamOperationMode || "").trim();
   if (stored === "1" || stored === "2") return stored;
-  const names = normalizeTeamNames(state?.teamNames, state?.managers || []);
-  return names.length >= 2 ? "2" : "1";
+  return configuredTeamNames().length >= 2 ? "2" : "1";
+}
+
+function masterTeamHistory() {
+  if (!state.appMeta) state.appMeta = {};
+  const existing = Array.isArray(state.appMeta.masterTeamHistory) ? state.appMeta.masterTeamHistory : [];
+  if (existing.length) return existing;
+  const legacy = normalizeTeamName(state.appMeta.userTeam);
+  const masterName = String(state.appMeta.masterName || "").trim();
+  const master = masterName ? managerByName(masterName) : null;
+  const inferred = legacy || (master ? managerTeamForMonth(master, monthIso()) : "");
+  return inferred ? [{ team: inferred, startMonth: monthIso(), endMonth: "" }] : [];
+}
+
+function masterTeamForMonth(month = currentDashboardMonth()) {
+  const targetMonth = normalizeManagerMonth(month) || monthIso();
+  const history = masterTeamHistory();
+  const matching = history
+    .filter((item) => (!item.startMonth || item.startMonth <= targetMonth) && (!item.endMonth || targetMonth <= item.endMonth))
+    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (matching?.team) return normalizeTeamName(matching.team);
+  const firstHistory = history.slice().sort((a, b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0];
+  if (firstHistory?.team && (!firstHistory.startMonth || targetMonth < firstHistory.startMonth)) return normalizeTeamName(firstHistory.team);
+  const legacy = normalizeTeamName(state?.appMeta?.userTeam);
+  if (legacy) return legacy;
+  const masterName = String(state?.appMeta?.masterName || "").trim();
+  const master = masterName ? managerByName(masterName) : null;
+  return master ? managerTeamForMonth(master, targetMonth) : defaultTeamName();
+}
+
+function setMasterTeamForMonth(team, effectiveMonth) {
+  const month = normalizeManagerMonth(effectiveMonth) || monthIso();
+  const normalizedTeam = normalizeTeamName(team);
+  if (!normalizedTeam) return;
+  const history = masterTeamHistory().map((item) => ({ ...item }));
+  const previousMonth = shiftMonth(month, -1);
+  const previous = history.filter((item) => !item.startMonth || item.startMonth < month)
+    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  const next = history.filter((item) => !item.startMonth || item.startMonth >= month);
+  if (previous) {
+    previous.endMonth = previous.startMonth && previous.startMonth < month ? previousMonth : previous.endMonth;
+  }
+  const merged = history.filter((item) => item.startMonth && item.startMonth < month);
+  merged.push({ team: normalizedTeam, startMonth: month, endMonth: "" });
+  state.appMeta.masterTeamHistory = merged;
+  state.appMeta.userTeam = normalizedTeam;
+}
+
+function setTeamOperationMode(mode, effectiveMonth = "") {
+  const normalized = String(mode) === "2" ? "2" : "1";
+  if (!state.appMeta) state.appMeta = {};
+  const month = normalizeManagerMonth(effectiveMonth) || goalSettingsMonth() || currentDashboardMonth() || monthIso();
+  const history = teamOperationHistory().map((item) => ({ ...item }));
+  const previousMonth = shiftMonth(month, -1);
+  const previous = history.filter((item) => !item.startMonth || item.startMonth < month)
+    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (previous) previous.endMonth = previousMonth;
+  const merged = history.filter((item) => item.startMonth && item.startMonth < month);
+  merged.push({ value: normalized, startMonth: month, endMonth: "" });
+  state.appMeta.teamOperationHistory = merged;
+  state.appMeta.teamOperationMode = normalized;
+
+  const existing = normalizeTeamNames(state?.teamNames, state?.managers || []);
+  const isLegacySingle = existing.length <= 1 && (!existing[0] || existing[0] === "원팀" || existing[0] === "1팀");
+  if (normalized === "2" && isLegacySingle) state.teamNames = ["1팀", "2팀"];
+  if (normalized === "1" && isLegacySingle) state.teamNames = ["1팀"];
+
+  renderTeamOperationSettings();
+  renderManagerSettings?.();
+  renderSettings();
+  invalidateManagerCaches();
+  persistState();
+  render();
+  showToast(`${formatMonthLabel(month)}부터 ${normalized}팀 운영으로 설정했습니다.`);
 }
 
 function renderTeamOperationSettings() {
-  const mode = teamOperationMode();
+  const mode = teamOperationMode(goalSettingsMonth());
   const single = $("#teamOperationSingleBtn");
   const dual = $("#teamOperationDualBtn");
   [single, dual].forEach((button) => {
@@ -10408,32 +10549,28 @@ function renderTeamOperationSettings() {
     button.setAttribute("aria-pressed", active ? "true" : "false");
   });
 }
-
-function setTeamOperationMode(mode) {
-  const normalized = String(mode) === "2" ? "2" : "1";
-  if (!state.appMeta) state.appMeta = {};
-  state.appMeta.teamOperationMode = normalized;
-
-  // 팀 이름 설정 메뉴를 없애고 운영 형태만 선택하도록 단순화합니다.
-  // 기존에 이미 A팀/B팀 등 실제 팀명이 저장되어 있다면 기존 이름과 소속 데이터는 보존합니다.
-  const existing = normalizeTeamNames(state?.teamNames, state?.managers || []);
-  const isLegacySingle = existing.length <= 1 && (!existing[0] || existing[0] === "원팀" || existing[0] === "1팀");
-  if (normalized === "2" && isLegacySingle) state.teamNames = ["1팀", "2팀"];
-  if (normalized === "1" && isLegacySingle) state.teamNames = ["1팀"];
-
-  renderTeamOperationSettings();
-  renderManagerSettings?.();
-  invalidateManagerCaches();
-  persistState();
-  showToast(`${normalized}팀 운영으로 설정했습니다.`);
-}
-
 function renderSettings() {
   setSettingsVersionStatus("", "");
   state.appMeta = { ...sampleState.appMeta, ...(state.appMeta || {}) };
   $("#branchNameInput").value = state.appMeta.branchName;
   $("#masterNameInput").value = state.appMeta.masterName;
   $("#masterRoleInput").value = state.appMeta.masterRole;
+  const masterTeamInput = $("#masterTeamInput");
+  const masterTeamEffectiveMonth = $("#masterTeamEffectiveMonth");
+  if (masterTeamInput) {
+    const names = configuredTeamNames();
+    masterTeamInput.innerHTML = names.map((team) => `<option value="${escapeHtml(team)}">${escapeHtml(team)}</option>`).join("");
+    const currentTeam = masterTeamForMonth(currentDashboardMonth());
+    masterTeamInput.value = names.includes(currentTeam) ? currentTeam : (names[0] || "");
+  }
+  if (masterTeamEffectiveMonth) masterTeamEffectiveMonth.value = currentDashboardMonth();
+  const masterTeamWrap = masterTeamInput?.closest("label");
+  const masterTeamMonthWrap = masterTeamEffectiveMonth?.closest("label");
+  const isDualOperation = teamOperationMode(currentDashboardMonth()) === "2";
+  if (masterTeamWrap) masterTeamWrap.hidden = !isDualOperation;
+  if (masterTeamMonthWrap) masterTeamMonthWrap.hidden = !isDualOperation;
+  if (masterTeamInput) masterTeamInput.disabled = !isDualOperation || !settingsEditMode.user;
+  if (masterTeamEffectiveMonth) masterTeamEffectiveMonth.disabled = !isDualOperation || !settingsEditMode.user;
   const menuVisibility = optionalMenuVisibility();
   if ($("#menuVisibilityChecklist")) $("#menuVisibilityChecklist").checked = menuVisibility.checklist;
   if ($("#menuVisibilityContactNote")) $("#menuVisibilityContactNote").checked = menuVisibility.contactnote;
@@ -10464,7 +10601,7 @@ function renderSettings() {
 
 function setSettingsSectionEditable(section, editable) {
   const selectorMap = {
-    user: "#branchNameInput, #masterNameInput, #masterRoleInput",
+    user: "#branchNameInput, #masterNameInput, #masterRoleInput, #masterTeamInput, #masterTeamEffectiveMonth",
     manager: "#managerSettings input, #managerSettings select, #managerSettings button.cancel-new-manager, #managerSettings button.manager-order-button, #managerSettings button.remove-manager, #addManagerBtn",
     team: "#teamSettingsList input, #teamSettingsList button.remove-team-setting, #addTeamBtn",
     goal: "#goalMonthInput, #accountCountInput, #packageRateInput, #newWeightInput, #newIndexInput, #rentalWeightInput, #rentalIndexInput, #renewalWeightInput, #renewalIndexInput, #periodStartInput, #periodEndInput"
@@ -10514,7 +10651,7 @@ function exportFullBackup() {
     backupType: "MJ_Sales_Manager_FullBackup",
     appName: "MJ_Sales_Manager",
     exportedAt: new Date().toISOString(),
-    version: "V10.67",
+    version: "V10.68",
     description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
@@ -10681,7 +10818,7 @@ async function importFullBackupFile(file) {
   } catch (error) {
     console.error("[BACKUP IMPORT] read/parse failed", error);
     showToast("백업 파일을 읽지 못했습니다.");
-    window.alert("백업 파일을 읽지 못했습니다.\nV10.67에서 내보낸 JSON 전체 백업 파일인지 확인해주세요.");
+    window.alert("백업 파일을 읽지 못했습니다.\nV10.68에서 내보낸 JSON 전체 백업 파일인지 확인해주세요.");
     return false;
   }
 
@@ -11096,6 +11233,15 @@ function collectUserSettings() {
     masterRole: $("#masterRoleInput").value.trim() || "마스터",
     mobileSyncUrl: previousMeta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL
   };
+  const mode = teamOperationMode(currentDashboardMonth());
+  const teamInput = $("#masterTeamInput");
+  const effectiveInput = $("#masterTeamEffectiveMonth");
+  if (mode === "2" && teamInput) {
+    const team = normalizeTeamName(teamInput.value);
+    if (team) setMasterTeamForMonth(team, effectiveInput?.value || currentDashboardMonth());
+  } else if (mode === "1") {
+    state.appMeta.userTeam = "";
+  }
 }
 
 function saveMenuVisibilitySettings() {
@@ -12024,11 +12170,11 @@ async function reportImageBlob() {
   const targetPeriod = monthPeriod(month);
   const periodStart = targetPeriod.start || "1900-01-01";
   const periodEnd = targetPeriod.end || "2999-12-31";
-  const records = state.records.filter((record) => record && record.status !== "취소" && inDateRange(record.receivedDate, periodStart, periodEnd));
+  const records = state.records.filter((record) => record && record.status !== "취소" && recordBelongsToCurrentUserTeam(record, month) && inDateRange(record.receivedDate, periodStart, periodEnd));
   const goals = calculatedGoals(month);
   const totals = applyManualStatsToTotals(actuals(records));
   const waterMetrics = waterPurifierEvaluationMetrics(month, records);
-  const managers = teamManagers();
+  const managers = teamManagers(month);
   const meta = state.appMeta || sampleState.appMeta;
   // 100점 제품은 선택한 목표월에 등록된 프로모션만 사용합니다.
   // 따라서 월별로 제품을 추가·삭제하면 공유 이미지의 열도 자동으로 바뀝니다.
@@ -12400,11 +12546,12 @@ async function printDashboardImageBlob() {
   const periodEnd = targetPeriod.end || "2999-12-31";
   const records = state.records.filter((record) => {
     if (!record || record.status === "취소") return false;
+    if (!recordBelongsToCurrentUserTeam(record, month)) return false;
     return inDateRange(record.receivedDate, periodStart, periodEnd);
   });
   const goals = calculatedGoals(month);
   const totals = applyManualStatsToTotals(actuals(records));
-  const managers = teamManagers();
+  const managers = teamManagers(month);
   const meta = state.appMeta || sampleState.appMeta;
   const branchTitle = `${meta.branchName || "명장지국"} ${meta.masterName || "김건일"} ${meta.masterRole || "마스터"}`;
   const todayLabel = todayKoreanDateText();
@@ -15415,7 +15562,7 @@ window.shareKakaoImage = shareKakaoImage;
 
 init();
 
-// V10.67 promo button delegated fallback fix
+// V10.68 promo button delegated fallback fix
 (function(){
   function addPromoRowFix(){
     const id=event && event.target ? event.target.id : '';

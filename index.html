@@ -1,15 +1,15 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta name="app-version" content="V10.67">
+  <meta name="app-version" content="V10.68">
   <meta charset="utf-8">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>영업관리 시스템</title>
-  <link rel="stylesheet" href="./styles.css?v=v1064">
-  <link rel="stylesheet" href="./settings-v994.css?v=v1064">
+  <link rel="stylesheet" href="./styles.css?v=v1068">
+  <link rel="stylesheet" href="./settings-v994.css?v=v1068">
   <link rel="icon" type="image/png" href="./assets/sales_manager_icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#174c3b">
@@ -23,7 +23,7 @@
     <p>체계적인 영업관리, 더 나은 성과의 시작</p>
     <div class="startup-intro-status"><span></span><span id="startupIntroStatus">업무 화면을 구성하고 있습니다</span></div>
     <div class="startup-intro-progress"><i id="startupIntroProgress"></i></div>
-    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.67</span></div>
+    <div class="startup-intro-footer"><strong>영업관리 시스템</strong><span>V10.68</span></div>
   </div>
 </div>
 
@@ -32,7 +32,7 @@
       <div class="brand" id="sidebarRefreshBtn" role="button" tabindex="0" title="새로고침">
         <div class="brand-mark brand-program-icon"><img src="./assets/sales_manager_icon.png" alt="영업관리 시스템"></div>
         <div class="brand-text">
-          <strong id="sidebarAppTitle">영업관리 시스템 V10.67</strong>
+          <strong id="sidebarAppTitle">영업관리 시스템 V10.68</strong>
           <em id="sidebarManagerLine">김건일 마스터</em>
         </div>
       </div>
@@ -1461,11 +1461,11 @@
             <div class="version-update-box">
               <div class="version-update-row">
                 <span>현재 버전</span>
-                <strong id="settingsCurrentVersionLabel">V10.67</strong>
+                <strong id="settingsCurrentVersionLabel">V10.68</strong>
               </div>
               <div class="version-update-row">
                 <span>최신 버전</span>
-                <strong id="settingsLatestVersionLabel">V10.67</strong>
+                <strong id="settingsLatestVersionLabel">V10.68</strong>
               </div>
               <div class="form-actions version-update-actions">
                 <button class="ghost-button" id="checkVersionBtn" type="button">버전 확인</button>
@@ -1497,7 +1497,10 @@
               <label>지국이름<input id="branchNameInput" placeholder="명장지국"></label>
               <label>사용자이름<input id="masterNameInput" placeholder="김건일"></label>
               <label>직책<input id="masterRoleInput" placeholder="마스터"></label>
+              <label>내 소속팀<select id="masterTeamInput"></select></label>
+              <label>소속팀 적용월<input id="masterTeamEffectiveMonth" type="month"></label>
             </div>
+            <p class="settings-help-text">2팀 운영일 때만 내 소속팀을 선택합니다. 선택한 적용월부터 해당 팀으로 적용되며, 이전 월의 조직·실적 데이터는 변경되지 않습니다. 1팀 운영에서는 전체 매니저와 전체 실적을 사용합니다.</p>
             <div class="form-actions section-save-row">
               <button class="ghost-button" id="editUserSettingsBtn" type="button">사용자 수정</button>
               <button class="primary-button" id="saveUserSettingsBtn" type="button">사용자 등록/저장</button>
@@ -1541,7 +1544,7 @@
                     <button class="ghost-button small team-operation-btn" id="teamOperationDualBtn" type="button" data-team-operation="2">2팀 운영</button>
                   </div>
                 </div>
-                <p class="goal-team-operation-help">팀 이름을 따로 설정할 필요가 없습니다. 매니저 등록에서 소속팀만 선택하세요.</p>
+                <p class="goal-team-operation-help">위 목표월부터 운영 형태가 적용됩니다. 1팀 운영은 전체 매니저·실적을 사용하고, 2팀 운영은 담당 마스터의 소속팀 기준으로 표시·계산합니다. 이전 월의 데이터는 변경되지 않습니다.</p>
               </div>
             </div>
             <div class="form-actions section-save-row">
@@ -1779,9 +1782,9 @@
 
 
   <!-- 중요: Google Drive 연결 어댑터가 app.js보다 먼저 실행되어야 합니다. -->
-  <script src="./web-adapter.js?v=20260912-v1067"></script>
-  <script src="./app.js?v=v1067"></script>
-  <script src="./web-init.js?v=20260912-v1067"></script>
+  <script src="./web-adapter.js?v=20260912-v1068"></script>
+  <script src="./app.js?v=v1068"></script>
+  <script src="./web-init.js?v=20260912-v1068"></script>
 
     
   <nav class="mobile-app-nav" id="mobileAppNav" aria-label="모바일 주요 메뉴">
