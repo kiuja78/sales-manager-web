@@ -1421,9 +1421,9 @@ function filteredRecords() {
       record.customerName, record.customerNo, record.previousCustomer, record.phone,
       record.product, record.manager, record.category, record.memo, record.seller
     ].join(" ").toLowerCase();
-    const recordMonth = recordGoalMonth(record, currentDashboardMonth());
+    const selectedGoalMonth = normalizeManagerMonth(filters.month) || recordGoalMonth(record, currentDashboardMonth());
     return inDateRange(record.receivedDate, filters.start, filters.end)
-      && recordBelongsToCurrentUserTeam(record, recordMonth)
+      && recordBelongsToCurrentUserTeam(record, selectedGoalMonth)
       && (!filters.manager || record.manager === filters.manager)
       && (!filters.search || searchable.includes(filters.search));
   });
@@ -7791,10 +7791,10 @@ function renderTopbar() {
 function availableRecordManagerNamesForFilter() {
   const names = new Set();
   const records = recordsByRecordPeriod();
+  const selectedGoalMonth = normalizeManagerMonth($("#recordMonthFilter")?.value) || currentDashboardMonth();
   records.forEach((record) => {
     if (!record || isMembershipRecord(record)) return;
-    const targetMonth = recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
-    if (!recordBelongsToCurrentUserTeam(record, targetMonth)) return;
+    if (!recordBelongsToCurrentUserTeam(record, selectedGoalMonth)) return;
     const name = String(record.managerNameAtRecord || record.manager || "").trim();
     if (name) names.add(name);
   });
@@ -8953,14 +8953,39 @@ function currentTeamForManager(managerOrName, month = currentDashboardMonth()) {
 // 8/28부터 발생한 접수도 9월 목표월에 속하므로 9월의 팀/재직 이력을 사용합니다.
 // 따라서 접수에 저장된 managerTeamAtRecord는 보조/레거시 정보로만 사용하고,
 // 정상 데이터는 항상 접수일 -> 목표월 -> 해당 목표월의 조직이력 순으로 계산합니다.
+function recordTeamForGoalMonth(record, targetMonth = "") {
+  const manager = managerById(record?.managerId) || managerByName(record?.managerNameAtRecord || record?.manager);
+  const month = normalizeManagerMonth(targetMonth) || recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
+  if (!manager?.name) return normalizeTeamName(record?.managerTeamAtRecord || "");
+  const history = normalizeManagerTeamHistory(manager.teamHistory, manager.team, manager.joinedMonth);
+  const matching = history
+    .filter((item) => (!item.startMonth || item.startMonth <= month) && (!item.endMonth || month <= item.endMonth))
+    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (matching?.team) return normalizeTeamName(matching.team);
+  if (record?.managerTeamAtRecord) return normalizeTeamName(record.managerTeamAtRecord);
+  return normalizeTeamName(manager.team || "");
+}
+
+function recordStatusForGoalMonth(record, targetMonth = "") {
+  const manager = managerById(record?.managerId) || managerByName(record?.managerNameAtRecord || record?.manager);
+  const month = normalizeManagerMonth(targetMonth) || recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
+  if (!manager?.name) return record?.managerStatusAtRecord === "inactive" ? "inactive" : "active";
+  const history = normalizeStatusHistory(manager.statusHistory, manager.status === "inactive" ? "inactive" : "active", manager.joinedMonth);
+  const matching = history
+    .filter((item) => (!item.startMonth || item.startMonth <= month) && (!item.endMonth || month <= item.endMonth))
+    .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
+  if (matching?.status) return matching.status;
+  if (record?.managerStatusAtRecord === "inactive" || record?.managerStatusAtRecord === "active") return record.managerStatusAtRecord;
+  return manager.status === "inactive" ? "inactive" : "active";
+}
+
 function recordBelongsToCurrentUserTeam(record, month = "") {
   const manager = managerById(record?.managerId) || managerByName(record?.managerNameAtRecord || record?.manager);
   if (!manager) return false;
   const targetMonth = normalizeManagerMonth(month) || recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
-  // 매니저 적용월/상태 이력은 목표월 단위로 적용됩니다.
-  if (!managerIsActiveForMonth(manager, targetMonth)) return false;
+  if (recordStatusForGoalMonth(record, targetMonth) !== "active") return false;
   if (teamOperationMode(targetMonth) === "1") return true;
-  const managerTeam = currentTeamForManager(manager, targetMonth);
+  const managerTeam = recordTeamForGoalMonth(record, targetMonth);
   if (!managerTeam) return false;
   return managerTeam === currentUserTeamName(targetMonth);
 }
@@ -10690,7 +10715,17 @@ function masterTeamForMonth(month = currentDashboardMonth()) {
     .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
   if (matching?.team) return normalizeTeamName(matching.team);
   const firstHistory = history.slice().sort((a, b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")))[0];
-  if (firstHistory?.team && (!firstHistory.startMonth || targetMonth < firstHistory.startMonth)) return normalizeTeamName(firstHistory.team);
+  if (firstHistory?.team && (!firstHistory.startMonth || targetMonth < firstHistory.startMonth)) {
+    const masterName = String(state?.appMeta?.masterName || "").trim();
+    const master = masterName ? managerByName(masterName) : null;
+    if (master) {
+      const historicalMasterTeam = managerTeamForMonth(master, targetMonth);
+      if (historicalMasterTeam) return normalizeTeamName(historicalMasterTeam);
+    }
+    const legacy = normalizeTeamName(state?.appMeta?.userTeam);
+    if (legacy) return legacy;
+    return normalizeTeamName(firstHistory.team);
+  }
   const legacy = normalizeTeamName(state?.appMeta?.userTeam);
   if (legacy) return legacy;
   const masterName = String(state?.appMeta?.masterName || "").trim();
@@ -15328,7 +15363,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.76";
+const APP_VERSION = "v10.77";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
