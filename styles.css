@@ -23683,7 +23683,7 @@ body[data-view="records"] .record-form-row.row-basic {
 }
 .settings-help-text{margin:8px 0 0;color:#667085;font-size:12px;line-height:1.5}
 
-/* V10.75: 접수리스트/프로모션 독립 월 조회 */
+/* V10.76: 접수리스트/프로모션 독립 월 조회 */
 .record-month-picker,
 .promo-month-picker {
   display: inline-flex;

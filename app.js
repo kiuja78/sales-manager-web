@@ -1351,10 +1351,11 @@ function renderMembershipFilterOptions(records = []) {
     contact: contactFilter?.value || ""
   };
   const period = membershipDatePeriod();
+  const selectedGoalMonth = normalizeManagerMonth($("#recordMonthFilter")?.value) || currentDashboardMonth();
   const baseRecords = state.records.filter((record) => {
     if (!isMembershipRecord(record)) return false;
     if (!inDateRange(record.receivedDate || "", period.start, period.end)) return false;
-    return recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, currentDashboardMonth()));
+    return recordBelongsToCurrentUserTeam(record, selectedGoalMonth);
   });
   if (statusFilter) setOptions(statusFilter, optionListWithAll(baseRecords.map((record) => record.status), "전체 상태"), previous.status);
   if (managerFilter) setOptions(managerFilter, optionListWithAll(baseRecords.map((record) => record.manager), "전체 매니저"), previous.manager);
@@ -8974,9 +8975,15 @@ function filteredRecordSetForList() {
 
   const teamScoped = state?.appMeta?.teamScopedRecords !== false;
 
+  // 접수리스트에서 선택한 조회월은 곧 "목표월"입니다.
+  // 따라서 해당 월의 목표산정기간 안에 들어온 모든 접수는 선택한 목표월의
+  // 마스터/팀/재직 이력 기준으로 필터링해야 합니다.
+  // 개별 접수의 달력월(recordGoalMonth(record))을 다시 기준으로 삼으면
+  // 산정기간 경계에서 이전 월 접수가 누락될 수 있으므로 사용하지 않습니다.
+  const selectedGoalMonth = normalizeManagerMonth($("#recordMonthFilter")?.value) || currentDashboardMonth();
   return recordsByRecordPeriod()
     .filter((record) => !isMembershipRecord(record))
-    .filter((record) => !teamScoped || recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, currentDashboardMonth())))
+    .filter((record) => !teamScoped || recordBelongsToCurrentUserTeam(record, selectedGoalMonth))
     .filter((record) => {
       if (!simpleSearch) return true;
       const searchableText = [
@@ -15321,7 +15328,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.75";
+const APP_VERSION = "v10.76";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
