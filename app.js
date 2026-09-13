@@ -178,7 +178,7 @@ function defaultManagementEvaluationPolicyItem(kind = "count") {
   const isPercentile = normalizedKind === "percentile";
   return {
     id: uid("evaluation-policy"),
-    title: isRate ? "목표 달성률" : isPercentile ? "상대평가 정책영업" : "정책상품",
+    title: "",
     description: "",
     kind: normalizedKind,
     keywords: isRate ? ["CP-"] : [],
@@ -6724,29 +6724,28 @@ function renderManagementEvaluationPolicySettings(month = managementEvaluationMo
   const policyRows = policy.policyItems.map((item, index) => `
     <div class="evaluation-policy-editor-row" data-evaluation-policy-id="${escapeHtml(item.id)}">
       <div class="evaluation-policy-row-head">
-        <strong>${index + 1}. ${escapeHtml(item.title)}</strong>
+        <strong>정책이행 항목 ${index + 1}</strong>
         <button class="ghost-button small remove-evaluation-policy-item" type="button">삭제</button>
       </div>
-      <label>항목명<input class="evaluation-policy-title" value="${escapeHtml(item.title)}"></label>
+      <label>정책이행 항목명(수기 입력)<input class="evaluation-policy-title" value="${escapeHtml(item.title)}" placeholder="예: 쿠쿠데이 정책 영업 건수"></label>
       <label>평가방식<select class="evaluation-policy-kind">
         <option value="count"${item.kind === "count" ? " selected" : ""}>수량 자동집계</option>
         <option value="rate"${item.kind === "rate" ? " selected" : ""}>목표 달성률</option>
         <option value="percentile"${item.kind === "percentile" ? " selected" : ""}>상위 백분위(수기)</option>
       </select></label>
-      <label>집계 판매종류<select class="evaluation-policy-category-filter">
+      <label>실적 집계 대상<select class="evaluation-policy-category-filter">
         ${[
           ["all","전체 접수"],["business","영업 전체"],["rental","렌탈(신규+패키지+재렌탈)"],["new-rental","신규+재렌탈"],
           ["new","신규"],["package","패키지"],["rerental","재렌탈"],["cash","일시불"],["membership","멤버십"]
         ].map(([value,label]) => `<option value="${value}"${item.categoryFilter === value ? " selected" : ""}>${label}</option>`).join("")}
       </select></label>
       <label>집계단위<select class="evaluation-policy-count-basis"><option value="record"${item.countBasis !== "product" ? " selected" : ""}>접수행 1건</option><option value="product"${item.countBasis === "product" ? " selected" : ""}>제품수량</option></select></label>
-      <label class="evaluation-policy-wide">정책 설명<input class="evaluation-policy-description" value="${escapeHtml(item.description || "")}" placeholder="예: 렌탈 건에 한함 · [쿠쿠데이] 상품명만 평가"></label>
       <label class="evaluation-policy-wide">모델·포함문구(하나라도 일치)<input class="evaluation-policy-keywords" value="${escapeHtml(item.keywords.join(', '))}" placeholder="예: CP-, AC-, CBT-"></label>
       <label class="evaluation-policy-wide">필수 포함문구(모두 일치)<input class="evaluation-policy-required-keywords" value="${escapeHtml(item.requiredKeywords.join(', '))}" placeholder="예: 쿠쿠데이"></label>
       <label class="evaluation-policy-wide">제외문구<input class="evaluation-policy-exclude-keywords" value="${escapeHtml(item.excludeKeywords.join(', '))}" placeholder="예: 프레임"></label>
       <label class="evaluation-policy-manual-label">수기 입력명<input class="evaluation-policy-manual-label-input" value="${escapeHtml(item.manualLabel)}" placeholder="예: 상위 백분위(%) / 팀 추가 수량"></label>
       <label class="evaluation-policy-manual-switch"><input class="evaluation-policy-manual-required" type="checkbox"${item.manualRequired ? " checked" : ""}> 자동수량에 수기 합산</label>
-      <label class="evaluation-policy-goal-base">목표 기준(달성률용)<select class="evaluation-policy-goal-base-select"><option value="new"${item.goalBase === "new" ? " selected" : ""}>신규만</option><option value="new-rental"${item.goalBase === "new-rental" ? " selected" : ""}>신규+재렌탈</option><option value="lump-sum"${item.goalBase === "lump-sum" ? " selected" : ""}>일시불</option><option value="general"${item.goalBase === "general" ? " selected" : ""}>전체</option></select></label>
+      <label class="evaluation-policy-goal-base">달성률 목표 기준<select class="evaluation-policy-goal-base-select"><option value="new"${item.goalBase === "new" ? " selected" : ""}>신규만</option><option value="new-rental"${item.goalBase === "new-rental" ? " selected" : ""}>신규+재렌탈</option><option value="lump-sum"${item.goalBase === "lump-sum" ? " selected" : ""}>일시불</option><option value="general"${item.goalBase === "general" ? " selected" : ""}>전체</option></select></label>
       <label class="evaluation-policy-target-rate">목표비율(% · 달성률용)<input class="evaluation-policy-target-rate-input" type="number" min="0" step="0.1" value="${escapeHtml(item.targetRate)}"></label>
       <label>점수방향<select class="evaluation-policy-score-mode"><option value="at-least"${item.scoreMode !== "at-most" ? " selected" : ""}>기준 이상이면 점수</option><option value="at-most"${item.scoreMode === "at-most" ? " selected" : ""}>기준 이하이면 점수</option></select></label>
       <label class="evaluation-policy-wide">점수기준<input class="evaluation-policy-score-rules" value="${escapeHtml(managementEvaluationScoreRulesInputValue(item))}" placeholder="예: 2:2, 3:3, 4:4, 5:7"></label>
@@ -6777,7 +6776,7 @@ function collectManagementEvaluationPolicySettings() {
     return {
       id: row.dataset.evaluationPolicyId || uid("evaluation-policy"),
       title: row.querySelector(".evaluation-policy-title")?.value || "",
-      description: row.querySelector(".evaluation-policy-description")?.value || "",
+      description: "",
       kind,
       keywords: evaluationKeywordList(row.querySelector(".evaluation-policy-keywords")?.value),
       requiredKeywords: evaluationKeywordList(row.querySelector(".evaluation-policy-required-keywords")?.value),
@@ -10281,7 +10280,7 @@ function promotionMonthlyReportHtml(month = monthIso()) {
 }
 
 function printPromotionMonthlyReport() {
-  const month = currentDashboardMonth();
+  const month = currentPromotionMonth();
   const oldFrame = document.getElementById("promotion-monthly-print-frame");
   if (oldFrame) oldFrame.remove();
 
@@ -10318,8 +10317,23 @@ function printPromotionMonthlyReport() {
 
 
 
+function currentPromotionMonth() {
+  const input = $("#promoMonthFilter");
+  return input?.value || monthIso();
+}
+
 function currentDashboardPromotionPeriod() {
   const month = $("#monthFilter")?.value || monthIso();
+  const setting = monthSetting(month);
+  return {
+    month,
+    start: setting.periodStart || `${month}-01`,
+    end: setting.periodEnd || lastDayOfMonth(month)
+  };
+}
+
+function currentPromotionPagePeriod() {
+  const month = currentPromotionMonth();
   const setting = monthSetting(month);
   return {
     month,
@@ -10349,7 +10363,15 @@ function renderPromotions() {
   if (!promoList) return;
 
   state.promotions = (state.promotions || []).map(normalizePromotion);
-  const monthPromotions = promotionsForCurrentDashboardMonth();
+  const pagePeriod = currentPromotionPagePeriod();
+  const monthPromotions = (state.promotions || []).filter((promo) => {
+    const start = promo?.startDate || "";
+    const end = promo?.endDate || "";
+    if (!start && !end) return true;
+    const promoStart = start || end;
+    const promoEnd = end || start;
+    return promoStart <= pagePeriod.end && promoEnd >= pagePeriod.start;
+  });
   const filtered = monthPromotions.filter((promo) => {
     const status = promotionStatus(promo);
     if (promoListFilter === "active") return status === "진행중" || status === "예정";
@@ -10466,7 +10488,7 @@ function renderPromotionDetail() {
 
   const detailSelect = $("#promoDetailManagerSelect");
   if (detailSelect) {
-    const managers = teamManagerNames();
+    const managers = teamManagerNames(currentPromotionMonth());
     const current = detailSelect.value || "";
     setOptions(detailSelect, [{ value: "", label: "매니저" }, ...managers.map((name) => ({ value: name, label: name }))], current);
   }
@@ -14620,7 +14642,6 @@ function attachEvents() {
     if (dayFilter) dayFilter.value = "";
     if (!settingsEditMode.goal) renderGoalSettingsForMonth(month);
     manualStatsForMonth(month);
-    syncRecordPeriodFromDashboardMonth(month, true);
     render();
   };
 
@@ -15033,6 +15054,12 @@ function attachEvents() {
   });
 
   $("#newPromotionBtn")?.addEventListener("click", resetPromoForm);
+  $("#promoMonthFilter")?.addEventListener("change", () => {
+    promoListFilter = "all";
+    $$(".promo-filter-tab").forEach((node) => node.classList.toggle("active", node.dataset.promoFilter === "all"));
+    renderPromotions();
+    showToast(`프로모션 조회월을 ${formatMonthLabel(currentPromotionMonth())}로 변경했습니다.`);
+  });
   $("#printPromotionMonthlyReportBtn")?.addEventListener("click", printPromotionMonthlyReport);
   $$(".promo-filter-tab").forEach((button) => {
     button.addEventListener("click", () => {
@@ -15187,7 +15214,12 @@ function attachEvents() {
   ["#recordSimpleSearch", "#recordDateBasisFilter", "#recordMonthFilter", "#recordStartDateFilter", "#recordEndDateFilter", "#recordStatusFilter", "#recordManagerFilter", "#recordCategoryFilter", "#recordSellerFilter"].forEach((selector) => {
     const node = $(selector);
     if (node) node.addEventListener("change", () => {
-      if (selector === "#recordMonthFilter") applyRecordMonthPeriod(node.value);
+      if (selector === "#recordMonthFilter") {
+        applyRecordMonthPeriod(node.value);
+        const basis = $("#recordDateBasisFilter");
+        if (basis) basis.value = "receivedDate";
+        showToast(`접수리스트 조회월을 ${formatMonthLabel(node.value)}로 변경했습니다.`);
+      }
       recordSequenceSort = "desc";
       renderRecords();
       renderMembershipFilterOptions();
@@ -15211,8 +15243,8 @@ function attachEvents() {
   $("#recordGoalPeriodBtn")?.addEventListener("click", () => {
     // 접수리스트의 '목표월 기준'은 항상 해당 월의 목표시작일~목표종료일을 사용합니다.
     // 접수일(receivedDate) 기준으로 다시 맞추고, 임의 기간 조회값을 초기화합니다.
-    const month = $("#monthFilter")?.value || monthIso();
-    syncRecordPeriodFromDashboardMonth(month, false);
+    const month = $("#recordMonthFilter")?.value || currentDashboardMonth() || monthIso();
+    applyRecordMonthPeriod(month);
     const basis = $("#recordDateBasisFilter");
     if (basis) basis.value = "receivedDate";
     recordSequenceSort = "desc";
@@ -15289,7 +15321,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.73";
+const APP_VERSION = "v10.75";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -15513,11 +15545,13 @@ async function init() {
   if (renewalGuideMonthInput) renewalGuideMonthInput.value = month;
   const recordMonthFilter = $("#recordMonthFilter");
   if (recordMonthFilter) recordMonthFilter.value = month;
+  const promoMonthFilter = $("#promoMonthFilter");
+  if (promoMonthFilter) promoMonthFilter.value = month;
   const recordStartDateFilter = $("#recordStartDateFilter");
   if (recordStartDateFilter) recordStartDateFilter.value = period.start;
   const recordEndDateFilter = $("#recordEndDateFilter");
   if (recordEndDateFilter) recordEndDateFilter.value = dashboardDefaultEnd(period);
-  syncRecordPeriodFromDashboardMonth(month, true);
+  applyRecordMonthPeriod(month);
   const dayFilter = $("#dayFilter");
   if (dayFilter) dayFilter.value = "";
   setDashboardRange(period.start, dashboardDefaultEnd(period));

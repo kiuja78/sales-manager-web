@@ -23682,3 +23682,45 @@ body[data-view="records"] .record-form-row.row-basic {
   .goal-team-operation { height:auto; }
 }
 .settings-help-text{margin:8px 0 0;color:#667085;font-size:12px;line-height:1.5}
+
+/* V10.75: 접수리스트/프로모션 독립 월 조회 */
+.record-month-picker,
+.promo-month-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 36px;
+  padding: 0 2px;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--muted, #5b6b65);
+  white-space: nowrap;
+}
+.record-month-picker input,
+.promo-month-picker input {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line, #d7e0dc);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--text, #173027);
+  font-weight: 800;
+}
+.promo-stable-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.promo-month-picker {
+  padding: 5px 9px;
+  border: 1px solid var(--line, #d7e0dc);
+  border-radius: 10px;
+  background: #fbfcfb;
+}
+@media (max-width: 720px) {
+  .promo-stable-head-actions { width: 100%; flex-wrap: wrap; }
+  .promo-month-picker { flex: 1 1 180px; justify-content: space-between; }
+  .promo-month-picker input { flex: 1; min-width: 0; }
+  .record-month-picker { justify-content: space-between; width: 100%; }
+  .record-month-picker input { flex: 1; }
+}
