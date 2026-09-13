@@ -8057,6 +8057,16 @@ function renderManagerPerformanceTable(records, salesManagers) {
     return { manager, exactMetrics, manual, managerGoal, shortage, managerRate, isVirtualBranchManager };
   });
 
+  const performanceMonth = currentDashboardMonth();
+  const consDisplayForManager = (managerName, actualCount) => {
+    const stat = manualStatFor(managerName, performanceMonth);
+    const actual = toNumber(actualCount);
+    const target = toNumber(stat.consTarget);
+    if (actual > 0) return { value: actual, pending: false, title: `실제 컨스 ${formatNumber(actual)}건` };
+    if (target > 0) return { value: target, pending: true, title: `컨스 지급 예정 ${formatNumber(target)}건 · 실제 접수 전` };
+    return { value: 0, pending: false, title: "컨스 지급관리" };
+  };
+
   const rows = rowMetrics.map(({ manager, exactMetrics, manual, managerGoal, shortage, managerRate, isVirtualBranchManager }) => {
     const nameCell = actualMode
       ? `<td class="manager-name-cell"><strong>${escapeHtml(manager.name)}</strong></td>`
@@ -8099,7 +8109,10 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(exactMetrics.packageCount)}</td>
         <td class="primary-metric">${blankZeroNumber(exactMetrics.rentalCount)}</td>
         <td class="primary-metric">${blankZeroNumber(exactMetrics.cashCount)}</td>
-        <td class="activity-value-cell cons-auto-cell"><button type="button" class="cons-table-button" data-cons-manager="${escapeHtml(manager.name)}">${blankZeroNumber(exactMetrics.consCount)}</button></td>
+        <td class="activity-value-cell cons-auto-cell">${(() => {
+          const consDisplay = consDisplayForManager(manager.name, exactMetrics.consCount);
+          return `<button type="button" class="cons-table-button ${consDisplay.pending ? "cons-pending-button" : ""}" data-cons-manager="${escapeHtml(manager.name)}" title="${escapeHtml(consDisplay.title)}"><span>${blankZeroNumber(consDisplay.value)}</span>${consDisplay.pending ? `<small>예정</small>` : ""}</button>`;
+        })()}</td>
         <td class="activity-value-cell support-auto-cell">${blankZeroNumber(exactMetrics.supportCount)}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(exactMetrics.business)}</strong></td>
         <td class="manual-stat-cell manual-light"><input class="manager-inline-input" data-manager="${escapeHtml(manager.name)}" data-field="renewal" type="number" min="0" step="0.5" value="${manual.renewal ? manual.renewal : ""}" inputmode="decimal" aria-label="재약정 수기입력"></td>
@@ -8126,7 +8139,6 @@ function renderManagerPerformanceTable(records, salesManagers) {
     acc.rentalCount += toNumber(m.rentalCount);
     acc.consCount += toNumber(m.consCount);
     acc.cashCount += toNumber(m.cashCount);
-    acc.consCount += toNumber(m.consCount);
     acc.supportCount += toNumber(m.supportCount);
     acc.business += toNumber(m.business);
     acc.renewal += toNumber(m.renewal);
@@ -8170,9 +8182,8 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(totals.packageCount)}</td>
         <td class="primary-metric">${blankZeroNumber(totals.rentalCount)}</td>
         <td class="primary-metric">${blankZeroNumber(totals.cashCount)}</td>
-        <td class="support-count-cell">${blankZeroNumber(totals.consCount)}</td>
-        <td class="support-count-cell">${blankZeroNumber(totals.supportCount)}</td>
-        <td class="support-count-cell">${blankZeroNumber(0)}</td>
+        <td class="activity-value-cell cons-auto-cell">${blankZeroNumber(totals.consCount)}</td>
+        <td class="activity-value-cell support-auto-cell">${blankZeroNumber(totals.supportCount)}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(totals.business)}</strong></td>
         <td>${blankZeroNumber(totals.renewal)}</td>
         <td class="refund-text">${totals.refund ? `-${formatNumber(totals.refund)}` : ""}</td>
@@ -15410,7 +15421,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.79";
+const APP_VERSION = "v10.80";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
