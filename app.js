@@ -8037,31 +8037,66 @@ $("#printManagerStats")?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-cons-manager]");
   if (button) { event.preventDefault(); openConsPaymentManager(button.dataset.consManager || ""); return; }
 });
-$("#consPaymentCloseBtn")?.addEventListener("click", closeConsPaymentManager);
-$("#consPaymentCancelBtn")?.addEventListener("click", closeConsPaymentManager);
-$("#consPaymentCancelBtn2")?.addEventListener("click", closeConsPaymentManager);
-$("#consPaymentTarget")?.addEventListener("input", () => {
+// 컨스 지급관리 모달은 index.html에서 app.js보다 뒤에 렌더링될 수 있으므로
+// 직접 요소에 이벤트를 즉시 바인딩하지 않고 document 위임으로 처리합니다.
+// 이렇게 하면 웹/PC 어느 환경에서도 취소·저장 버튼이 정상 작동하고, 재렌더링에도 이벤트가 유지됩니다.
+function refreshConsPaymentCalculatedFields() {
   const modal = $("#consPaymentModal");
   if (!modal || modal.hidden) return;
   const managerName = modal.dataset.manager || "";
   const records = typeof getCurrentDashboardRecords === "function" ? getCurrentDashboardRecords() : filteredRecords();
   const actual = Math.max(0, toNumber(exactManagerSalesMetrics((records || []).filter((record) => record.manager === managerName), managerName).consCount));
-  const due = Math.max(0, Number($("#consPaymentTarget").value || 0));
-  $("#consPaymentPaid").textContent = formatNumber(Math.min(actual, due));
-  $("#consPaymentPending").textContent = formatNumber(Math.max(0, due - Math.min(actual, due)));
+  const due = Math.max(0, Number($("#consPaymentTarget")?.value || 0));
+  const paid = Math.min(actual, due);
+  const pending = Math.max(0, due - paid);
+  if ($("#consPaymentActual")) $("#consPaymentActual").textContent = formatNumber(actual);
+  if ($("#consPaymentPaid")) $("#consPaymentPaid").textContent = formatNumber(paid);
+  if ($("#consPaymentPending")) $("#consPaymentPending").textContent = formatNumber(pending);
+}
+
+document.addEventListener("input", (event) => {
+  if (event.target?.id === "consPaymentTarget") refreshConsPaymentCalculatedFields();
 });
-$("#consPaymentSaveBtn")?.addEventListener("click", () => {
-  const modal = $("#consPaymentModal"); const managerName = modal?.dataset.manager || ""; const month = modal?.dataset.month || manualStatsMonthKey();
-  if (!managerName) return;
+
+document.addEventListener("click", (event) => {
+  const closeButton = event.target.closest?.("#consPaymentCloseBtn, #consPaymentCancelBtn, #consPaymentCancelBtn2");
+  if (closeButton) {
+    event.preventDefault();
+    closeConsPaymentManager();
+    return;
+  }
+
+  const saveButton = event.target.closest?.("#consPaymentSaveBtn");
+  if (!saveButton) return;
+  event.preventDefault();
+
+  const modal = $("#consPaymentModal");
+  const managerName = modal?.dataset.manager || "";
+  const month = modal?.dataset.month || manualStatsMonthKey();
+  if (!managerName) {
+    showToast("컨스 지급관리 대상을 확인해 주세요.");
+    return;
+  }
+
   const stat = manualStatFor(managerName, month);
-  const target = Math.max(0, Number($("#consPaymentTarget").value || 0));
-  if (!Number.isFinite(target)) { showToast("지급 예정 수량을 확인해 주세요."); return; }
+  const rawTarget = $("#consPaymentTarget")?.value || "0";
+  const target = Math.max(0, Number(rawTarget));
+  if (!Number.isFinite(target)) {
+    showToast("지급 예정 수량을 확인해 주세요.");
+    return;
+  }
+
   const records = typeof getCurrentDashboardRecords === "function" ? getCurrentDashboardRecords() : filteredRecords();
   const actual = Math.max(0, toNumber(exactManagerSalesMetrics((records || []).filter((record) => record.manager === managerName), managerName).consCount));
   stat.consDue = target;
+  // 지급 완료/대기는 실제 컨스와 지급 예정에서 자동 계산합니다.
   stat.consPaid = Math.min(actual, target);
-  stat.consMemo = String($("#consPaymentMemo").value || "");
-  persistState(); renderDashboard(); closeConsPaymentManager(); showToast(`${managerName} ${month}월 컨스 지급관리를 저장했습니다.`);
+  stat.consMemo = String($("#consPaymentMemo")?.value || "");
+
+  persistState();
+  renderDashboard();
+  closeConsPaymentManager();
+  showToast(`${managerName} ${month}월 컨스 지급관리를 저장했습니다.`);
 });
 
 function renderManagerPerformanceTable(records, salesManagers) {
@@ -15444,7 +15479,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.82";
+const APP_VERSION = "v10.83";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
