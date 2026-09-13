@@ -1441,6 +1441,15 @@ function categoryMatches(actual, expected) {
   return normalized === expected;
 }
 
+function activityTypeCount(records, type) {
+  return (records || [])
+    .filter((record) => record && record.status !== "취소" && recordActivityType(record) === type)
+    .reduce((sum, record) => {
+      const count = toNumber(record.count);
+      return sum + (count > 0 ? count : 1);
+    }, 0);
+}
+
 function actuals(records) {
   const active = records.filter((record) => record.status !== "취소");
   const newCount = sumBy(active, "신규");
@@ -1448,26 +1457,18 @@ function actuals(records) {
   const cashActual = sumBy(active, "일시불");
   const newActual = newCount + packageCount + cashActual;
   const rentalActual = sumBy(active, "재렌탈");
+  const orderConsActual = activityTypeCount(active, "컨스");
+  const supportActual = activityTypeCount(active, "지원");
   const renewalActual = 0;
-  const orderConsActual = 0;
   const refundActual = 0;
-  const coreActual = newActual + rentalActual;
+  // 영업실적 = 신규 + 패키지 + 재렌탈 + 일시불 + 컨스 + 지원
+  const coreActual = newActual + rentalActual + orderConsActual + supportActual;
   const businessActual = coreActual;
   const overallActual = coreActual - refundActual + renewalActual;
   const managerFinalActual = businessActual + renewalActual - refundActual;
   return {
-    newCount,
-    packageCount,
-    newActual,
-    rentalActual,
-    cashActual,
-    renewalActual,
-    orderConsActual,
-    refundActual,
-    coreActual,
-    businessActual,
-    overallActual,
-    managerFinalActual
+    newCount, packageCount, newActual, rentalActual, cashActual, renewalActual,
+    orderConsActual, supportActual, refundActual, coreActual, businessActual, overallActual, managerFinalActual
   };
 }
 
@@ -1523,8 +1524,7 @@ function memoKeywordCount(records, keyword) {
 }
 
 function exactManagerSalesMetrics(records, managerName = "") {
-  // V9.41의 신규·패키지·재렌탈·일시불 계산을 그대로 유지합니다.
-  // 기타내용의 컨스·지원 문구는 판매유형 카운트에 영향을 주지 않습니다.
+  // 접수리스트의 판매종류 + 구분을 모두 실제 영업실적에 반영합니다.
   const base = applyManualStatsToTotals(actuals(records), managerName);
   const newCount = toNumber(base.newCount);
   const packageCount = toNumber(base.packageCount);
@@ -1532,15 +1532,12 @@ function exactManagerSalesMetrics(records, managerName = "") {
   const cashCount = toNumber(base.cashActual);
   const renewal = toNumber(base.renewalActual);
   const refund = toNumber(base.refundActual);
-  const business = newCount + packageCount + rentalCount + cashCount;
+  const consCount = toNumber(base.orderConsActual);
+  const supportCount = toNumber(base.supportActual);
+  const business = newCount + packageCount + rentalCount + cashCount + consCount + supportCount;
   const final = business + renewal - refund;
   return {
-    newCount,
-    packageCount,
-    rentalCount,
-    cashCount,
-    consCount: toNumber(base.orderConsActual),
-    supportCount: memoKeywordCount(records, "지원"),
+    newCount, packageCount, rentalCount, cashCount, consCount, supportCount,
     waterPurifierCount: waterPurifierCpCount(records),
     business,
     renewal,
@@ -1655,6 +1652,8 @@ function normalizeManualStatsBucket() {
     return value && typeof value === "object" && (
       Object.prototype.hasOwnProperty.call(value, "renewal") ||
       Object.prototype.hasOwnProperty.call(value, "orderCons") ||
+      Object.prototype.hasOwnProperty.call(value, "consPaid") ||
+      Object.prototype.hasOwnProperty.call(value, "consMemo") ||
       Object.prototype.hasOwnProperty.call(value, "support") ||
       Object.prototype.hasOwnProperty.call(value, "refund")
     );
@@ -1677,11 +1676,13 @@ function manualStatsForMonth(month = manualStatsMonthKey()) {
 function manualStatFor(managerName, month = manualStatsMonthKey()) {
   const bucket = manualStatsForMonth(month);
   if (!bucket[managerName]) {
-    bucket[managerName] = { renewal: 0, orderCons: 0, support: 0, refund: 0 };
+    bucket[managerName] = { renewal: 0, orderCons: 0, consPaid: 0, consMemo: "", support: 0, refund: 0 };
   }
   const stat = bucket[managerName];
   stat.renewal = toNumber(stat.renewal);
-  stat.orderCons = toNumber(stat.orderCons);
+  stat.orderCons = toNumber(stat.orderCons); // legacy field; new sales count is automatic from 접수 구분
+  stat.consPaid = toNumber(stat.consPaid);
+  stat.consMemo = String(stat.consMemo || "");
   stat.support = toNumber(stat.support);
   stat.refund = toNumber(stat.refund);
   return stat;
@@ -2191,8 +2192,8 @@ function manualTotals(month = manualStatsMonthKey()) {
 function applyManualStatsToTotals(totals, managerName = "", month = manualStatsMonthKey()) {
   const manual = managerName ? manualStatFor(managerName, month) : manualTotals(month);
   totals.renewalActual += toNumber(manual.renewal);
-  totals.orderConsActual += toNumber(manual.orderCons);
-  totals.supportActual = toNumber(manual.support);
+  // 컨스/지원은 접수리스트의 구분값으로 자동 집계된 값을 그대로 유지합니다.
+  // legacy orderCons/support 수기값은 과거 데이터 호환을 위해 보존하지만 실적 계산에는 사용하지 않습니다.
   totals.refundActual += toNumber(manual.refund);
   totals.overallActual = totals.coreActual - totals.refundActual + totals.renewalActual;
   totals.managerFinalActual = totals.businessActual + totals.renewalActual - totals.refundActual;
@@ -7902,9 +7903,8 @@ function managerPerformanceDisplayManagers(salesManagers, actualMode = false) {
 }
 
 function actualManagerSalesMetrics(records, managerName = "") {
-  // 실제 실적현황은 판매 자체만 실판매자 기준으로 재배분한다.
-  // 컨스/지원은 별도 실적으로 더하지 않는다.
-  // 재약정/환수는 해당 매니저의 기존 수기값을 그대로 보여 준다.
+  // 실제 실적현황도 접수리스트의 구분(컨스/지원)을 포함해 계산합니다.
+  // 재약정/환수는 해당 매니저의 기존 수기값을 그대로 반영합니다.
   const base = actuals(records);
   const manual = manualStatFor(managerName);
   const newCount = toNumber(base.newCount);
@@ -7913,15 +7913,12 @@ function actualManagerSalesMetrics(records, managerName = "") {
   const cashCount = toNumber(base.cashActual);
   const renewal = toNumber(manual.renewal);
   const refund = toNumber(manual.refund);
-  const business = newCount + packageCount + rentalCount + cashCount;
+  const consCount = toNumber(base.orderConsActual);
+  const supportCount = toNumber(base.supportActual);
+  const business = newCount + packageCount + rentalCount + cashCount + consCount + supportCount;
   const final = business + renewal - refund;
   return {
-    newCount,
-    packageCount,
-    rentalCount,
-    cashCount,
-    consCount: 0,
-    supportCount: 0,
+    newCount, packageCount, rentalCount, cashCount, consCount, supportCount,
     business,
     renewal,
     refund,
@@ -7936,6 +7933,7 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
     acc.newCount += toNumber(m.newCount);
     acc.packageCount += toNumber(m.packageCount);
     acc.rentalCount += toNumber(m.rentalCount);
+    acc.consCount += toNumber(m.consCount);
     acc.cashCount += toNumber(m.cashCount);
     acc.supportCount += toNumber(m.supportCount);
     acc.business += toNumber(m.business);
@@ -7944,7 +7942,7 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
     acc.final += toNumber(m.final);
     acc.goal += toNumber(row.managerGoal);
     return acc;
-  }, { newCount: 0, packageCount: 0, rentalCount: 0, cashCount: 0, supportCount: 0, business: 0, renewal: 0, refund: 0, final: 0, goal: 0 });
+  }, { newCount: 0, packageCount: 0, rentalCount: 0, cashCount: 0, consCount: 0, supportCount: 0, business: 0, renewal: 0, refund: 0, final: 0, goal: 0 });
 
   const metric = (label, value, cls = "") => `<div class="manager-zone-metric ${cls}"><span>${label}</span><strong>${formatNumber(toNumber(value))}</strong></div>`;
   const diffInfo = (actual, goal, isVirtual = false) => {
@@ -7983,7 +7981,7 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
           ${metric("일시불", metrics.cashCount)}
         </div>
         <div class="manager-zone-subline">
-          ${actualMode ? "" : `<span>컨스 <b>${formatNumber(toNumber(manualStatFor(managerName).orderCons))}</b></span><span>지원 <b>${formatNumber(toNumber(metrics.supportCount))}</b></span>`}
+          ${actualMode ? "" : `<span>컨스 <b>${formatNumber(toNumber(metrics.consCount))}</b></span><span>지원 <b>${formatNumber(toNumber(metrics.supportCount))}</b></span><span>지급대기 <b>${formatNumber(Math.max(0, toNumber(metrics.consCount) - toNumber(manualStatFor(managerName).consPaid)))}</b></span>`}
           <span>재약정 <b>${formatNumber(toNumber(metrics.renewal))}</b></span>
           <span>환수 <b class="refund">${formatNumber(toNumber(metrics.refund))}</b></span>
         </div>
@@ -7991,8 +7989,9 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
           <div class="manager-zone-progress-head"><strong>달성률</strong><span class="${diff.cls}">${diff.text}</span></div>
           <div class="manager-zone-track"><span style="width:${validRate === null ? 0 : Math.max(0, Math.min(validRate, 100))}%"></span></div>
         </div>
-        ${actualMode || isTotal ? "" : `<details class="manager-zone-manual"><summary>수기실적 입력</summary><div class="manager-zone-manual-grid">
-          <label><span>컨스</span><input class="manager-inline-input activity-inline-input" data-manager="${escapeHtml(managerName)}" data-field="orderCons" type="number" min="0" step="0.5" value="${manualStatFor(managerName).orderCons || ""}" inputmode="decimal"></label>
+        ${actualMode || isTotal ? "" : `<details class="manager-zone-manual"><summary>실적 보완 · 컨스 지급관리</summary><div class="manager-zone-manual-grid">
+          <label><span>컨스 지급완료</span><input class="manager-inline-input activity-inline-input" data-manager="${escapeHtml(managerName)}" data-field="consPaid" type="number" min="0" step="0.5" value="${manualStatFor(managerName).consPaid || ""}" inputmode="decimal"></label>
+          <label><span>컨스 지급메모</span><input class="manager-inline-input" data-manager="${escapeHtml(managerName)}" data-field="consMemo" type="text" value="${escapeHtml(manualStatFor(managerName).consMemo)}" placeholder="예: 10월 2건 지급 예정"></label>
           <label><span>재약정</span><input class="manager-inline-input" data-manager="${escapeHtml(managerName)}" data-field="renewal" type="number" min="0" step="0.5" value="${manualStatFor(managerName).renewal || ""}" inputmode="decimal"></label>
           <label><span>환수</span><input class="manager-inline-input refund-input" data-manager="${escapeHtml(managerName)}" data-field="refund" type="number" min="0" step="0.5" value="${manualStatFor(managerName).refund || ""}" inputmode="decimal"></label>
         </div></details>`}
@@ -8030,10 +8029,10 @@ function renderManagerPerformanceTable(records, salesManagers) {
   if (guide) {
     guide.textContent = actualMode
       ? "실판매자 기준의 실제 판매실적입니다. 실판매자=팀장은 등록 사용자(마스터)에게, 실판매자=지국장은 별도 지국장 행에 집계합니다. 실판매자가 없으면 주매니저에게 귀속합니다. 컨스·지원은 제외하며 재약정·환수는 기존 수기값을 반영합니다."
-      : "재약정·컨스·환수는 수기로 입력합니다. 지원은 접수리스트 기타내용의 지원 문구를 자동 집계하며, 컨스·지원은 영업실적에 더하지 않습니다.";
+      : "신규·패키지·재렌탈·일시불·컨스·지원은 접수리스트에서 자동 집계되어 영업실적에 합산됩니다. 재약정·환수는 수기로 입력하고, 컨스 지급관리는 지급완료 수량과 메모로 관리합니다.";
   }
 
-  const assignedHeaders = ["매니저","신규","패키지","재렌탈","일시불","컨스","지원","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
+  const assignedHeaders = ["매니저","신규","패키지","재렌탈","일시불","컨스","지원","지급대기","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
   const actualHeaders = ["매니저","신규","패키지","재렌탈","일시불","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
   const headers = actualMode ? actualHeaders : assignedHeaders;
   if (head) head.innerHTML = headers.map((label) => `<th>${label}</th>`).join("");
@@ -8047,16 +8046,18 @@ function renderManagerPerformanceTable(records, salesManagers) {
       ? actualManagerSalesMetrics(managerRecords, manager.name)
       : exactManagerSalesMetrics(managerRecords, manager.name);
     const manual = manualStatFor(manager.name);
+    const consPaid = Math.max(0, toNumber(manual.consPaid));
+    const consPending = Math.max(0, toNumber(exactMetrics.consCount) - consPaid);
     const isVirtualBranchManager = Boolean(manager.virtual && manager.name === "지국장");
     const managerGoal = isVirtualBranchManager ? 0 : toNumber(managerGoalFor(manager.name));
     const shortage = isVirtualBranchManager ? null : exactMetrics.final - managerGoal;
     const managerRate = isVirtualBranchManager
       ? null
       : (managerGoal > 0 ? Math.round((exactMetrics.final / managerGoal) * 100) : 0);
-    return { manager, exactMetrics, manual, managerGoal, shortage, managerRate, isVirtualBranchManager };
+    return { manager, exactMetrics, manual, consPaid, consPending, managerGoal, shortage, managerRate, isVirtualBranchManager };
   });
 
-  const rows = rowMetrics.map(({ manager, exactMetrics, manual, managerGoal, shortage, managerRate, isVirtualBranchManager }) => {
+  const rows = rowMetrics.map(({ manager, exactMetrics, manual, consPaid, consPending, managerGoal, shortage, managerRate, isVirtualBranchManager }) => {
     const nameCell = actualMode
       ? `<td class="manager-name-cell"><strong>${escapeHtml(manager.name)}</strong></td>`
       : `<td class="manager-name-cell">
@@ -8098,8 +8099,9 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(exactMetrics.packageCount)}</td>
         <td class="primary-metric">${blankZeroNumber(exactMetrics.rentalCount)}</td>
         <td class="primary-metric">${blankZeroNumber(exactMetrics.cashCount)}</td>
-        <td class="activity-value-cell cons-manual-cell"><input class="manager-inline-input activity-inline-input" data-manager="${escapeHtml(manager.name)}" data-field="orderCons" type="number" min="0" step="0.5" value="${manual.orderCons ? manual.orderCons : ""}" inputmode="decimal" aria-label="컨스 수기입력"></td>
+        <td class="activity-value-cell cons-auto-cell">${blankZeroNumber(exactMetrics.consCount)}</td>
         <td class="activity-value-cell support-auto-cell">${blankZeroNumber(exactMetrics.supportCount)}</td>
+        <td class="activity-value-cell cons-pending-cell">${blankZeroNumber(consPending)}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(exactMetrics.business)}</strong></td>
         <td class="manual-stat-cell manual-light"><input class="manager-inline-input" data-manager="${escapeHtml(manager.name)}" data-field="renewal" type="number" min="0" step="0.5" value="${manual.renewal ? manual.renewal : ""}" inputmode="decimal" aria-label="재약정 수기입력"></td>
         <td class="manual-stat-cell manual-light refund-text"><input class="manager-inline-input refund-input" data-manager="${escapeHtml(manager.name)}" data-field="refund" type="number" min="0" step="0.5" value="${manual.refund ? manual.refund : ""}" inputmode="decimal" aria-label="환수 수기입력"></td>
@@ -8123,6 +8125,7 @@ function renderManagerPerformanceTable(records, salesManagers) {
     acc.newCount += toNumber(m.newCount);
     acc.packageCount += toNumber(m.packageCount);
     acc.rentalCount += toNumber(m.rentalCount);
+    acc.consCount += toNumber(m.consCount);
     acc.cashCount += toNumber(m.cashCount);
     acc.consCount += toNumber(m.consCount);
     acc.supportCount += toNumber(m.supportCount);
@@ -8170,6 +8173,7 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(totals.cashCount)}</td>
         <td class="support-count-cell">${blankZeroNumber(totals.consCount)}</td>
         <td class="support-count-cell">${blankZeroNumber(totals.supportCount)}</td>
+        <td class="support-count-cell">${blankZeroNumber(Math.max(0, totals.consCount - rowMetrics.reduce((sum, row) => sum + row.consPaid, 0)))}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(totals.business)}</strong></td>
         <td>${blankZeroNumber(totals.renewal)}</td>
         <td class="refund-text">${totals.refund ? `-${formatNumber(totals.refund)}` : ""}</td>
@@ -14839,9 +14843,17 @@ function attachEvents() {
     const managerName = input.dataset.manager;
     const field = input.dataset.field;
     const stat = manualStatFor(managerName);
-    const value = input.value === "" ? 0 : Number(input.value);
-    const labels = { renewal: "재약정", orderCons: "컨스", refund: "환수" };
+    const labels = { renewal: "재약정", consPaid: "컨스 지급완료", refund: "환수", consMemo: "컨스 지급메모" };
 
+    if (field === "consMemo") {
+      stat.consMemo = String(input.value || "");
+      persistState();
+      renderDashboard();
+      showToast(`${managerName} ${labels[field]}을 저장했습니다.`);
+      return;
+    }
+
+    const value = input.value === "" ? 0 : Number(input.value);
     if (!Number.isFinite(value) || value < 0) {
       showToast("0 이상의 숫자만 입력할 수 있습니다.");
       input.value = stat[field] ? stat[field] : "";
@@ -15363,7 +15375,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.77";
+const APP_VERSION = "v10.78";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
