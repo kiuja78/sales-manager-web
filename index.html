@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta name="app-version" content="V10.78">
+  <meta name="app-version" content="V10.79">
   <meta charset="utf-8">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
@@ -327,7 +327,7 @@
               <span><b>목표산정기간</b> <span id="targetPeriodLabel"></span></span>
               <span><b>조회</b> <span id="periodLabel"></span></span>
             </div>
-            <div class="manager-edit-guide" id="managerPerformanceGuide">재약정·컨스·환수는 수기로 입력합니다. 지원은 접수리스트 기타내용의 지원 문구를 자동 집계하며, 컨스·지원은 영업실적에 더하지 않습니다.</div>
+            <div class="manager-edit-guide" id="managerPerformanceGuide">신규·패키지·재렌탈·일시불·컨스·지원은 접수리스트에서 자동 집계되어 영업실적에 합산됩니다. 컨스 숫자를 클릭하면 지급관리를 확인할 수 있습니다.</div>
             <div class="table-wrap">
               <table class="manager-table" id="managerStatsTable">
                 <thead>
@@ -1835,5 +1835,23 @@
     </div>
   </section>
 
+
+<div class="cons-payment-modal" id="consPaymentModal" hidden>
+  <div class="cons-payment-backdrop" id="consPaymentCloseBtn"></div>
+  <section class="cons-payment-card" role="dialog" aria-modal="true" aria-labelledby="consPaymentTitle">
+    <div class="cons-payment-head">
+      <div><p class="eyebrow">CONS PAYMENT</p><h2 id="consPaymentTitle"><span id="consPaymentManagerName"></span> 컨스 지급관리</h2><span id="consPaymentMonth"></span></div>
+      <button type="button" class="cons-payment-close" id="consPaymentCancelBtn" aria-label="닫기">×</button>
+    </div>
+    <div class="cons-payment-summary">
+      <div><span>실제 컨스 실적</span><strong id="consPaymentActual">0</strong><small>접수리스트 자동 집계</small></div>
+      <div><span>지급 예정</span><input id="consPaymentTarget" type="number" min="0" step="0.5" inputmode="decimal"></div>
+      <div><span>지급 완료</span><input id="consPaymentPaid" type="number" min="0" step="0.5" inputmode="decimal"></div>
+      <div><span>지급 대기</span><strong id="consPaymentPending">0</strong><small>지급예정 - 지급완료</small></div>
+    </div>
+    <label class="cons-payment-memo"><span>지급 메모</span><textarea id="consPaymentMemo" rows="3" placeholder="예: 10월 급여에 2건 추가 지급"></textarea></label>
+    <div class="cons-payment-actions"><button type="button" class="secondary-button" id="consPaymentCancelBtn2">취소</button><button type="button" class="primary-button" id="consPaymentSaveBtn">저장</button></div>
+  </section>
+</div>
 </body>
 </html>

@@ -1653,6 +1653,7 @@ function normalizeManualStatsBucket() {
       Object.prototype.hasOwnProperty.call(value, "renewal") ||
       Object.prototype.hasOwnProperty.call(value, "orderCons") ||
       Object.prototype.hasOwnProperty.call(value, "consPaid") ||
+      Object.prototype.hasOwnProperty.call(value, "consTarget") ||
       Object.prototype.hasOwnProperty.call(value, "consMemo") ||
       Object.prototype.hasOwnProperty.call(value, "support") ||
       Object.prototype.hasOwnProperty.call(value, "refund")
@@ -1676,11 +1677,12 @@ function manualStatsForMonth(month = manualStatsMonthKey()) {
 function manualStatFor(managerName, month = manualStatsMonthKey()) {
   const bucket = manualStatsForMonth(month);
   if (!bucket[managerName]) {
-    bucket[managerName] = { renewal: 0, orderCons: 0, consPaid: 0, consMemo: "", support: 0, refund: 0 };
+    bucket[managerName] = { renewal: 0, orderCons: 0, consTarget: 0, consPaid: 0, consMemo: "", support: 0, refund: 0 };
   }
   const stat = bucket[managerName];
   stat.renewal = toNumber(stat.renewal);
   stat.orderCons = toNumber(stat.orderCons); // legacy field; new sales count is automatic from 접수 구분
+  stat.consTarget = toNumber(stat.consTarget);
   stat.consPaid = toNumber(stat.consPaid);
   stat.consMemo = String(stat.consMemo || "");
   stat.support = toNumber(stat.support);
@@ -7981,7 +7983,7 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
           ${metric("일시불", metrics.cashCount)}
         </div>
         <div class="manager-zone-subline">
-          ${actualMode ? "" : `<span>컨스 <b>${formatNumber(toNumber(metrics.consCount))}</b></span><span>지원 <b>${formatNumber(toNumber(metrics.supportCount))}</b></span><span>지급대기 <b>${formatNumber(Math.max(0, toNumber(metrics.consCount) - toNumber(manualStatFor(managerName).consPaid)))}</b></span>`}
+          ${actualMode ? "" : `<span class="cons-clickable" data-cons-manager="${escapeHtml(managerName)}" title="컨스 지급관리 열기">컨스 <b>${formatNumber(toNumber(metrics.consCount))}</b></span><span>지원 <b>${formatNumber(toNumber(metrics.supportCount))}</b></span>`}
           <span>재약정 <b>${formatNumber(toNumber(metrics.renewal))}</b></span>
           <span>환수 <b class="refund">${formatNumber(toNumber(metrics.refund))}</b></span>
         </div>
@@ -7990,8 +7992,7 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
           <div class="manager-zone-track"><span style="width:${validRate === null ? 0 : Math.max(0, Math.min(validRate, 100))}%"></span></div>
         </div>
         ${actualMode || isTotal ? "" : `<details class="manager-zone-manual"><summary>실적 보완 · 컨스 지급관리</summary><div class="manager-zone-manual-grid">
-          <label><span>컨스 지급완료</span><input class="manager-inline-input activity-inline-input" data-manager="${escapeHtml(managerName)}" data-field="consPaid" type="number" min="0" step="0.5" value="${manualStatFor(managerName).consPaid || ""}" inputmode="decimal"></label>
-          <label><span>컨스 지급메모</span><input class="manager-inline-input" data-manager="${escapeHtml(managerName)}" data-field="consMemo" type="text" value="${escapeHtml(manualStatFor(managerName).consMemo)}" placeholder="예: 10월 2건 지급 예정"></label>
+          <button type="button" class="cons-manage-button" data-cons-manager="${escapeHtml(managerName)}">컨스 지급관리</button>
           <label><span>재약정</span><input class="manager-inline-input" data-manager="${escapeHtml(managerName)}" data-field="renewal" type="number" min="0" step="0.5" value="${manualStatFor(managerName).renewal || ""}" inputmode="decimal"></label>
           <label><span>환수</span><input class="manager-inline-input refund-input" data-manager="${escapeHtml(managerName)}" data-field="refund" type="number" min="0" step="0.5" value="${manualStatFor(managerName).refund || ""}" inputmode="decimal"></label>
         </div></details>`}
@@ -8032,7 +8033,7 @@ function renderManagerPerformanceTable(records, salesManagers) {
       : "신규·패키지·재렌탈·일시불·컨스·지원은 접수리스트에서 자동 집계되어 영업실적에 합산됩니다. 재약정·환수는 수기로 입력하고, 컨스 지급관리는 지급완료 수량과 메모로 관리합니다.";
   }
 
-  const assignedHeaders = ["매니저","신규","패키지","재렌탈","일시불","컨스","지원","지급대기","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
+  const assignedHeaders = ["매니저","신규","패키지","재렌탈","일시불","컨스","지원","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
   const actualHeaders = ["매니저","신규","패키지","재렌탈","일시불","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
   const headers = actualMode ? actualHeaders : assignedHeaders;
   if (head) head.innerHTML = headers.map((label) => `<th>${label}</th>`).join("");
@@ -8046,18 +8047,17 @@ function renderManagerPerformanceTable(records, salesManagers) {
       ? actualManagerSalesMetrics(managerRecords, manager.name)
       : exactManagerSalesMetrics(managerRecords, manager.name);
     const manual = manualStatFor(manager.name);
-    const consPaid = Math.max(0, toNumber(manual.consPaid));
-    const consPending = Math.max(0, toNumber(exactMetrics.consCount) - consPaid);
+    
     const isVirtualBranchManager = Boolean(manager.virtual && manager.name === "지국장");
     const managerGoal = isVirtualBranchManager ? 0 : toNumber(managerGoalFor(manager.name));
     const shortage = isVirtualBranchManager ? null : exactMetrics.final - managerGoal;
     const managerRate = isVirtualBranchManager
       ? null
       : (managerGoal > 0 ? Math.round((exactMetrics.final / managerGoal) * 100) : 0);
-    return { manager, exactMetrics, manual, consPaid, consPending, managerGoal, shortage, managerRate, isVirtualBranchManager };
+    return { manager, exactMetrics, manual, managerGoal, shortage, managerRate, isVirtualBranchManager };
   });
 
-  const rows = rowMetrics.map(({ manager, exactMetrics, manual, consPaid, consPending, managerGoal, shortage, managerRate, isVirtualBranchManager }) => {
+  const rows = rowMetrics.map(({ manager, exactMetrics, manual, managerGoal, shortage, managerRate, isVirtualBranchManager }) => {
     const nameCell = actualMode
       ? `<td class="manager-name-cell"><strong>${escapeHtml(manager.name)}</strong></td>`
       : `<td class="manager-name-cell">
@@ -8099,9 +8099,8 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(exactMetrics.packageCount)}</td>
         <td class="primary-metric">${blankZeroNumber(exactMetrics.rentalCount)}</td>
         <td class="primary-metric">${blankZeroNumber(exactMetrics.cashCount)}</td>
-        <td class="activity-value-cell cons-auto-cell">${blankZeroNumber(exactMetrics.consCount)}</td>
+        <td class="activity-value-cell cons-auto-cell"><button type="button" class="cons-table-button" data-cons-manager="${escapeHtml(manager.name)}">${blankZeroNumber(exactMetrics.consCount)}</button></td>
         <td class="activity-value-cell support-auto-cell">${blankZeroNumber(exactMetrics.supportCount)}</td>
-        <td class="activity-value-cell cons-pending-cell">${blankZeroNumber(consPending)}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(exactMetrics.business)}</strong></td>
         <td class="manual-stat-cell manual-light"><input class="manager-inline-input" data-manager="${escapeHtml(manager.name)}" data-field="renewal" type="number" min="0" step="0.5" value="${manual.renewal ? manual.renewal : ""}" inputmode="decimal" aria-label="재약정 수기입력"></td>
         <td class="manual-stat-cell manual-light refund-text"><input class="manager-inline-input refund-input" data-manager="${escapeHtml(manager.name)}" data-field="refund" type="number" min="0" step="0.5" value="${manual.refund ? manual.refund : ""}" inputmode="decimal" aria-label="환수 수기입력"></td>
@@ -8173,7 +8172,7 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(totals.cashCount)}</td>
         <td class="support-count-cell">${blankZeroNumber(totals.consCount)}</td>
         <td class="support-count-cell">${blankZeroNumber(totals.supportCount)}</td>
-        <td class="support-count-cell">${blankZeroNumber(Math.max(0, totals.consCount - rowMetrics.reduce((sum, row) => sum + row.consPaid, 0)))}</td>
+        <td class="support-count-cell">${blankZeroNumber(0)}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(totals.business)}</strong></td>
         <td>${blankZeroNumber(totals.renewal)}</td>
         <td class="refund-text">${totals.refund ? `-${formatNumber(totals.refund)}` : ""}</td>
@@ -14837,13 +14836,49 @@ function attachEvents() {
     updateSellerInputOptions("");
   });
 
+  function openConsPaymentManager(managerName) {
+    const month = manualStatsMonthKey();
+    const stat = manualStatFor(managerName, month);
+    const metrics = exactManagerSalesMetrics(filteredRecords().filter(r => r.manager === managerName), managerName);
+    const modal = $("#consPaymentModal");
+    if (!modal) return;
+    modal.dataset.manager = managerName;
+    modal.dataset.month = month;
+    $("#consPaymentManagerName").textContent = managerName;
+    $("#consPaymentMonth").textContent = `${month.slice(0,4)}년 ${Number(month.slice(5,7))}월`;
+    $("#consPaymentActual").textContent = formatNumber(metrics.consCount);
+    $("#consPaymentTarget").value = stat.consTarget || "";
+    $("#consPaymentPaid").value = stat.consPaid || "";
+    $("#consPaymentPending").textContent = formatNumber(Math.max(0, toNumber(stat.consTarget) - toNumber(stat.consPaid)));
+    $("#consPaymentMemo").value = stat.consMemo || "";
+    modal.hidden = false;
+  }
+  function closeConsPaymentManager() { const modal = $("#consPaymentModal"); if (modal) modal.hidden = true; }
+  $("#printManagerStats")?.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-cons-manager]");
+    if (button) { event.preventDefault(); openConsPaymentManager(button.dataset.consManager || ""); return; }
+  });
+  $("#consPaymentCloseBtn")?.addEventListener("click", closeConsPaymentManager);
+  $("#consPaymentCancelBtn")?.addEventListener("click", closeConsPaymentManager);
+  $("#consPaymentCancelBtn2")?.addEventListener("click", closeConsPaymentManager);
+  $("#consPaymentSaveBtn")?.addEventListener("click", () => {
+    const modal = $("#consPaymentModal"); const managerName = modal?.dataset.manager || ""; const month = modal?.dataset.month || manualStatsMonthKey();
+    if (!managerName) return;
+    const stat = manualStatFor(managerName, month);
+    const target = Math.max(0, Number($("#consPaymentTarget").value || 0));
+    const paid = Math.max(0, Number($("#consPaymentPaid").value || 0));
+    if (!Number.isFinite(target) || !Number.isFinite(paid) || paid > target) { showToast("지급완료는 지급예정 수량보다 클 수 없습니다."); return; }
+    stat.consTarget = target; stat.consPaid = paid; stat.consMemo = String($("#consPaymentMemo").value || "");
+    persistState(); renderDashboard(); closeConsPaymentManager(); showToast(`${managerName} ${month}월 컨스 지급관리를 저장했습니다.`);
+  });
+
   $("#printManagerStats")?.addEventListener("change", (event) => {
     const input = event.target.closest(".manager-inline-input");
     if (!input) return;
     const managerName = input.dataset.manager;
     const field = input.dataset.field;
     const stat = manualStatFor(managerName);
-    const labels = { renewal: "재약정", consPaid: "컨스 지급완료", refund: "환수", consMemo: "컨스 지급메모" };
+    const labels = { renewal: "재약정", consTarget: "컨스 지급예정", consPaid: "컨스 지급완료", refund: "환수", consMemo: "컨스 지급메모" };
 
     if (field === "consMemo") {
       stat.consMemo = String(input.value || "");
@@ -15375,7 +15410,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.78";
+const APP_VERSION = "v10.79";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
