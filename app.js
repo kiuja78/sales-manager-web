@@ -1680,6 +1680,7 @@ function manualStatFor(managerName, month = manualStatsMonthKey()) {
     bucket[managerName] = { renewal: 0, orderCons: 0, consDue: 0, consPaid: 0, consMemo: "", support: 0, refund: 0 };
   }
   const stat = bucket[managerName];
+  if (stat.consDue === undefined && stat.consTarget !== undefined) stat.consDue = stat.consTarget;
   stat.renewal = toNumber(stat.renewal);
   stat.orderCons = toNumber(stat.orderCons); // legacy field; new sales count is automatic from 접수 구분
   stat.consPaid = toNumber(stat.consPaid);
@@ -8010,81 +8011,58 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
 
 
 function openConsPaymentManager(managerName) {
-  ensureConsPaymentModalStyles();
   const month = manualStatsMonthKey();
   const stat = manualStatFor(managerName, month);
-  const records = typeof getCurrentDashboardRecords === "function" ? getCurrentDashboardRecords() : [];
+  const records = typeof getCurrentDashboardRecords === "function" ? getCurrentDashboardRecords() : filteredRecords();
   const metrics = exactManagerSalesMetrics((records || []).filter((record) => record.manager === managerName), managerName);
-  const actualCons = Math.max(0, toNumber(metrics.consCount));
+  const modal = $("#consPaymentModal");
+  if (!modal) return;
+  const actual = Math.max(0, toNumber(metrics.consCount));
   const due = Math.max(0, toNumber(stat.consDue));
-  // 지급완료/지급대기는 사용자가 입력하지 않고 실제 컨스 실적에서 자동 계산합니다.
-  const paid = Math.min(actualCons, due);
+  const paid = Math.min(actual, due);
   const pending = Math.max(0, due - paid);
-  const existing = document.getElementById("consPaymentModal");
-  if (existing) existing.remove();
-  const overlay = document.createElement("div");
-  overlay.id = "consPaymentModal";
-  overlay.innerHTML = `
-    <div class="cons-payment-backdrop" data-cons-close="1"></div>
-    <div class="cons-payment-dialog" role="dialog" aria-modal="true" aria-label="컨스 지급관리">
-      <div class="cons-payment-head"><div><small>컨스 지급관리</small><h3>${escapeHtml(managerName)} · ${escapeHtml(formatMonthLabel(month))}</h3></div><button type="button" class="cons-payment-close" data-cons-close="1">×</button></div>
-      <div class="cons-payment-summary">
-        <div><span>실제 컨스 실적</span><strong>${formatNumber(actualCons)}건</strong><small>접수리스트의 구분=컨스 자동집계</small></div>
-        <div><span>지급 예정</span><strong id="consPaymentDuePreview">${formatNumber(due)}건</strong></div>
-        <div><span>지급 완료</span><strong id="consPaymentPaidPreview">${formatNumber(paid)}건</strong></div>
-        <div class="pending"><span>지급 대기</span><strong id="consPaymentPendingPreview">${formatNumber(pending)}건</strong></div>
-      </div>
-      <div class="cons-payment-form">
-        <label><span>이번 달 지급 예정 수량 <em>수기 입력</em></span><input id="consPaymentDueInput" type="number" min="0" step="0.5" value="${due || ""}" inputmode="decimal"></label>
-        <label class="derived"><span>지급 완료 <em>자동</em></span><div class="cons-payment-derived" id="consPaymentPaidPreviewInput">${formatNumber(paid)}건</div></label>
-        <label class="full"><span>지급 메모</span><textarea id="consPaymentMemoInput" rows="3" placeholder="예: 10월 급여에 2건 추가 지급">${escapeHtml(stat.consMemo)}</textarea></label>
-      </div>
-      <div class="cons-payment-help">지급 예정만 수기로 입력합니다. 실제 컨스 실적은 접수리스트에서 자동 집계되고, 지급 완료는 <strong>실제 컨스 실적과 지급 예정 중 작은 값</strong>으로 자동 계산됩니다. 지급 대기도 자동 계산됩니다.</div>
-      <div class="cons-payment-actions"><button type="button" class="secondary" data-cons-close="1">취소</button><button type="button" class="primary" id="consPaymentSaveBtn">저장</button></div>
-    </div>`;
-  document.body.appendChild(overlay);
-  const updatePreview = () => {
-    const d = Math.max(0, Number(document.getElementById("consPaymentDueInput")?.value || 0));
-    const p = Math.min(actualCons, d);
-    const nodeD = document.getElementById("consPaymentDuePreview");
-    const nodeP = document.getElementById("consPaymentPaidPreview");
-    const nodePending = document.getElementById("consPaymentPendingPreview");
-    if (nodeD) nodeD.textContent = `${formatNumber(d)}건`;
-    if (nodeP) nodeP.textContent = `${formatNumber(p)}건`;
-    if (nodePending) nodePending.textContent = `${formatNumber(Math.max(0, d - p))}건`;
-  };
-  overlay.querySelector("#consPaymentDueInput")?.addEventListener("input", updatePreview);
-  overlay.querySelectorAll("[data-cons-close]").forEach((el) => el.addEventListener("click", () => overlay.remove()));
-  overlay.querySelector("#consPaymentSaveBtn")?.addEventListener("click", () => {
-    const d = Math.max(0, Number(document.getElementById("consPaymentDueInput")?.value || 0));
-    if (!Number.isFinite(d)) { showToast("지급 예정 수량을 확인해 주세요."); return; }
-    const autoPaid = Math.min(actualCons, d);
-    stat.consDue = d;
-    // 레거시 필드는 호환성을 위해 보관하되, 값의 원천은 실제 접수 컨스 자동집계입니다.
-    stat.consPaid = autoPaid;
-    stat.consMemo = String(document.getElementById("consPaymentMemoInput")?.value || "");
-    persistState();
-    overlay.remove();
-    renderDashboard();
-    showToast(`${managerName} ${formatMonthLabel(month)} 컨스 지급관리를 저장했습니다.`);
-  });
+  modal.dataset.manager = managerName;
+  modal.dataset.month = month;
+  $("#consPaymentManagerName").textContent = managerName;
+  $("#consPaymentMonth").textContent = `${month.slice(0,4)}년 ${Number(month.slice(5,7))}월`;
+  $("#consPaymentActual").textContent = formatNumber(actual);
+  $("#consPaymentTarget").value = due || "";
+  $("#consPaymentPaid").textContent = formatNumber(paid);
+  $("#consPaymentPending").textContent = formatNumber(pending);
+  $("#consPaymentMemo").value = stat.consMemo || "";
+  modal.hidden = false;
 }
-
-function ensureConsPaymentModalStyles() {
-  if (document.getElementById("consPaymentModalStyles")) return;
-  const style = document.createElement("style");
-  style.id = "consPaymentModalStyles";
-  style.textContent = `
-    .cons-manage-button{border:0;background:transparent;color:inherit;font:inherit;font-weight:700;cursor:pointer;padding:2px 6px;border-radius:7px;text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
-    .cons-manage-button:hover{background:rgba(47,117,92,.1)}
-    .cons-payment-backdrop{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:9998}
-    .cons-payment-dialog{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);width:min(560px,calc(100vw - 28px));background:#fff;border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.25);z-index:9999;padding:20px;color:#20332c}
-    .cons-payment-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #e4ebe7;padding-bottom:14px;margin-bottom:14px}.cons-payment-head small{color:#2f755c}.cons-payment-head h3{margin:4px 0 0;font-size:20px}.cons-payment-close{border:0;background:#f2f5f3;border-radius:50%;width:32px;height:32px;font-size:22px;cursor:pointer}
-    .cons-payment-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:16px}.cons-payment-summary>div{background:#f6f9f7;border:1px solid #e1e9e5;border-radius:10px;padding:10px}.cons-payment-summary span,.cons-payment-summary small{display:block;font-size:12px;color:#68776f}.cons-payment-summary strong{display:block;font-size:20px;margin-top:5px}.cons-payment-summary .pending{background:#fff7e8;border-color:#f0d69a}.cons-payment-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.cons-payment-form label{display:flex;flex-direction:column;gap:6px}.cons-payment-form label.full{grid-column:1/-1}.cons-payment-form label>span{font-size:13px;font-weight:700}.cons-payment-form label>span em{font-style:normal;font-size:10px;margin-left:4px;color:#2f755c;background:#eaf5ef;border-radius:999px;padding:2px 6px}.cons-payment-form input,.cons-payment-form textarea{border:1px solid #d7e1dc;border-radius:9px;padding:10px;font:inherit;box-sizing:border-box}.cons-payment-derived{min-height:40px;display:flex;align-items:center;padding:10px;border:1px solid #d7e1dc;border-radius:9px;background:#f5f8f6;font-weight:800;color:#2f6b57;box-sizing:border-box}.cons-payment-help{margin-top:12px;padding:10px 12px;background:#f7f9f8;border-radius:9px;font-size:12px;color:#65746d;line-height:1.5}.cons-payment-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}.cons-payment-actions button{border:1px solid #d4dfda;border-radius:9px;padding:9px 16px;background:#fff;cursor:pointer}.cons-payment-actions .primary{background:#2f6b57;color:#fff;border-color:#2f6b57}.cons-payment-actions .secondary{background:#fff}
-    @media(max-width:700px){.cons-payment-summary{grid-template-columns:1fr 1fr}.cons-payment-form{grid-template-columns:1fr}.cons-payment-form label.full{grid-column:auto}}
-  `;
-  document.head.appendChild(style);
-}
+function closeConsPaymentManager() { const modal = $("#consPaymentModal"); if (modal) modal.hidden = true; }
+$("#printManagerStats")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-cons-manager]");
+  if (button) { event.preventDefault(); openConsPaymentManager(button.dataset.consManager || ""); return; }
+});
+$("#consPaymentCloseBtn")?.addEventListener("click", closeConsPaymentManager);
+$("#consPaymentCancelBtn")?.addEventListener("click", closeConsPaymentManager);
+$("#consPaymentCancelBtn2")?.addEventListener("click", closeConsPaymentManager);
+$("#consPaymentTarget")?.addEventListener("input", () => {
+  const modal = $("#consPaymentModal");
+  if (!modal || modal.hidden) return;
+  const managerName = modal.dataset.manager || "";
+  const records = typeof getCurrentDashboardRecords === "function" ? getCurrentDashboardRecords() : filteredRecords();
+  const actual = Math.max(0, toNumber(exactManagerSalesMetrics((records || []).filter((record) => record.manager === managerName), managerName).consCount));
+  const due = Math.max(0, Number($("#consPaymentTarget").value || 0));
+  $("#consPaymentPaid").textContent = formatNumber(Math.min(actual, due));
+  $("#consPaymentPending").textContent = formatNumber(Math.max(0, due - Math.min(actual, due)));
+});
+$("#consPaymentSaveBtn")?.addEventListener("click", () => {
+  const modal = $("#consPaymentModal"); const managerName = modal?.dataset.manager || ""; const month = modal?.dataset.month || manualStatsMonthKey();
+  if (!managerName) return;
+  const stat = manualStatFor(managerName, month);
+  const target = Math.max(0, Number($("#consPaymentTarget").value || 0));
+  if (!Number.isFinite(target)) { showToast("지급 예정 수량을 확인해 주세요."); return; }
+  const records = typeof getCurrentDashboardRecords === "function" ? getCurrentDashboardRecords() : filteredRecords();
+  const actual = Math.max(0, toNumber(exactManagerSalesMetrics((records || []).filter((record) => record.manager === managerName), managerName).consCount));
+  stat.consDue = target;
+  stat.consPaid = Math.min(actual, target);
+  stat.consMemo = String($("#consPaymentMemo").value || "");
+  persistState(); renderDashboard(); closeConsPaymentManager(); showToast(`${managerName} ${month}월 컨스 지급관리를 저장했습니다.`);
+});
 
 function renderManagerPerformanceTable(records, salesManagers) {
   const actualMode = managerPerformanceMode === "actual";
@@ -8180,7 +8158,14 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(exactMetrics.packageCount)}</td>
         <td class="primary-metric">${blankZeroNumber(exactMetrics.rentalCount)}</td>
         <td class="primary-metric">${blankZeroNumber(exactMetrics.cashCount)}</td>
-        <td class="activity-value-cell cons-auto-cell"><button type="button" class="cons-manage-button table-cons-button" data-cons-manage="${escapeHtml(manager.name)}">${toNumber(exactMetrics.consCount) > 0 ? formatNumber(toNumber(exactMetrics.consCount)) : (toNumber(consDue) > 0 ? `${formatNumber(toNumber(consDue))} 예정` : "")}</button></td>
+        <td class="activity-value-cell cons-auto-cell">${(() => {
+          const actual = toNumber(exactMetrics.consCount);
+          const due = toNumber(consDue);
+          const value = actual > 0 ? actual : due;
+          const pending = actual <= 0 && due > 0;
+          const title = actual > 0 ? `실제 컨스 ${formatNumber(actual)}건 · 지급관리` : (due > 0 ? `컨스 지급 예정 ${formatNumber(due)}건 · 실제 접수 전` : "컨스 지급관리");
+          return `<button type="button" class="cons-table-button ${pending ? "cons-pending-button" : ""}" data-cons-manager="${escapeHtml(manager.name)}" title="${escapeHtml(title)}"><span>${blankZeroNumber(value)}</span>${pending ? `<small>예정</small>` : ""}</button>`;
+        })()}</td>
         <td class="activity-value-cell support-auto-cell">${blankZeroNumber(exactMetrics.supportCount)}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(exactMetrics.business)}</strong></td>
         <td class="manual-stat-cell manual-light"><input class="manager-inline-input" data-manager="${escapeHtml(manager.name)}" data-field="renewal" type="number" min="0" step="0.5" value="${manual.renewal ? manual.renewal : ""}" inputmode="decimal" aria-label="재약정 수기입력"></td>
@@ -8250,8 +8235,8 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(totals.packageCount)}</td>
         <td class="primary-metric">${blankZeroNumber(totals.rentalCount)}</td>
         <td class="primary-metric">${blankZeroNumber(totals.cashCount)}</td>
-        <td class="support-count-cell">${blankZeroNumber(totals.consCount)}</td>
-        <td class="support-count-cell">${blankZeroNumber(totals.supportCount)}</td>
+        <td class="activity-value-cell cons-auto-cell">${blankZeroNumber(totals.consCount)}</td>
+        <td class="activity-value-cell support-auto-cell">${blankZeroNumber(totals.supportCount)}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(totals.business)}</strong></td>
         <td>${blankZeroNumber(totals.renewal)}</td>
         <td class="refund-text">${totals.refund ? `-${formatNumber(totals.refund)}` : ""}</td>
@@ -15459,7 +15444,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.81";
+const APP_VERSION = "v10.82";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
