@@ -15479,7 +15479,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.83";
+const APP_VERSION = "v10.87";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
