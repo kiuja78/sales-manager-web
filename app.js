@@ -6744,7 +6744,7 @@ function renderManagementEvaluationPolicySettings(month = managementEvaluationMo
     <article class="evaluation-policy-card" data-evaluation-policy-id="${escapeHtml(item.id)}">
       <div class="evaluation-policy-card-head">
         <div class="evaluation-policy-card-title">
-          <span>정책이행 ${index + 1}</span>
+          <span class="evaluation-policy-index">${index + 1}</span>
           <strong>${escapeHtml(item.title || "항목명을 입력하세요")}</strong>
         </div>
         <button class="ghost-button small remove-evaluation-policy-item" type="button">삭제</button>
@@ -6850,7 +6850,7 @@ function renderManagementEvaluationPolicySettings(month = managementEvaluationMo
 function collectManagementEvaluationPolicySettings() {
   const month = managementEvaluationMonth();
   const current = managementEvaluationPolicy(month);
-  const policyItems = $$("#evaluationPolicySettings .evaluation-policy-editor-row").map((row) => {
+  const policyItems = $$("#evaluationPolicySettings .evaluation-policy-card").map((row) => {
     const rawKind = row.querySelector(".evaluation-policy-kind")?.value || "count";
     const kind = ["count", "rate", "percentile"].includes(rawKind) ? rawKind : "count";
     return {
@@ -14430,6 +14430,13 @@ function attachEvents() {
     renderRenewalGuide();
   });
   $("#renewalGuidePrintBtn")?.addEventListener("click", printRenewalGuide);
+  $("#evaluationPolicySettings")?.addEventListener("input", (event) => {
+    const titleInput = event.target.closest(".evaluation-policy-title");
+    if (!titleInput) return;
+    const card = titleInput.closest(".evaluation-policy-card");
+    const title = card?.querySelector(".evaluation-policy-card-title > strong");
+    if (title) title.textContent = titleInput.value.trim() || "항목명을 입력하세요";
+  });
   $("#evaluationSaveBtn")?.addEventListener("click", saveManagementEvaluationInput);
   $("#evaluationPrintBtn")?.addEventListener("click", printManagementEvaluation);
   $("#evaluationSavePolicyBtn")?.addEventListener("click", () => {
@@ -15559,7 +15566,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.90";
+const APP_VERSION = "v10.91";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
