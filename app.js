@@ -3,7 +3,9 @@ const LOCAL_BACKUP_KEY = "myeongjang-sales-manager-backup-v1";
 const LOCAL_BACKUP_INDEX_KEY = "myeongjang-sales-manager-backup-index-v1";
 const LOCAL_BACKUP_LIMIT = 12;
 const STATE_API_URL = "/api/state";
-const DEFAULT_MOBILE_SYNC_URL = "https://script.google.com/macros/s/AKfycbyL8EOEKRYW6kOnZPQklRc5JNg_NbmZ6Qe93QgCxDXXXwwQtxipCrcJzHH-pD_JPslq/exec";
+const DRIVE_STATE_DEFAULT_URL = String(window.MJ_DRIVE_CONFIG?.url || "").trim();
+const DRIVE_STATE_DEFAULT_TOKEN = String(window.MJ_DRIVE_CONFIG?.token || "").trim();
+const DRIVE_STATE_HISTORY_MINUTES = 5;
 
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
@@ -472,7 +474,8 @@ const sampleState = {
     branchName: "명장지국",
     masterName: "김건일",
     masterRole: "마스터",
-    mobileSyncUrl: DEFAULT_MOBILE_SYNC_URL
+    driveStateUrl: DRIVE_STATE_DEFAULT_URL,
+    driveStateToken: DRIVE_STATE_DEFAULT_TOKEN
   },
   menuVisibility: normalizeMenuVisibility(),
   teamNames: ["원팀"],
@@ -729,8 +732,74 @@ function shouldPreferLocalState(localState, serverState) {
   return false;
 }
 
+function isGitHubPagesHost() {
+  return /(^|\.)github\.io$/i.test(String(location.hostname || ""));
+}
+
+function driveStateConfig() {
+  const meta = state?.appMeta || {};
+  const url = String(meta.driveStateUrl || DRIVE_STATE_DEFAULT_URL || "").trim();
+  const token = String(meta.driveStateToken || DRIVE_STATE_DEFAULT_TOKEN || "").trim();
+  return { url, token, enabled: Boolean(url) };
+}
+
+async function loadStateFromDrive() {
+  const config = driveStateConfig();
+  if (!config.enabled) return null;
+  const query = new URLSearchParams({ action: "loadState" });
+  if (config.token) query.set("token", config.token);
+  const response = await fetch(`${config.url}${config.url.includes("?") ? "&" : "?"}${query.toString()}`, { cache: "no-store" });
+  if (!response.ok) throw new Error(`Google Drive 불러오기 실패 (${response.status})`);
+  const payload = await response.json();
+  const loaded = payload?.state && typeof payload.state === "object" ? payload.state : payload;
+  if (!loaded || typeof loaded !== "object") return null;
+  return normalizeState(loaded);
+}
+
+async function saveStateToDrive(serializedState, options = {}) {
+  const config = driveStateConfig();
+  if (!config.enabled) return { ok: false, skipped: true, reason: "not-configured" };
+  const response = await fetch(config.url, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({
+      action: "saveState",
+      token: config.token,
+      version: APP_VERSION,
+      state: JSON.parse(serializedState),
+      createHistory: options.createHistory !== false
+    })
+  });
+  if (!response.ok) throw new Error(`Google Drive 저장 실패 (${response.status})`);
+  return await response.json().catch(() => ({ ok: true }));
+}
+
 async function loadPersistedState() {
   const localState = loadState();
+  const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
+
+  // 웹용은 Google Drive를 주 저장소로 사용합니다. 설정되지 않았으면 기존 브라우저 저장값으로 안전하게 동작합니다.
+  if (isStaticWeb) {
+    try {
+      const driveState = await loadStateFromDrive();
+      if (driveState && stateDataCount(driveState) > 0) {
+        state = shouldPreferLocalState(localState, driveState) ? localState : driveState;
+        invalidateManagerCaches();
+        touchStateRevision();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        safeLocalBackupSnapshot(state, "drive-load");
+        return;
+      }
+    } catch (error) {
+      console.warn("[DRIVE LOAD]", error);
+    }
+    state = localState;
+    invalidateManagerCaches();
+    touchStateRevision();
+    return;
+  }
+
+  // PC용은 로컬 서버의 파일 저장소를 주 저장소로 사용합니다.
   try {
     const response = await fetch(STATE_API_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("state api unavailable");
@@ -742,16 +811,11 @@ async function loadPersistedState() {
       const normalizedServer = normalizeState(loaded);
       const serverStamp = String(normalizedServer?.appMeta?.lastStateUpdatedAt || "");
       const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
-      if (shouldPreferLocalState(localState, normalizedServer)) {
+      if (shouldPreferLocalState(localState, normalizedServer) || (localStamp && serverStamp && localStamp > serverStamp)) {
         state = localState;
         invalidateManagerCaches();
         touchStateRevision();
-        safeLocalBackupSnapshot(state, "server-empty-protection");
-        persistState({ immediateServer: true, allowEmptyServer: false });
-      } else if (localStamp && serverStamp && localStamp > serverStamp) {
-        state = localState;
-        invalidateManagerCaches();
-        touchStateRevision();
+        safeLocalBackupSnapshot(state, "server-protection");
         persistState({ immediateServer: true, allowEmptyServer: false });
       } else {
         state = normalizedServer;
@@ -773,7 +837,6 @@ async function loadPersistedState() {
 }
 
 function persistState(options = {}) {
-  const ensureManagers = options.ensureManagers === true;
   const immediateServer = options.immediateServer === true;
   const allowEmptyServer = options.allowEmptyServer === true;
 
@@ -783,55 +846,61 @@ function persistState(options = {}) {
   let existingState = null;
   try { existingState = existingRaw ? normalizeState(JSON.parse(existingRaw)) : null; } catch { existingState = null; }
 
-  // Never overwrite a non-empty browser dataset with an empty state by accident.
   if (!allowEmptyServer && currentCount === 0 && stateDataCount(existingState) > 0) {
     state = existingState;
     showToast("빈 데이터 저장을 차단했습니다. 기존 데이터를 유지합니다.");
   }
 
-  // Always capture a browser-local safety copy BEFORE replacing the main storage value.
   safeLocalBackupSnapshot(state, "before-save");
   state.appMeta = state.appMeta || {};
   state.appMeta.lastStateUpdatedAt = new Date().toISOString();
   state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
+  if (isGitHubPagesHost() && driveStateConfig().enabled) state.appMeta.driveLastSaveAt = new Date().toISOString();
 
   const data = JSON.stringify(state);
   localStorage.setItem(STORAGE_KEY, data);
   touchStateRevision();
 
-  serverPersistData = data;
+  const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
   window.clearTimeout(serverPersistTimer);
+  window.clearTimeout(window.__mjDriveSaveTimer);
 
-  const sendToServer = () => {
-    if (!serverPersistData) return Promise.resolve({ ok: true, skipped: true });
-    if (!allowEmptyServer && stateDataCount(state) === 0 && existingState && stateDataCount(existingState) > 0) {
-      return Promise.resolve({ ok: false, skipped: true, protected: true });
+  const save = async () => {
+    if (isStaticWeb) {
+      try {
+        await saveStateToDrive(data, { createHistory: true });
+        persistFailureToastShown = false;
+        return { ok: true, target: "google-drive" };
+      } catch (error) {
+        console.warn("[DRIVE SAVE]", error);
+        if (!persistFailureToastShown) {
+          persistFailureToastShown = true;
+          showToast("Google Drive 저장 실패: 브라우저 안전백업은 유지됩니다.");
+        }
+        return { ok: false, target: "google-drive", error };
+      }
     }
-    serverPersistController?.abort();
-    serverPersistController = typeof AbortController === "function" ? new AbortController() : null;
-    const body = serverPersistData;
-    serverPersistData = "";
-    return fetch(STATE_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json;charset=utf-8" },
-      body,
-      signal: serverPersistController?.signal
-    }).then((response) => {
+
+    try {
+      const response = await fetch(STATE_API_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json;charset=utf-8" },
+        body: data
+      });
       if (!response.ok) throw new Error(`state save failed (${response.status})`);
       persistFailureToastShown = false;
-      return response;
-    }).catch((error) => {
-      if (error?.name === "AbortError") return { ok: false, aborted: true };
+      return { ok: true, target: "pc" };
+    } catch (error) {
       if (!persistFailureToastShown) {
         persistFailureToastShown = true;
-        showToast("서버 저장 실패: 브라우저 자동백업에 안전하게 보관했습니다.");
+        showToast("PC 저장 실패: 브라우저 안전백업은 유지됩니다.");
       }
-      throw error;
-    });
+      return { ok: false, target: "pc", error };
+    }
   };
 
-  if (immediateServer) return sendToServer();
-  serverPersistTimer = window.setTimeout(sendToServer, 280);
+  if (immediateServer) return save();
+  window.__mjDriveSaveTimer = window.setTimeout(save, 450);
   return Promise.resolve({ ok: true, queued: true });
 }
 
@@ -11127,11 +11196,12 @@ function renderSettings() {
   if ($("#menuVisibilityContactNote")) $("#menuVisibilityContactNote").checked = menuVisibility.contactnote;
   if ($("#menuVisibilityContactRequest")) $("#menuVisibilityContactRequest").checked = menuVisibility.contactrequest;
   if ($("#menuVisibilityRenewalGuide")) $("#menuVisibilityRenewalGuide").checked = menuVisibility.renewalguide;
-  const mobileSyncUrlInput = $("#mobileSyncUrlInput");
-  if (mobileSyncUrlInput) mobileSyncUrlInput.value = state.appMeta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL || "";
-  if (state.appMeta.mobileLastSyncAt) {
-    setMobileSyncStatus(`마지막 동기화: ${new Date(state.appMeta.mobileLastSyncAt).toLocaleString("ko-KR")}`, "success");
-  }
+  const driveUrlInput = $("#driveStateUrlInput");
+  const driveTokenInput = $("#driveStateTokenInput");
+  if (driveUrlInput) driveUrlInput.value = state.appMeta.driveStateUrl || "";
+  if (driveTokenInput) driveTokenInput.value = state.appMeta.driveStateToken || "";
+  const driveStatus = $("#driveStateStatus");
+  if (driveStatus) driveStatus.textContent = state.appMeta.driveLastSaveAt ? `마지막 자동저장: ${new Date(state.appMeta.driveLastSaveAt).toLocaleString("ko-KR")}` : "아직 Google Drive 자동저장이 설정되지 않았습니다.";
 
   renderGoalSettingsForMonth($("#goalMonthInput")?.value || $("#monthFilter").value);
   renderCustomDashboardCardSettings();
@@ -11399,28 +11469,21 @@ async function importFullBackupFile(file) {
     const restoredRecordCount = Array.isArray(state.records) ? state.records.length : 0;
     showToast(`백업 데이터 적용 완료 · 접수내역 ${restoredRecordCount}건`);
 
-    // GitHub Pages(사용자 웹버전)에는 /api/state 서버가 존재하지 않습니다.
-    // 이 경우 localStorage에 복원된 데이터를 정상적으로 유지하고, 서버 검증은 건너뜁니다.
-    const isGitHubPages = /(^|\.)github\.io$/i.test(String(location.hostname || ""));
-    const canUseStateApi = !isGitHubPages && location.protocol !== "file:";
+    const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
     let verifyRecordCount = restoredRecordCount;
-
-    if (canUseStateApi) {
-      showToast("전체 백업 복원 중 · 서버 저장을 확인하고 있습니다...");
+    if (isStaticWeb) {
+      showToast("전체 백업 복원 중 · Google Drive 저장을 확인하고 있습니다...");
+      const result = await saveStateToDrive(JSON.stringify(state), { createHistory: true });
+      if (!result?.ok) throw new Error("Google Drive 저장 확인 실패");
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      showToast("전체 백업 복원 완료 · Google Drive에 안전하게 저장했습니다.");
+    } else {
       await persistState({ ensureManagers: true, immediateServer: true });
       const verifyResponse = await fetch(STATE_API_URL, { cache: "no-store" });
-      if (!verifyResponse.ok) {
-        throw new Error(`서버 저장 확인 실패 (${verifyResponse.status})`);
-      }
+      if (!verifyResponse.ok) throw new Error(`서버 저장 확인 실패 (${verifyResponse.status})`);
       const verifyData = await verifyResponse.json();
       verifyRecordCount = Array.isArray(verifyData.records) ? verifyData.records.length : 0;
-      if (verifyRecordCount !== restoredRecordCount) {
-        throw new Error(`저장 검증 불일치: expected=${restoredRecordCount}, actual=${verifyRecordCount}`);
-      }
-    } else {
-      // persistState()가 기본적으로 localStorage에 먼저 저장하므로 웹 정적 배포에서도 복원이 유지됩니다.
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      showToast("전체 백업 복원 완료 · 현재 브라우저에 안전하게 저장했습니다.");
+      if (verifyRecordCount !== restoredRecordCount) throw new Error(`저장 검증 불일치: expected=${restoredRecordCount}, actual=${verifyRecordCount}`);
     }
 
     selectedRecordId = "";
@@ -11430,11 +11493,10 @@ async function importFullBackupFile(file) {
     recordSequenceSort = "desc";
 
     renderNow();
-    setMobileSyncStatus("백업에서 모바일 동기화 설정까지 복원되었습니다.", "success");
     showToast(`전체 백업 복원 완료 · 접수내역 ${verifyRecordCount}건`);
-    const restoreTargetMessage = canUseStateApi
-      ? `접수내역 ${verifyRecordCount}건이 서버 저장까지 확인되었습니다.`
-      : `접수내역 ${verifyRecordCount}건이 현재 브라우저에 저장되었습니다.`;
+    const restoreTargetMessage = isStaticWeb
+      ? `접수내역 ${verifyRecordCount}건이 Google Drive에 저장되었습니다.`
+      : `접수내역 ${verifyRecordCount}건이 PC 저장소에 저장되었습니다.`;
     window.alert(`전체 백업 복원이 완료되었습니다.\n\n${restoreTargetMessage}`);
     return true;
   } catch (error) {
@@ -11783,7 +11845,6 @@ function collectUserSettings() {
     branchName: $("#branchNameInput").value.trim(),
     masterName: $("#masterNameInput").value.trim(),
     masterRole: $("#masterRoleInput").value.trim() || "마스터",
-    mobileSyncUrl: previousMeta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL
   };
   const mode = teamOperationMode(currentDashboardMonth());
   const teamInput = $("#masterTeamInput");
@@ -11793,6 +11854,56 @@ function collectUserSettings() {
     if (team) setMasterTeamForMonth(team, effectiveInput?.value || currentDashboardMonth());
   } else if (mode === "1") {
     state.appMeta.userTeam = "";
+  }
+}
+
+async function restoreDriveLatest() {
+  try {
+    const driveState = await loadStateFromDrive();
+    if (!driveState || stateDataCount(driveState) === 0) throw new Error("Google Drive에 복구할 데이터가 없습니다.");
+    const recordCount = Array.isArray(driveState.records) ? driveState.records.length : 0;
+    const managerCount = Array.isArray(driveState.managers) ? driveState.managers.length : 0;
+    const ok = confirm(`Google Drive 최신 데이터로 복구합니다.\n\n접수내역 ${recordCount}건 · 매니저 ${managerCount}명\n\n현재 데이터가 최신 백업 내용으로 교체됩니다. 계속할까요?`);
+    if (!ok) return;
+    state = normalizeState(driveState);
+    invalidateManagerCaches();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    safeLocalBackupSnapshot(state, "drive-restore");
+    renderNow();
+    showToast(`Google Drive 최신 백업 복구 완료 · 접수내역 ${recordCount}건`);
+  } catch (error) {
+    console.error("[DRIVE RESTORE]", error);
+    alert("Google Drive 최신 백업을 불러오지 못했습니다. URL·토큰·인터넷 연결을 확인해주세요.");
+  }
+}
+
+function saveDriveStateSettings() {
+  state.appMeta = state.appMeta || {};
+  state.appMeta.driveStateUrl = String($("#driveStateUrlInput")?.value || "").trim();
+  state.appMeta.driveStateToken = String($("#driveStateTokenInput")?.value || "").trim();
+  persistState({ immediateServer: true });
+  renderSettings();
+  showToast(state.appMeta.driveStateUrl ? "Google Drive 자동저장 설정을 저장했습니다." : "Google Drive 자동저장을 해제했습니다.");
+}
+
+async function testDriveStateConnection() {
+  state.appMeta = state.appMeta || {};
+  const url = String($("#driveStateUrlInput")?.value || "").trim();
+  const token = String($("#driveStateTokenInput")?.value || "").trim();
+  if (!url) { alert("Google Apps Script 웹앱 URL을 입력해주세요."); return; }
+  try {
+    const query = new URLSearchParams({ action: "ping" });
+    if (token) query.set("token", token);
+    const response = await fetch(`${url}${url.includes("?") ? "&" : "?"}${query.toString()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    if (!payload?.ok) throw new Error("응답 확인 실패");
+    showToast("Google Drive 자동저장 연결이 정상입니다.");
+    const status = $("#driveStateStatus");
+    if (status) status.textContent = "Google Drive 연결 확인 완료";
+  } catch (error) {
+    console.error("[DRIVE TEST]", error);
+    alert("Google Drive 연결을 확인하지 못했습니다. 웹앱 URL·권한·토큰을 확인해주세요.");
   }
 }
 
@@ -14796,10 +14907,6 @@ function attachEvents() {
   $("#shareKakaoBtn")?.addEventListener("click", shareKakaoImage);
   $("#managerPerformancePrintBtn")?.addEventListener("click", printCurrentManagerPerformance);
   $("#printDashboardBtn").addEventListener("click", printDashboard);
-  $("#mobileSyncQuickBtn")?.addEventListener("click", syncMobileGoogleSheet);
-  $("#mobileSyncBtn")?.addEventListener("click", syncMobileGoogleSheet);
-  $("#saveMobileSyncUrlBtn")?.addEventListener("click", saveMobileSyncUrl);
-  $("#copyMobileSyncUrlBtn")?.addEventListener("click", copyMobileSyncUrl);
   $("#saveCustomCardsBtn")?.addEventListener("click", () => {
     collectCustomDashboardCards();
     persistState();
@@ -14809,6 +14916,9 @@ function attachEvents() {
   });
   $("#resetCustomCardsBtn")?.addEventListener("click", resetCustomDashboardCards);
   $("#saveAnalyticsSettingsBtn")?.addEventListener("click", saveAnalyticsSettings);
+  $("#saveDriveStateSettingsBtn")?.addEventListener("click", saveDriveStateSettings);
+  $("#testDriveStateBtn")?.addEventListener("click", testDriveStateConnection);
+  $("#restoreDriveLatestBtn")?.addEventListener("click", restoreDriveLatest);
   $("#saveMenuVisibilityBtn")?.addEventListener("click", saveMenuVisibilitySettings);
   $$('input[name="analyticsStartMode"], input[name="analyticsMonthStatusMode"]').forEach((node) => node.addEventListener("change", () => {
     syncAnalyticsGuidedControls();
@@ -15671,7 +15781,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.94";
+const APP_VERSION = "v10.95";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -15925,237 +16035,6 @@ window.openManagerShareModal = openManagerShareModal;
 window.kakaoShareCurrentManagerImage = kakaoShareCurrentManagerImage;
 window.copyCurrentManagerShareImage = copyCurrentManagerShareImage;
 window.saveCurrentManagerShareImage = saveCurrentManagerShareImage;
-
-
-function mobileSyncConfig() {
-  const meta = state.appMeta || {};
-  const url = String(meta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL || "").trim();
-  return {
-    url,
-    enabled: Boolean(url)
-  };
-}
-
-function setMobileSyncStatus(message, type = "info") {
-  const nodes = [$("#mobileSyncStatus")].filter(Boolean);
-  nodes.forEach((node) => {
-    node.textContent = message || "";
-    node.dataset.type = type;
-  });
-}
-
-
-function normalizePhoneForMobileSync(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const digits = raw.replace(/[^0-9]/g, "");
-  if (!digits) return raw;
-  if (digits.length === 10 && !digits.startsWith("0")) return `0${digits}`;
-  return digits;
-}
-
-function mobileSyncMonthList() {
-  const monthSet = new Set();
-  if (state.monthSettings && typeof state.monthSettings === "object") {
-    Object.keys(state.monthSettings).forEach((month) => {
-      if (/^\d{4}-\d{2}$/.test(month)) monthSet.add(month);
-    });
-  }
-  (state.records || []).forEach((record) => {
-    const month = recordGoalMonth(record);
-    if (/^\d{4}-\d{2}$/.test(month)) monthSet.add(month);
-  });
-  const current = $("#monthFilter")?.value || monthIso();
-  if (/^\d{4}-\d{2}$/.test(current)) monthSet.add(current);
-  return Array.from(monthSet).sort();
-}
-
-function mobileSyncRecordsForMonth(month) {
-  const targetPeriod = monthPeriod(month);
-  const periodStart = targetPeriod.start || `${month}-01`;
-  const periodEnd = targetPeriod.end || lastDayOfMonth(month);
-  return (state.records || []).filter((record) => {
-    if (!record || record.status === "취소") return false;
-    return inDateRange(record.receivedDate, periodStart, periodEnd);
-  });
-}
-
-function mobileSyncSnapshotForMonth(month) {
-  const setting = monthSetting(month);
-  const targetPeriod = monthPeriod(month);
-  const records = mobileSyncRecordsForMonth(month);
-  const goals = calculatedGoals(month);
-  const totals = applyManualStatsToTotals(actuals(records), "", month);
-  const managers = teamManagers(month).map((manager) => {
-    const managerRecords = records.filter((record) => record.manager === manager.name);
-    const managerTotals = applyManualStatsToTotals(actuals(managerRecords), manager.name, month);
-    const goal = managerGoalFor(manager.name, month);
-    return {
-      month,
-      name: manager.name,
-      team: managerTeamForMonth(manager, month),
-      goal,
-      newCount: managerTotals.newCount,
-      packageCount: managerTotals.packageCount,
-      rentalActual: managerTotals.rentalActual,
-      cashActual: managerTotals.cashActual,
-      businessActual: managerTotals.businessActual,
-      renewalActual: managerTotals.renewalActual,
-      orderConsActual: managerTotals.orderConsActual,
-      supportActual: toNumber(managerTotals.supportActual),
-      refundActual: managerTotals.refundActual,
-      finalActual: managerTotals.managerFinalActual,
-      shortage: Math.max(toNumber(goal) - managerTotals.managerFinalActual, 0)
-    };
-  });
-  const safeRecord = (record) => ({
-    month,
-    id: record.id || "",
-    receivedDate: record.receivedDate || "",
-    installDate: record.installDate || "",
-    status: record.status || "",
-    manager: record.manager || "",
-    category: record.category || "",
-    activityType: recordActivityType(record),
-    count: toNumber(record.count),
-    customerName: record.customerName || "",
-    customerNo: record.customerNo || "",
-    previousCustomer: record.previousCustomer || "",
-    phone: normalizePhoneForMobileSync(record.phone),
-    product: record.product || "",
-    seller: record.seller || "",
-    memo: record.memo || "",
-    updatedAt: record.updatedAt || record.createdAt || ""
-  });
-  return {
-    month,
-    setting: {
-      accountCount: setting.accountCount || 0,
-      periodStart: targetPeriod.start,
-      periodEnd: targetPeriod.end
-    },
-    goals,
-    totals,
-    managers,
-    records: records.map(safeRecord)
-  };
-}
-
-function mobileSyncPayload() {
-  const month = $("#monthFilter")?.value || monthIso();
-  const months = mobileSyncMonthList();
-  const snapshots = months.map(mobileSyncSnapshotForMonth);
-  const currentSnapshot = snapshots.find((item) => item.month === month) || mobileSyncSnapshotForMonth(month);
-  const allRecordCount = snapshots.reduce((sum, item) => sum + (Array.isArray(item.records) ? item.records.length : 0), 0);
-  return {
-    app: "MJ_Sales_Manager",
-    version: APP_VERSION,
-    syncedAt: new Date().toISOString(),
-    month,
-    branch: state.appMeta || {},
-    setting: currentSnapshot.setting,
-    goals: currentSnapshot.goals,
-    totals: currentSnapshot.totals,
-    managers: currentSnapshot.managers,
-    records: currentSnapshot.records,
-    monthSnapshots: snapshots,
-    monthOptions: snapshots.map((item) => ({
-      month: item.month,
-      periodStart: item.setting?.periodStart || "",
-      periodEnd: item.setting?.periodEnd || "",
-      recordCount: Array.isArray(item.records) ? item.records.length : 0
-    })),
-    totalSyncedRecordCount: allRecordCount
-  };
-}
-
-
-function postMobilePayloadByForm(url, payload) {
-  return new Promise((resolve) => {
-    const iframeName = `mobile-sync-frame-${Date.now()}`;
-    const iframe = document.createElement("iframe");
-    iframe.name = iframeName;
-    iframe.style.display = "none";
-    document.body.appendChild(iframe);
-
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = url;
-    form.target = iframeName;
-    form.style.display = "none";
-
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = "payload";
-    input.value = JSON.stringify(payload);
-    form.appendChild(input);
-
-    document.body.appendChild(form);
-    form.submit();
-
-    window.setTimeout(() => {
-      form.remove();
-      iframe.remove();
-      resolve();
-    }, 1800);
-  });
-}
-
-async function syncMobileGoogleSheet() {
-  const config = mobileSyncConfig();
-  if (!config.url) {
-    setMobileSyncStatus("모바일 동기화 URL을 먼저 입력해 주세요.", "warn");
-    alert("사용자/목표/매니저 등록 화면에서 모바일 동기화 URL을 먼저 입력해 주세요.");
-    switchView("settings");
-    return;
-  }
-  const payload = mobileSyncPayload();
-  if (!payload.totalSyncedRecordCount) {
-    const ok = confirm(`모든 목표월을 합쳐 전송할 접수내역이 0건입니다. 그래도 모바일 동기화를 진행할까요?`);
-    if (!ok) return;
-  }
-  setMobileSyncStatus(`모바일용 데이터를 Google Sheet로 전송 중입니다... (${payload.totalSyncedRecordCount || payload.records.length}건)`, "info");
-  try {
-    await postMobilePayloadByForm(config.url, payload);
-    const meta = state.appMeta || {};
-    meta.mobileLastSyncAt = new Date().toISOString();
-    state.appMeta = meta;
-    persistState();
-    setMobileSyncStatus(`모바일 동기화 전송 완료 · ${payload.records.length}건 · 구글시트를 새로고침해 확인하세요.`, "success");
-    showToast(`모바일 동기화 전송 완료 · ${payload.records.length}건`);
-  } catch (error) {
-    console.error(error);
-    setMobileSyncStatus("모바일 동기화 실패: URL 또는 인터넷 연결을 확인해 주세요.", "error");
-    alert("모바일 동기화에 실패했습니다. Apps Script URL과 인터넷 연결을 확인해 주세요.");
-  }
-}
-
-function saveMobileSyncUrl() {
-  const input = $("#mobileSyncUrlInput");
-  const value = String(input?.value || "").trim();
-  const meta = state.appMeta || {};
-  meta.mobileSyncUrl = value;
-  state.appMeta = meta;
-  saveState(value ? "모바일 동기화 URL을 저장했습니다." : "모바일 동기화 URL을 비웠습니다.");
-  setMobileSyncStatus(value ? "모바일 동기화 URL이 저장되었습니다." : "모바일 동기화 URL이 비어 있습니다.", value ? "success" : "warn");
-}
-
-function copyMobileSyncUrl() {
-  const value = String($("#mobileSyncUrlInput")?.value || state.appMeta?.mobileSyncUrl || "").trim();
-  if (!value) {
-    alert("복사할 모바일 동기화 URL이 없습니다.");
-    return;
-  }
-  navigator.clipboard?.writeText(value).then(() => {
-    setMobileSyncStatus("모바일 동기화 URL을 복사했습니다.", "success");
-  }).catch(() => {
-    alert(value);
-  });
-}
-
-window.syncMobileGoogleSheet = syncMobileGoogleSheet;
-window.saveMobileSyncUrl = saveMobileSyncUrl;
-window.copyMobileSyncUrl = copyMobileSyncUrl;
 
 
 window.MJ_SALES_VERSION = APP_VERSION;
