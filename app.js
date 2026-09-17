@@ -7579,7 +7579,16 @@ function renderPayroll() {
     const groups = payrollSellerGroups(rows, state.payrollManager || "");
     const cards = groups.map(([seller, groupRows]) => {
       const t = payrollGroupTotals(groupRows);
-      return `<div class="payroll-summary-card"><span>${escapeHtml(seller)}</span><strong>${formatWon(t.fee)}</strong><small>건수 ${formatNumber(t.quantity)} · ${groupRows.length}개 리스트</small></div>`;
+      return `<div class="payroll-summary-card payroll-manager-summary-card">
+        <span class="payroll-summary-manager">${escapeHtml(seller)}</span>
+        <div class="payroll-fee-breakdown">
+          <div><small>기본수수료</small><strong>${payrollFeeDisplay(t.baseFee) || "0원"}</strong></div>
+          <div><small>판매활성화</small><strong>${payrollFeeDisplay(t.salesActivation) || "0원"}</strong></div>
+          <div><small>추가수수료</small><strong>${payrollFeeDisplay(t.additionalFee) || "0원"}</strong></div>
+        </div>
+        <div class="payroll-fee-grand-total"><span>총 수수료</span><strong>${formatWon(t.fee)}</strong></div>
+        <small class="payroll-summary-meta">건수 ${formatNumber(t.quantity)} · ${groupRows.length}개 리스트</small>
+      </div>`;
     });
     summaryGrid.innerHTML = cards.join("") || `<div class="payroll-summary-card"><span>급여 데이터</span><strong>0원</strong><small>파일을 불러오세요.</small></div>`;
   }
@@ -15566,7 +15575,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.91";
+const APP_VERSION = "v10.92";
 const STATE_SCHEMA_VERSION = 3;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
