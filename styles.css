@@ -23929,16 +23929,3 @@ body[data-view="records"] .record-form-row.row-basic {
   #evaluationView .evaluation-policy-manual { grid-template-columns:1fr; }
   #evaluationView .evaluation-policy-card-title > strong { white-space:normal; }
 }
-
-/* V10.92 payroll manager fee summary */
-.payroll-manager-summary-card{padding:15px 16px !important}
-.payroll-summary-manager{display:block;color:var(--text,#18362b);font-size:15px;font-weight:800;margin-bottom:10px}
-.payroll-fee-breakdown{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-bottom:10px}
-.payroll-fee-breakdown>div{padding:8px 9px;border:1px solid #e3ebe7;border-radius:10px;background:#f8fbf9;min-width:0}
-.payroll-fee-breakdown small{display:block;color:var(--muted,#6b7280);font-size:10px;line-height:1.2;margin-bottom:4px;white-space:nowrap}
-.payroll-fee-breakdown strong{display:block;font-size:13px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.payroll-fee-grand-total{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 11px;border-radius:11px;background:#edf6f1;border:1px solid #d5e7dd}
-.payroll-fee-grand-total span{font-size:12px;font-weight:700;color:#31594a}
-.payroll-fee-grand-total strong{font-size:18px;color:#173d31}
-.payroll-summary-meta{display:block;margin-top:7px;color:var(--muted,#6b7280);font-size:11px}
-@media (max-width:560px){.payroll-fee-breakdown{grid-template-columns:1fr}.payroll-fee-breakdown>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.payroll-fee-breakdown small{margin:0}.payroll-fee-breakdown strong{font-size:12px}.payroll-fee-grand-total strong{font-size:16px}}
