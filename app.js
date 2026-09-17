@@ -1,4 +1,7 @@
 const STORAGE_KEY = "myeongjang-sales-manager-v1";
+const LOCAL_BACKUP_KEY = "myeongjang-sales-manager-backup-v1";
+const LOCAL_BACKUP_INDEX_KEY = "myeongjang-sales-manager-backup-index-v1";
+const LOCAL_BACKUP_LIMIT = 12;
 const STATE_API_URL = "/api/state";
 const DEFAULT_MOBILE_SYNC_URL = "https://script.google.com/macros/s/AKfycbyL8EOEKRYW6kOnZPQklRc5JNg_NbmZ6Qe93QgCxDXXXwwQtxipCrcJzHH-pD_JPslq/exec";
 
@@ -645,46 +648,125 @@ function debounce(callback, delay = 120) {
 const $ = (selector) => document.querySelector(selector);
 const $$ = (selector) => Array.from(document.querySelectorAll(selector));
 
+function stateDataCount(value) {
+  if (!value || typeof value !== "object") return 0;
+  const counts = [
+    Array.isArray(value.records) ? value.records.length : 0,
+    Array.isArray(value.managers) ? value.managers.length : 0,
+    Array.isArray(value.promotions) ? value.promotions.length : 0,
+    Array.isArray(value.checklistItems) ? value.checklistItems.length : 0,
+    Array.isArray(value.contactNotes) ? value.contactNotes.length : 0,
+    Array.isArray(value.contactRequests) ? value.contactRequests.length : 0,
+    Array.isArray(value.payrollRecords) ? value.payrollRecords.length : 0,
+    value.monthSettings && typeof value.monthSettings === "object" ? Object.keys(value.monthSettings).length : 0,
+    value.managementEvaluationPolicies && typeof value.managementEvaluationPolicies === "object" ? Object.keys(value.managementEvaluationPolicies).length : 0
+  ];
+  return counts.reduce((a, b) => a + b, 0);
+}
+
+function safeLocalBackupSnapshot(sourceState = state, reason = "auto") {
+  try {
+    const snapshot = {
+      backupType: "MJ_Sales_Manager_AutoLocalBackup",
+      schemaVersion: STATE_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      reason,
+      dataCount: stateDataCount(sourceState),
+      data: sourceState
+    };
+    const raw = JSON.stringify(snapshot);
+    // Keep the latest snapshot in a dedicated key and retain a small rolling history.
+    localStorage.setItem(LOCAL_BACKUP_KEY, raw);
+    let index = [];
+    try { index = JSON.parse(localStorage.getItem(LOCAL_BACKUP_INDEX_KEY) || "[]"); } catch { index = []; }
+    index = Array.isArray(index) ? index : [];
+    index.unshift({ exportedAt: snapshot.exportedAt, reason, dataCount: snapshot.dataCount });
+    index = index.slice(0, LOCAL_BACKUP_LIMIT);
+    localStorage.setItem(LOCAL_BACKUP_INDEX_KEY, JSON.stringify(index));
+  } catch (error) {
+    console.warn("[AUTO BACKUP] local backup failed", error);
+  }
+}
+
+function readAutoLocalBackup() {
+  try {
+    const raw = localStorage.getItem(LOCAL_BACKUP_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    const data = parsed?.data && typeof parsed.data === "object" ? parsed.data : null;
+    return data ? { data, exportedAt: parsed.exportedAt || "", dataCount: Number(parsed.dataCount || stateDataCount(data)) } : null;
+  } catch (error) {
+    console.warn("[AUTO BACKUP] local backup read failed", error);
+    return null;
+  }
+}
+
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) return structuredClone(sampleState);
+  if (!raw) {
+    const backup = readAutoLocalBackup();
+    if (backup?.data) return normalizeState(backup.data);
+    return structuredClone(sampleState);
+  }
   try {
     const loaded = JSON.parse(raw);
     return normalizeState(loaded);
   } catch {
+    const backup = readAutoLocalBackup();
+    if (backup?.data) return normalizeState(backup.data);
     return structuredClone(sampleState);
   }
 }
 
+function shouldPreferLocalState(localState, serverState) {
+  const localCount = stateDataCount(localState);
+  const serverCount = stateDataCount(serverState);
+  const localRecords = Array.isArray(localState?.records) ? localState.records.length : 0;
+  const serverRecords = Array.isArray(serverState?.records) ? serverState.records.length : 0;
+  // A non-empty local state must never be replaced by an empty/near-empty server response.
+  if (localCount > 0 && serverCount === 0) return true;
+  if (localRecords > 0 && serverRecords === 0) return true;
+  return false;
+}
+
 async function loadPersistedState() {
+  const localState = loadState();
   try {
     const response = await fetch(STATE_API_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("state api unavailable");
     const loaded = await response.json();
-    const hasServerData = Array.isArray(loaded.records) || Array.isArray(loaded.managers) || loaded.appMeta || loaded.monthSettings;
+    const hasServerData = loaded && typeof loaded === "object" && (
+      Array.isArray(loaded.records) || Array.isArray(loaded.managers) || loaded.appMeta || loaded.monthSettings
+    );
     if (hasServerData) {
-      const localState = loadState();
-      const serverStamp = String(loaded?.appMeta?.lastStateUpdatedAt || "");
+      const normalizedServer = normalizeState(loaded);
+      const serverStamp = String(normalizedServer?.appMeta?.lastStateUpdatedAt || "");
       const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
-      if (localStamp && serverStamp && localStamp > serverStamp) {
+      if (shouldPreferLocalState(localState, normalizedServer)) {
         state = localState;
         invalidateManagerCaches();
         touchStateRevision();
-        persistState({ immediateServer: true });
+        safeLocalBackupSnapshot(state, "server-empty-protection");
+        persistState({ immediateServer: true, allowEmptyServer: false });
+      } else if (localStamp && serverStamp && localStamp > serverStamp) {
+        state = localState;
+        invalidateManagerCaches();
+        touchStateRevision();
+        persistState({ immediateServer: true, allowEmptyServer: false });
       } else {
-        state = normalizeState(loaded);
+        state = normalizedServer;
         invalidateManagerCaches();
         touchStateRevision();
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        safeLocalBackupSnapshot(state, "server-load");
       }
     } else {
-      state = loadState();
+      state = localState;
       invalidateManagerCaches();
       touchStateRevision();
-      persistState();
     }
   } catch {
-    state = loadState();
+    state = localState;
     invalidateManagerCaches();
     touchStateRevision();
   }
@@ -693,9 +775,22 @@ async function loadPersistedState() {
 function persistState(options = {}) {
   const ensureManagers = options.ensureManagers === true;
   const immediateServer = options.immediateServer === true;
+  const allowEmptyServer = options.allowEmptyServer === true;
 
-  // 모든 저장 시 데이터 무결성을 한 번 더 보장합니다. 부분 저장으로 과거 팀/상태 스냅샷이 누락되지 않게 합니다.
   ensureManagerDataIntegrity(state);
+  const currentCount = stateDataCount(state);
+  const existingRaw = localStorage.getItem(STORAGE_KEY);
+  let existingState = null;
+  try { existingState = existingRaw ? normalizeState(JSON.parse(existingRaw)) : null; } catch { existingState = null; }
+
+  // Never overwrite a non-empty browser dataset with an empty state by accident.
+  if (!allowEmptyServer && currentCount === 0 && stateDataCount(existingState) > 0) {
+    state = existingState;
+    showToast("빈 데이터 저장을 차단했습니다. 기존 데이터를 유지합니다.");
+  }
+
+  // Always capture a browser-local safety copy BEFORE replacing the main storage value.
+  safeLocalBackupSnapshot(state, "before-save");
   state.appMeta = state.appMeta || {};
   state.appMeta.lastStateUpdatedAt = new Date().toISOString();
   state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
@@ -709,11 +804,13 @@ function persistState(options = {}) {
 
   const sendToServer = () => {
     if (!serverPersistData) return Promise.resolve({ ok: true, skipped: true });
+    if (!allowEmptyServer && stateDataCount(state) === 0 && existingState && stateDataCount(existingState) > 0) {
+      return Promise.resolve({ ok: false, skipped: true, protected: true });
+    }
     serverPersistController?.abort();
     serverPersistController = typeof AbortController === "function" ? new AbortController() : null;
     const body = serverPersistData;
     serverPersistData = "";
-
     return fetch(STATE_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json;charset=utf-8" },
@@ -727,7 +824,7 @@ function persistState(options = {}) {
       if (error?.name === "AbortError") return { ok: false, aborted: true };
       if (!persistFailureToastShown) {
         persistFailureToastShown = true;
-        showToast("저장 연결 실패: 임시로 브라우저에 저장했습니다.");
+        showToast("서버 저장 실패: 브라우저 자동백업에 안전하게 보관했습니다.");
       }
       throw error;
     });
@@ -737,7 +834,6 @@ function persistState(options = {}) {
   serverPersistTimer = window.setTimeout(sendToServer, 280);
   return Promise.resolve({ ok: true, queued: true });
 }
-
 
 function ensureAllRecordManualOrder(records) {
   records.forEach((record, index) => {
@@ -7579,7 +7675,16 @@ function renderPayroll() {
     const groups = payrollSellerGroups(rows, state.payrollManager || "");
     const cards = groups.map(([seller, groupRows]) => {
       const t = payrollGroupTotals(groupRows);
-      return `<div class="payroll-summary-card"><span>${escapeHtml(seller)}</span><strong>${formatWon(t.fee)}</strong><small>건수 ${formatNumber(t.quantity)} · ${groupRows.length}개 리스트</small></div>`;
+      return `<div class="payroll-summary-card payroll-manager-summary-card">
+        <span class="payroll-summary-manager">${escapeHtml(seller)}</span>
+        <div class="payroll-fee-breakdown">
+          <div><small>기본수수료</small><strong>${payrollFeeDisplay(t.baseFee) || "0원"}</strong></div>
+          <div><small>판매활성화</small><strong>${payrollFeeDisplay(t.salesActivation) || "0원"}</strong></div>
+          <div><small>추가수수료</small><strong>${payrollFeeDisplay(t.additionalFee) || "0원"}</strong></div>
+        </div>
+        <div class="payroll-fee-grand-total"><span>총 수수료</span><strong>${formatWon(t.fee)}</strong></div>
+        <small class="payroll-summary-meta">건수 ${formatNumber(t.quantity)} · ${groupRows.length}개 리스트</small>
+      </div>`;
     });
     summaryGrid.innerHTML = cards.join("") || `<div class="payroll-summary-card"><span>급여 데이터</span><strong>0원</strong><small>파일을 불러오세요.</small></div>`;
   }
@@ -15566,8 +15671,8 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.91";
-const STATE_SCHEMA_VERSION = 3;
+const APP_VERSION = "v10.94";
+const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
 const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
