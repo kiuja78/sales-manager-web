@@ -23942,3 +23942,23 @@ body[data-view="records"] .record-form-row.row-basic {
 .payroll-fee-grand-total strong{font-size:18px;color:#173d31}
 .payroll-summary-meta{display:block;margin-top:7px;color:var(--muted,#6b7280);font-size:11px}
 @media (max-width:560px){.payroll-fee-breakdown{grid-template-columns:1fr}.payroll-fee-breakdown>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.payroll-fee-breakdown small{margin:0}.payroll-fee-breakdown strong{font-size:12px}.payroll-fee-grand-total strong{font-size:16px}}
+
+/* V10.98 사용자설정 레이아웃 안정화: Google Drive 자동저장 설정은 화면에 노출하지 않음 */
+body[data-view="settings"] .settings-grid-main {
+  display: grid !important;
+  grid-template-columns: minmax(340px, 0.9fr) minmax(440px, 1.15fr) !important;
+  grid-auto-flow: row !important;
+  align-items: start !important;
+  gap: 16px !important;
+}
+body[data-view="settings"] .settings-grid-main > .version-update-card { grid-column: 1 !important; grid-row: 1 !important; }
+body[data-view="settings"] .settings-grid-main > .user-settings-card { grid-column: 1 !important; grid-row: 2 !important; }
+body[data-view="settings"] .settings-grid-main > .analytics-settings-card { grid-column: 2 !important; grid-row: 1 / span 2 !important; }
+body[data-view="settings"] .settings-grid-main > .menu-settings-card { grid-column: 2 !important; grid-row: 3 !important; }
+body[data-view="settings"] .settings-grid-main > .monthly-goal-card { grid-column: 1 !important; grid-row: 3 !important; }
+body[data-view="settings"] .settings-grid-main > .manager-settings-card { grid-column: 2 !important; grid-row: 4 !important; }
+body[data-view="settings"] .settings-grid-main > .custom-dashboard-card-settings-card { grid-column: 1 !important; grid-row: 4 !important; }
+@media (max-width: 1100px) {
+  body[data-view="settings"] .settings-grid-main { grid-template-columns: 1fr !important; }
+  body[data-view="settings"] .settings-grid-main > .settings-card { grid-column: 1 !important; grid-row: auto !important; }
+}

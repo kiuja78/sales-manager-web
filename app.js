@@ -4,6 +4,7 @@ const LOCAL_BACKUP_INDEX_KEY = "myeongjang-sales-manager-backup-index-v1";
 const LOCAL_BACKUP_LIMIT = 12;
 const STATE_API_URL = "/api/state";
 const DRIVE_STATE_DEFAULT_URL = String(window.MJ_DRIVE_CONFIG?.url || "").trim();
+const DRIVE_STATE_FOLDER_ID = String(window.MJ_DRIVE_CONFIG?.folderId || "").trim();
 const DRIVE_STATE_DEFAULT_TOKEN = String(window.MJ_DRIVE_CONFIG?.token || "").trim();
 const DRIVE_STATE_TOKEN_STORAGE_KEY = "myeongjang-sales-manager-drive-token-v1";
 const DRIVE_STATE_HISTORY_MINUTES = 5;
@@ -15797,7 +15798,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.96";
+const APP_VERSION = "v10.98";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";

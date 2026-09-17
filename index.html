@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta name="app-version" content="V10.95">
+  <meta name="app-version" content="V10.98">
   <meta charset="utf-8">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
@@ -1479,22 +1479,7 @@
             </div>
           </section>
 
-<section class="panel settings-card drive-state-settings-card">
-            <div class="panel-head">
-              <h2>Google Drive 자동저장</h2>
-              <span>웹용 데이터는 Google Drive를 주 저장소로 사용하고 저장 이력을 자동으로 남깁니다.</span>
-            </div>
-            <div class="form-grid">
-              <label>Google Apps Script 웹앱 URL<input id="driveStateUrlInput" type="url" placeholder="https://script.google.com/macros/s/.../exec"></label>
-              <label>접속 토큰<input id="driveStateTokenInput" type="password" placeholder="선택사항"></label>
-            </div>
-            <p id="driveStateStatus" class="settings-help-text">Google Drive 자동저장 상태를 확인하는 중입니다.</p>
-            <div class="form-actions section-save-row">
-              <button class="ghost-button" id="testDriveStateBtn" type="button">연결 확인</button>
-              <button class="primary-button" id="saveDriveStateSettingsBtn" type="button">자동저장 설정 저장</button>
-              <button class="ghost-button" id="restoreDriveLatestBtn" type="button">최신 백업 복구</button>
-            </div>
-          </section>
+
 
 <section class="panel settings-card menu-settings-card">
             <div class="panel-head">
@@ -1804,7 +1789,7 @@
 
 
   <!-- 중요: Google Drive 연결 어댑터가 app.js보다 먼저 실행되어야 합니다. -->
-  <script src="./drive-config.js?v=v1095"></script>
+  <script src="./drive-config.js?v=v1097"></script>
   <script src="./app.js?v=v1095"></script>
 
     
