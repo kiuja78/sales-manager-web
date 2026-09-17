@@ -5,6 +5,7 @@ const LOCAL_BACKUP_LIMIT = 12;
 const STATE_API_URL = "/api/state";
 const DRIVE_STATE_DEFAULT_URL = String(window.MJ_DRIVE_CONFIG?.url || "").trim();
 const DRIVE_STATE_DEFAULT_TOKEN = String(window.MJ_DRIVE_CONFIG?.token || "").trim();
+const DRIVE_STATE_TOKEN_STORAGE_KEY = "myeongjang-sales-manager-drive-token-v1";
 const DRIVE_STATE_HISTORY_MINUTES = 5;
 
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
@@ -474,8 +475,7 @@ const sampleState = {
     branchName: "명장지국",
     masterName: "김건일",
     masterRole: "마스터",
-    driveStateUrl: DRIVE_STATE_DEFAULT_URL,
-    driveStateToken: DRIVE_STATE_DEFAULT_TOKEN
+    driveStateUrl: DRIVE_STATE_DEFAULT_URL
   },
   menuVisibility: normalizeMenuVisibility(),
   teamNames: ["원팀"],
@@ -736,10 +736,22 @@ function isGitHubPagesHost() {
   return /(^|\.)github\.io$/i.test(String(location.hostname || ""));
 }
 
+function migrateDriveTokenFromState() {
+  try {
+    const legacy = String(state?.appMeta?.driveStateToken || "").trim();
+    const current = String(localStorage.getItem(DRIVE_STATE_TOKEN_STORAGE_KEY) || "").trim();
+    if (!current && legacy) localStorage.setItem(DRIVE_STATE_TOKEN_STORAGE_KEY, legacy);
+    if (state?.appMeta && Object.prototype.hasOwnProperty.call(state.appMeta, "driveStateToken")) {
+      delete state.appMeta.driveStateToken;
+    }
+  } catch {}
+}
+
 function driveStateConfig() {
   const meta = state?.appMeta || {};
+  migrateDriveTokenFromState();
   const url = String(meta.driveStateUrl || DRIVE_STATE_DEFAULT_URL || "").trim();
-  const token = String(meta.driveStateToken || DRIVE_STATE_DEFAULT_TOKEN || "").trim();
+  const token = String(localStorage.getItem(DRIVE_STATE_TOKEN_STORAGE_KEY) || DRIVE_STATE_DEFAULT_TOKEN || "").trim();
   return { url, token, enabled: Boolean(url) };
 }
 
@@ -776,6 +788,7 @@ async function saveStateToDrive(serializedState, options = {}) {
 
 async function loadPersistedState() {
   const localState = loadState();
+  migrateDriveTokenFromState();
   const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
 
   // 웹용은 Google Drive를 주 저장소로 사용합니다. 설정되지 않았으면 기존 브라우저 저장값으로 안전하게 동작합니다.
@@ -11199,7 +11212,7 @@ function renderSettings() {
   const driveUrlInput = $("#driveStateUrlInput");
   const driveTokenInput = $("#driveStateTokenInput");
   if (driveUrlInput) driveUrlInput.value = state.appMeta.driveStateUrl || "";
-  if (driveTokenInput) driveTokenInput.value = state.appMeta.driveStateToken || "";
+  if (driveTokenInput) driveTokenInput.value = String(localStorage.getItem(DRIVE_STATE_TOKEN_STORAGE_KEY) || DRIVE_STATE_DEFAULT_TOKEN || "");
   const driveStatus = $("#driveStateStatus");
   if (driveStatus) driveStatus.textContent = state.appMeta.driveLastSaveAt ? `마지막 자동저장: ${new Date(state.appMeta.driveLastSaveAt).toLocaleString("ko-KR")}` : "아직 Google Drive 자동저장이 설정되지 않았습니다.";
 
@@ -11880,7 +11893,10 @@ async function restoreDriveLatest() {
 function saveDriveStateSettings() {
   state.appMeta = state.appMeta || {};
   state.appMeta.driveStateUrl = String($("#driveStateUrlInput")?.value || "").trim();
-  state.appMeta.driveStateToken = String($("#driveStateTokenInput")?.value || "").trim();
+  const token = String($("#driveStateTokenInput")?.value || "").trim();
+  if (token) localStorage.setItem(DRIVE_STATE_TOKEN_STORAGE_KEY, token);
+  else localStorage.removeItem(DRIVE_STATE_TOKEN_STORAGE_KEY);
+  delete state.appMeta.driveStateToken;
   persistState({ immediateServer: true });
   renderSettings();
   showToast(state.appMeta.driveStateUrl ? "Google Drive 자동저장 설정을 저장했습니다." : "Google Drive 자동저장을 해제했습니다.");
@@ -15781,7 +15797,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.95";
+const APP_VERSION = "v10.96";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
