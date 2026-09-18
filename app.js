@@ -571,17 +571,8 @@ const sampleState = {
   },
   menuVisibility: normalizeMenuVisibility(),
   teamNames: ["원팀"],
-  managers: [
-    { id: "m1", name: "김재곤", team: "B팀", goal: 31 },
-    { id: "m2", name: "박은영", team: "B팀", goal: 31 },
-    { id: "m3", name: "김예겸", team: "B팀", goal: 16 },
-    { id: "m4", name: "우영란", team: "B팀", goal: 12 },
-    { id: "m5", name: "김건일", team: "B팀", goal: 0 }
-  ],
-  monthSettings: {
-    "2026-05": { accountCount: 659, packageRate: 45, newWeight: 60, rentalWeight: 30, renewalWeight: 10, newIndex: 9.5, rentalIndex: 5, renewalIndex: 18, periodStart: "2026-04-28", periodEnd: "2026-05-27" },
-    "2026-04": { accountCount: 649, packageRate: 45, newWeight: 60, rentalWeight: 30, renewalWeight: 10, newIndex: 9, rentalIndex: 5, renewalIndex: 24, periodStart: "2026-03-28", periodEnd: "2026-04-27" }
-  },
+  managers: [],
+  monthSettings: {},
   managerManualStats: {},
   managerManualOrder: {},
   managerMonthlyGoals: {},
@@ -599,62 +590,8 @@ const sampleState = {
   payrollManager: "",
   payrollMonth: "",
   payrollArchives: [],
-  records: [
-    {
-      id: "r1", status: "접수", receivedDate: "2026-05-04", installDate: "2026-05-07",
-      manager: "김재곤", count: 1, previousCustomer: "1-02-230511-0364",
-      customerNo: "1-02-260504-0356", phone: "01085172990", customerName: "강장순",
-      category: "재탈", qr: "", cashAmount: 0, product: "CBT-IS1031RW(N1/재렌탈/48M/셀프(12C))",
-      seller: "", memo: ""
-    },
-    {
-      id: "r2", status: "접수", receivedDate: "2026-05-06", installDate: "2026-05-08",
-      manager: "김재곤", count: 1, previousCustomer: "1-01-210525-0372",
-      customerNo: "1-01-260506-1298", phone: "01041464052", customerName: "윤우진",
-      category: "재탈", qr: "", cashAmount: 0, product: "CP-AHS100HEW(S)(R)(리퍼브3/R/60M/12C)",
-      seller: "", memo: ""
-    },
-    {
-      id: "r3", status: "보류", receivedDate: "2026-05-07", installDate: "2026-05-29",
-      manager: "박은영", count: 1, previousCustomer: "",
-      customerNo: "1-01-260504-1769", phone: "", customerName: "김지영",
-      category: "재탈", qr: "", cashAmount: 0, product: "CP-AMS100EWH(S)(재렌탈전용/10프로할인/R/72M)",
-      seller: "", memo: "설치 일정 확인 필요"
-    },
-    {
-      id: "r4", status: "완료", receivedDate: "2026-05-04", installDate: "2026-05-07",
-      manager: "김예겸", count: 1, previousCustomer: "",
-      customerNo: "3-05-260504-0498", phone: "01023379733", customerName: "김윤희",
-      category: "일시불", qr: "QR", cashAmount: 599000, product: "CIR-F302FB(케이스미포함/일시불/지국)",
-      seller: "", memo: ""
-    },
-    {
-      id: "r5", status: "완료", receivedDate: "2026-05-04", installDate: "2026-05-07",
-      manager: "김예겸", count: 1, previousCustomer: "",
-      customerNo: "1-01-260504-1319", phone: "01023379733", customerName: "김윤희",
-      category: "신규", qr: "", cashAmount: 0, product: "CP-W602HW(S)(N1/E/60M/4C/3M면제)",
-      seller: "", memo: ""
-    },
-    {
-      id: "r6", status: "접수", receivedDate: "2026-05-06", installDate: "2026-05-08",
-      manager: "김건일", count: 1, previousCustomer: "",
-      customerNo: "1-01-260506-1214", phone: "01043335130", customerName: "이창주",
-      category: "패키지", qr: "", cashAmount: 0, product: "CP-AMS100EWH(S)(10프로할인/P/60M/12C/할인/6M반값)",
-      seller: "", memo: ""
-    }
-  ],
-  promotions: [
-    {
-      id: "p1", name: "5월 리퍼브 프로모션", startDate: "2026-05-01", endDate: "2026-05-31",
-      dateBasis: "receivedDate", type: "score", targetScore: 10, managerScope: "",
-      keywords: ["리퍼브3=1", "AHS100=1", "TS100=1"], rewardRules: ["10=안마의자", "7=주유권 5만원", "3=2달 렌탈 공짜!!"], memo: "제품명 키워드 기준 자동 집계"
-    },
-    {
-      id: "p2", name: "AMS 반값 프로모션", startDate: "2026-05-01", endDate: "2026-05-31",
-      dateBasis: "receivedDate", type: "count", targetScore: 5, managerScope: "",
-      keywords: ["AMS100=1", "12M반값=1", "6M반값=1"], rewardRules: ["5=후라이팬 6개", "3=후라이팬 2개", "1=후라이팬"], memo: ""
-    }
-  ]
+  records: [],
+  promotions: []
 };
 
 // IMPORTANT: do not read/normalize persisted data while the `state` binding is still
@@ -670,8 +607,6 @@ let recordSequenceSort = "desc";
 let promoListFilter = "all";
 let calendarDragStart = "";
 let calendarDragEnd = "";
-let todoDate = todayIso();
-let todoPage = 0;
 let checklistMonth = monthIso();
 let selectedChecklistId = "";
 let checklistModalStatus = "전체";
@@ -757,6 +692,9 @@ function stateDataCount(value) {
     Array.isArray(value.contactNotes) ? value.contactNotes.length : 0,
     Array.isArray(value.contactRequests) ? value.contactRequests.length : 0,
     Array.isArray(value.payrollRecords) ? value.payrollRecords.length : 0,
+    Array.isArray(value.payrollUnmatchedRecords) ? value.payrollUnmatchedRecords.length : 0,
+    Array.isArray(value.payrollArchives) ? value.payrollArchives.length : 0,
+    value.todosByDate && typeof value.todosByDate === "object" ? Object.keys(value.todosByDate).length : 0,
     value.monthSettings && typeof value.monthSettings === "object" ? Object.keys(value.monthSettings).length : 0,
     value.managementEvaluationPolicies && typeof value.managementEvaluationPolicies === "object" ? Object.keys(value.managementEvaluationPolicies).length : 0
   ];
@@ -917,11 +855,12 @@ function persistState(options = {}) {
   const currentCount = stateDataCount(state);
   const existingRaw = localStorage.getItem(STORAGE_KEY);
   let existingState = null;
-  try { existingState = existingRaw ? normalizeState(JSON.parse(existingRaw)) : null; } catch { existingState = null; }
+  try { existingState = existingRaw ? JSON.parse(existingRaw) : null; } catch { existingState = null; }
 
   // 비어 있는 상태가 기존의 실제 데이터를 실수로 덮어쓰는 것을 방지합니다.
+  // 기존 상태의 건수 확인만을 위해 전체 normalizeState()를 매 저장마다 다시 돌리지 않습니다.
   if (currentCount === 0 && stateDataCount(existingState) > 0 && options.allowEmptyServer !== true) {
-    state = existingState;
+    state = normalizeState(existingState);
     showToast("빈 데이터 저장을 차단했습니다. 기존 데이터를 유지합니다.");
   }
 
@@ -8071,7 +8010,6 @@ function renderNow() {
   applyOptionalMenuVisibility();
   renderCommonControls();
   renderTopbar();
-  renderTodos();
   renderView(currentView);
   window.requestAnimationFrame(enhanceMobileFullAppUi);
 }
@@ -11339,7 +11277,7 @@ function exportFullBackup() {
     schemaVersion: STATE_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     version: versionLabelForDisplay(APP_VERSION),
-    description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속 및 제품분석 설정을 포함한 전체 데이터 백업",
+    description: "접수내역, 경영평가 월별 입력값·주력상품 상대평가 예상점수·팀 정책이행 수기건수, 접수일 기준 매니저 귀속, 매니저 고유번호·노출순번·재직상태·팀 이동이력, 월별 목표·수기실적, 운영목표, 실판매자 귀속, 급여계산·미매칭·저장내역 및 제품분석 설정을 포함한 전체 데이터 백업",
     data: state
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], { type: "application/json;charset=utf-8" });
@@ -11369,6 +11307,9 @@ function looksLikeBackupData(data) {
     || Array.isArray(data.checklistItems)
     || Array.isArray(data.contactNotes)
     || Array.isArray(data.contactRequests)
+    || Array.isArray(data.payrollRecords)
+    || Array.isArray(data.payrollUnmatchedRecords)
+    || Array.isArray(data.payrollArchives)
     || Array.isArray(data.todos)
     || data.todosByDate
     || data.appMeta
@@ -11755,95 +11696,6 @@ function completeInstallFromAlert(recordId) {
 }
 
 
-function normalizeTodo(todo = {}) {
-  return {
-    id: todo.id || uid("todo"),
-    text: compactValue(todo.text, ""),
-    done: !!todo.done,
-    createdAt: todo.createdAt || new Date().toISOString()
-  };
-}
-
-function todoDateKey(date = todoDate) {
-  return compactValue(date, todayIso());
-}
-
-function todoDateLabelText(date = todoDate) {
-  const [, month, day] = todoDateKey(date).split("-");
-  return `${Number(month || 0)}/${Number(day || 0)}`;
-}
-
-function todosForCurrentDate() {
-  if (!state.todosByDate || typeof state.todosByDate !== "object") state.todosByDate = {};
-  const key = todoDateKey();
-  if (!Array.isArray(state.todosByDate[key])) {
-    if (key === todayIso() && Array.isArray(state.todos) && state.todos.length) {
-      state.todosByDate[key] = state.todos.map(normalizeTodo).filter((todo) => todo.text);
-      state.todos = [];
-    } else {
-      state.todosByDate[key] = [];
-    }
-  }
-  state.todosByDate[key] = state.todosByDate[key].map(normalizeTodo).filter((todo) => todo.text);
-  return state.todosByDate[key];
-}
-
-function shiftTodoDate(offset) {
-  const [year, month, day] = todoDateKey().split("-").map(Number);
-  const date = new Date(year, month - 1, day + offset);
-  todoDate = formatLocalDate(date);
-  todoPage = 0;
-  renderTodos();
-}
-
-function renderTodos() {
-  const todos = todosForCurrentDate();
-  const pageSize = 7;
-  const pageCount = Math.max(1, Math.ceil(todos.length / pageSize));
-  if (todoPage >= pageCount) todoPage = pageCount - 1;
-  if (todoPage < 0) todoPage = 0;
-  const pageTodos = todos.slice(todoPage * pageSize, (todoPage + 1) * pageSize);
-
-  const list = $("#todoList");
-  const summary = $("#todoSummary");
-  const label = $("#todoDateLabel");
-  const pageLabel = $("#todoPageLabel");
-  const pager = $("#todoPager");
-  const prevBtn = $("#todoPrevPageBtn");
-  const nextBtn = $("#todoNextPageBtn");
-  if (!list) return;
-
-  const doneCount = todos.filter((todo) => todo.done).length;
-  if (summary) summary.textContent = `${doneCount}/${todos.length}`;
-  if (label) label.textContent = todoDateLabelText();
-  if (pageLabel) pageLabel.textContent = `${todoPage + 1}/${pageCount}`;
-  if (pager) pager.hidden = pageCount <= 1;
-  if (prevBtn) prevBtn.disabled = todoPage <= 0;
-  if (nextBtn) nextBtn.disabled = todoPage >= pageCount - 1;
-
-  list.innerHTML = pageTodos.length
-    ? pageTodos.map((todo) => `
-      <div class="todo-item ${todo.done ? "done" : ""}" data-todo-id="${escapeHtml(todo.id)}" title="${escapeHtml(todo.text)}">
-        <label title="${escapeHtml(todo.text)}"><input type="checkbox" class="todo-check" ${todo.done ? "checked" : ""}> <span>${escapeHtml(todo.text)}</span></label>
-        <button type="button" class="todo-delete" title="삭제">×</button>
-      </div>`).join("")
-    : `<div class="todo-empty">간단히 할 일을 기록하세요.</div>`;
-}
-
-function addTodoFromInput() {
-  const input = $("#todoInput");
-  const text = compactValue(input?.value, "");
-  if (!text) return;
-  const todos = todosForCurrentDate();
-  todos.push(normalizeTodo({ text, done: false }));
-  const pageSize = 7;
-  todoPage = Math.max(0, Math.ceil(todos.length / pageSize) - 1);
-  if (input) input.value = "";
-  persistState();
-  renderTodos();
-}
-
-
 function renderSidebarClock() {
   const clock = $("#sidebarClock");
   const dateNode = $("#sidebarClockDate");
@@ -12204,8 +12056,8 @@ function buildInlineEditor(type, record) {
   if (type === "count") return `<input class="cell-input" data-field="count" type="number" min="0" step="0.5" value="${escapeHtml(record.count ?? 0)}">`;
   if (type === "customer-no-pair") return `
     <div class="cell-editor-stack">
-      <input class="cell-input sub" data-field="previousCustomer" value="${escapeHtml(record.previousCustomer || "")}" placeholder="기존신규 신규 신규 신규 신규 고객번호">
-      <input class="cell-input emphasis" data-field="customerNo" value="${escapeHtml(record.customerNo || "")}" placeholder="신규신규 신규 신규 신규 신규 고객번호">
+      <input class="cell-input sub" data-field="previousCustomer" value="${escapeHtml(record.previousCustomer || "")}" placeholder="기존 고객번호">
+      <input class="cell-input emphasis" data-field="customerNo" value="${escapeHtml(record.customerNo || "")}" placeholder="신규 고객번호">
     </div>`;
   if (type === "customer-pair") return `
     <div class="cell-editor-stack">
@@ -15016,43 +14868,7 @@ function attachEvents() {
   $("#completeResetBackupConfirm")?.addEventListener("change", (event) => { const btn = $("#completeResetExecuteBtn"); if (btn) btn.disabled = !event.target.checked; });
   $("#completeResetExecuteBtn")?.addEventListener("click", executeCompleteReset);
   $("#completeResetModal")?.addEventListener("click", (event) => { if (event.target.id === "completeResetModal") closeCompleteResetModal(); });
-  // 전체 백업 불러오기는 native label/input 방식으로 처리합니다.\n
-  $("#addTodoBtn")?.addEventListener("click", addTodoFromInput);
-  $("#todoInput")?.addEventListener("keydown", (event) => {
-    if (event.key === "Enter") {
-      addTodoFromInput();
-      event.preventDefault();
-    }
-  });
-  $("#todoList")?.addEventListener("change", (event) => {
-    const item = event.target.closest("[data-todo-id]");
-    if (!item || !event.target.classList.contains("todo-check")) return;
-    const todo = todosForCurrentDate().find((entry) => entry.id === item.dataset.todoId);
-    if (!todo) return;
-    todo.done = event.target.checked;
-    persistState();
-    renderTodos();
-  });
-  $("#todoList")?.addEventListener("click", (event) => {
-    const item = event.target.closest("[data-todo-id]");
-    if (!item || !event.target.classList.contains("todo-delete")) return;
-    const todos = todosForCurrentDate();
-    state.todosByDate[todoDateKey()] = todos.filter((entry) => entry.id !== item.dataset.todoId);
-    persistState();
-    renderTodos();
-  });
-
-  $("#todoPrevDayBtn")?.addEventListener("click", () => shiftTodoDate(-1));
-  $("#todoNextDayBtn")?.addEventListener("click", () => shiftTodoDate(1));
-  $("#todoPrevPageBtn")?.addEventListener("click", () => {
-    todoPage -= 1;
-    renderTodos();
-  });
-  $("#todoNextPageBtn")?.addEventListener("click", () => {
-    todoPage += 1;
-    renderTodos();
-  });
-
+  // 전체 백업 불러오기는 native label/input 방식으로 처리합니다.
 
   ["startDateFilter", "endDateFilter", "managerFilter"].forEach((id) => {
     const control = $(`#${id}`);
@@ -15763,7 +15579,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.08";
+const APP_VERSION = "v11.10";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -15951,7 +15767,7 @@ function executeCompleteReset() {
   const check = $("#completeResetBackupConfirm");
   if (!check?.checked) return;
   if (!window.confirm("정말 모든 데이터를 삭제할까요? 삭제 후에는 복구할 수 없습니다.")) return;
-  const fresh = normalizeState({ ...sampleState, records: [], managers: [], promotions: [], checklistItems: [], contactNotes: [], contactRequests: [], todos: [], todosByDate: {}, managerManualStats: {}, managerMonthlyGoals: {}, managerMonthlyManualStats: {}, appMeta: { ...sampleState.appMeta, branchName: "명장지국", masterName: "김건일", masterRole: "마스터" } });
+  const fresh = normalizeState({ ...sampleState, records: [], managers: [], promotions: [], checklistItems: [], contactNotes: [], contactRequests: [], todos: [], todosByDate: {}, managerManualStats: {}, managerMonthlyGoals: {}, payrollRecords: [], payrollUnmatchedRecords: [], payrollArchives: [], appMeta: { ...sampleState.appMeta, branchName: "명장지국", masterName: "김건일", masterRole: "마스터" } });
   state = fresh;
   invalidateManagerCaches();
   persistState({ ensureManagers: false, immediateServer: true });
