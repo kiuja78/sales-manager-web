@@ -73,33 +73,6 @@ function queueDurableBackup(reason = "auto") {
   }, 180);
 }
 
-function createPreUpdateBackup() {
-  try {
-    const snapshot = {
-      backupType: "MJ_Sales_Manager_PreUpdateBackup",
-      schemaVersion: STATE_SCHEMA_VERSION,
-      exportedAt: new Date().toISOString(),
-      reason: "before-program-update",
-      dataCount: stateDataCount(state),
-      data: state
-    };
-    if (!snapshot.dataCount) {
-      showToast("현재 저장 데이터가 없어 업데이트 백업을 만들지 않았습니다.");
-      return false;
-    }
-    safeLocalBackupSnapshot(state, "before-update");
-    localStorage.setItem("myeongjang-sales-manager-preupdate-v1", JSON.stringify(snapshot));
-    const stamp = snapshot.exportedAt.replace(/[:.]/g, "-").replace(/T/, "_").replace(/Z$/, "");
-    downloadFile(`MJ_Sales_Manager_PreUpdate_Backup_${stamp}.json`, "application/json;charset=utf-8", JSON.stringify(snapshot, null, 2));
-    queueDurableBackup("before-update");
-    return true;
-  } catch (error) {
-    console.warn("[PRE-UPDATE BACKUP] failed", error);
-    showToast("업데이트 전 백업 생성에 실패했습니다. 업데이트를 중단합니다.");
-    return false;
-  }
-}
-
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
 const activityTypes = ["", "컨스", "지원"];
@@ -11343,7 +11316,6 @@ function renderTeamOperationSettings() {
   });
 }
 function renderSettings() {
-  setSettingsVersionStatus("", "");
   state.appMeta = { ...sampleState.appMeta, ...(state.appMeta || {}) };
   $("#branchNameInput").value = state.appMeta.branchName;
   $("#masterNameInput").value = state.appMeta.masterName;
@@ -14625,29 +14597,6 @@ function attachEvents() {
     if (control) control.addEventListener("change", () => { renderMembershipRecords(); });
   });
 
-  $("#downloadUpdateBtn")?.addEventListener("click", () => {
-    if (!createPreUpdateBackup()) return;
-    window.setTimeout(downloadLatestUpdate, 350);
-  });
-  $("#checkVersionBtn")?.addEventListener("click", manualCheckForProgramUpdate);
-  $("#openReleaseDownloadBtn")?.addEventListener("click", () => {
-    if (!createPreUpdateBackup()) return;
-    window.setTimeout(openReleaseDownloadPage, 350);
-  });
-  $("#updateLaterBtn")?.addEventListener("click", () => {
-    const latest = $("#latestVersionLabel")?.textContent || "";
-    if (latest && latest !== "확인 중") localStorage.setItem(UPDATE_DISMISS_KEY, latest);
-    closeUpdateModal();
-  });
-  $("#updateLaterTopBtn")?.addEventListener("click", () => {
-    const latest = $("#latestVersionLabel")?.textContent || "";
-    if (latest && latest !== "확인 중") localStorage.setItem(UPDATE_DISMISS_KEY, latest);
-    closeUpdateModal();
-  });
-  $("#updateModal")?.addEventListener("click", (event) => {
-    if (event.target?.id === "updateModal") closeUpdateModal();
-  });
-
 
   $("#evaluationMonthInput")?.addEventListener("change", renderManagementEvaluation);
   $("#renewalGuideMonthInput")?.addEventListener("change", renderRenewalGuide);
@@ -15748,89 +15697,11 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.12";
+const APP_VERSION = "v11.15";
 const STATE_SCHEMA_VERSION = 4;
-const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
-const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
-const SALES_MANAGER_LATEST_VERSION = APP_VERSION;
-const UPDATE_DISMISS_KEY = "mjSalesUpdateDismissedVersion";
-let cachedReleaseInfo = null;
-
-function releaseVersionCandidates(release = {}) {
-  const values = [release.name, release.tag_name, ...(Array.isArray(release.assets) ? release.assets.map((asset) => asset?.name) : [])];
-  const found = [];
-  values.filter(Boolean).forEach((value) => {
-    const matches = String(value).match(/v?\d+(?:\.\d+){1,3}/gi) || [];
-    matches.forEach((item) => found.push(item.replace(/^v/i, "v")));
-  });
-  return found;
-}
-
-function highestVersionText(values = [], fallback = APP_VERSION) {
-  return values.reduce((best, value) => compareVersionText(value, best) > 0 ? value : best, fallback);
-}
-
-async function fetchSalesManagerReleaseInfo(force = false) {
-  if (cachedReleaseInfo && !force) return cachedReleaseInfo;
-  try {
-    const response = await fetch(UPDATE_RELEASE_API_URL, {
-      cache: "no-store",
-      headers: { "Accept": "application/vnd.github+json" }
-    });
-    if (!response.ok) throw new Error(`GitHub ${response.status}`);
-    cachedReleaseInfo = await response.json();
-    return cachedReleaseInfo;
-  } catch (error) {
-    console.warn("영업관리시스템 릴리즈 정보 확인 실패", error);
-    return null;
-  }
-}
-
-function preferredUpdateAsset(release = {}) {
-  const assets = Array.isArray(release.assets) ? release.assets : [];
-  if (!assets.length) return null;
-  const scored = assets.map((asset) => {
-    const name = String(asset?.name || "");
-    let score = 0;
-    if (/^Sales_Manager\.zip$/i.test(name)) score += 120;
-    if (/sales[_ -]?manager/i.test(name)) score += 50;
-    if (/setup/i.test(name)) score += 45;
-    if (/user|사용자/i.test(name)) score += 35;
-    if (/\.exe$/i.test(name)) score += 25;
-    if (/\.zip$/i.test(name)) score += 20;
-    if (/branch|지국|타지국/i.test(name)) score -= 80;
-    return { asset, score };
-  }).sort((a, b) => b.score - a.score);
-  return scored[0]?.score > 0 ? scored[0].asset : null;
-}
-
-async function resolveLatestProgramVersion() {
-  const release = await fetchSalesManagerReleaseInfo();
-  if (!release) return APP_VERSION;
-  return highestVersionText(releaseVersionCandidates(release), APP_VERSION);
-}
-
-async function resolveUpdateDownloadUrl() {
-  const release = await fetchSalesManagerReleaseInfo(true);
-  const asset = release ? preferredUpdateAsset(release) : null;
-  return asset?.browser_download_url || release?.html_url || UPDATE_RELEASES_URL;
-}
 
 function normalizeVersionText(version = "") {
   return String(version || "").trim().replace(/^v/i, "");
-}
-
-function compareVersionText(a = "", b = "") {
-  const left = normalizeVersionText(a).split(/[.-]/).map((part) => Number(part.replace(/\D/g, "")) || 0);
-  const right = normalizeVersionText(b).split(/[.-]/).map((part) => Number(part.replace(/\D/g, "")) || 0);
-  const length = Math.max(left.length, right.length, 3);
-  for (let i = 0; i < length; i += 1) {
-    const lv = left[i] || 0;
-    const rv = right[i] || 0;
-    if (lv > rv) return 1;
-    if (lv < rv) return -1;
-  }
-  return 0;
 }
 
 function versionLabelForDisplay(version = APP_VERSION) {
@@ -15844,77 +15715,6 @@ function applyProgramVersionToStaticLabels() {
   if (startup) startup.textContent = label;
   const meta = document.querySelector('meta[name="app-version"]');
   if (meta) meta.content = label;
-}
-
-function setSettingsVersionStatus(latestVersion = "", message = "") {
-  applyProgramVersionToStaticLabels();
-  const currentNode = $("#settingsCurrentVersionLabel");
-  const latestNode = $("#settingsLatestVersionLabel");
-  const guideNode = $("#settingsUpdateGuide");
-  const downloadBtn = $("#openReleaseDownloadBtn");
-  if (currentNode) currentNode.textContent = versionLabelForDisplay(APP_VERSION);
-  if (latestNode) latestNode.textContent = latestVersion ? versionLabelForDisplay(latestVersion) : "확인 전";
-  if (guideNode) guideNode.textContent = message || "";
-  if (downloadBtn) downloadBtn.textContent = "업데이트";
-}
-
-function openUpdateModal(latestVersion = "") {
-  const modal = $("#updateModal");
-  if (!modal) return;
-  const currentNode = $("#currentVersionLabel");
-  const latestNode = $("#latestVersionLabel");
-  const downloadBtn = $("#downloadUpdateBtn");
-  if (currentNode) currentNode.textContent = versionLabelForDisplay(APP_VERSION);
-  if (latestNode) latestNode.textContent = latestVersion ? versionLabelForDisplay(latestVersion) : "최신 버전";
-  if (downloadBtn) downloadBtn.textContent = "업데이트";
-  modal.hidden = false;
-  document.body.classList.add("update-modal-open");
-}
-
-function closeUpdateModal() {
-  const modal = $("#updateModal");
-  if (modal) modal.hidden = true;
-  document.body.classList.remove("update-modal-open");
-}
-
-async function openReleaseDownloadPage() {
-  const popup = window.open("about:blank", "_blank");
-  try {
-    const url = await resolveUpdateDownloadUrl();
-    if (popup) popup.location.replace(url);
-    else window.location.href = url;
-  } catch (error) {
-    console.warn("업데이트 다운로드 링크 확인 실패", error);
-    if (popup) popup.location.replace(UPDATE_RELEASES_URL);
-    else window.location.href = UPDATE_RELEASES_URL;
-  }
-}
-
-function downloadLatestUpdate() {
-  openReleaseDownloadPage();
-}
-
-async function manualCheckForProgramUpdate() {
-  const latestVersion = await resolveLatestProgramVersion();
-  const compare = compareVersionText(APP_VERSION, latestVersion);
-  if (compare < 0) {
-    setSettingsVersionStatus(latestVersion, "새 버전이 있습니다. 업데이트 버튼을 누르면 GitHub 배포파일을 확인해 자동으로 엽니다.");
-    openUpdateModal(latestVersion);
-    showToast(`최신 버전은 ${versionLabelForDisplay(latestVersion)} 입니다.`);
-  } else {
-    setSettingsVersionStatus(APP_VERSION, "현재 최신 버전을 사용 중입니다. 업데이트 버튼은 현재 배포파일을 다시 받을 때 사용할 수 있습니다.");
-    showToast("현재 최신 버전입니다.");
-  }
-}
-
-async function checkForProgramUpdate() {
-  const latestVersion = await resolveLatestProgramVersion();
-  const compare = compareVersionText(APP_VERSION, latestVersion);
-  setSettingsVersionStatus(compare < 0 ? latestVersion : APP_VERSION, compare < 0
-    ? "새 버전이 있습니다. 업데이트 버튼을 누르면 GitHub 배포파일을 확인해 자동으로 엽니다."
-    : "현재 최신 버전을 사용 중입니다.");
-  if (localStorage.getItem(UPDATE_DISMISS_KEY) === latestVersion) return;
-  if (compare < 0) openUpdateModal(latestVersion);
 }
 
 function openCompleteResetModal() {
@@ -15988,12 +15788,8 @@ async function init() {
   if (recordsView && !recordsView.dataset.mobileRecordTab) recordsView.dataset.mobileRecordTab = "main";
   resetRecordForm();
   renderNow();
-  setSettingsVersionStatus(SALES_MANAGER_LATEST_VERSION, compareVersionText(APP_VERSION, SALES_MANAGER_LATEST_VERSION) < 0
-    ? "새 버전이 있습니다. 업데이트 버튼을 눌러 바로 다운로드하세요."
-    : "현재 최신 버전을 사용 중입니다.");
   window.setTimeout(openInstallTodayModalIfNeeded, 400);
   window.setTimeout(startChecklistAlarmWatcher, 550);
-  window.setTimeout(checkForProgramUpdate, 900);
 }
 
 
@@ -16016,7 +15812,6 @@ window.addEventListener("pagehide", () => {
 
 window.MJ_SALES_VERSION = APP_VERSION;
 window.MJ_SALES_SCHEMA_VERSION = STATE_SCHEMA_VERSION;
-window.checkForProgramUpdate = checkForProgramUpdate;
 window.reportImageBlob = reportImageBlob;
 window.shareKakaoImage = shareKakaoImage;
 
