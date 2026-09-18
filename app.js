@@ -7,9 +7,8 @@ const DRIVE_STATE_DEFAULT_URL = String(window.MJ_DRIVE_CONFIG?.url || "").trim()
 const DRIVE_STATE_FOLDER_ID = String(window.MJ_DRIVE_CONFIG?.folderId || "").trim();
 const DRIVE_STATE_DEFAULT_TOKEN = String(window.MJ_DRIVE_CONFIG?.token || "").trim();
 const DRIVE_STATE_TOKEN_STORAGE_KEY = "myeongjang-sales-manager-drive-token-v1";
-const DRIVE_STATE_HISTORY_MINUTES = 0;
-const DRIVE_CLOSE_BACKUP_ENABLED = false;
-const DRIVE_BACKUP_SUSPENDED = true;
+const DRIVE_STATE_HISTORY_MINUTES = 5;
+const DRIVE_CLOSE_BACKUP_ENABLED = true;
 
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
@@ -756,9 +755,11 @@ function migrateDriveTokenFromState() {
 }
 
 function driveStateConfig() {
-  // Google Drive 자동저장은 현재 일시 중단합니다.
-  // 백업 구조를 다시 설계할 때까지 웹 프로그램은 브라우저 로컬 저장만 사용합니다.
-  return { url: "", token: "", enabled: false };
+  const meta = state?.appMeta || {};
+  migrateDriveTokenFromState();
+  const url = String(meta.driveStateUrl || DRIVE_STATE_DEFAULT_URL || "").trim();
+  const token = String(localStorage.getItem(DRIVE_STATE_TOKEN_STORAGE_KEY) || DRIVE_STATE_DEFAULT_TOKEN || "").trim();
+  return { url, token, enabled: Boolean(url) };
 }
 
 async function loadStateFromDrive() {
@@ -799,8 +800,21 @@ async function loadPersistedState() {
   migrateDriveTokenFromState();
   const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
 
-  // 웹용은 현재 Google Drive를 사용하지 않습니다. 로컬 저장 데이터를 기준으로만 시작합니다.
+  // 웹용은 Google Drive를 주 저장소로 사용합니다. 설정되지 않았으면 기존 브라우저 저장값으로 안전하게 동작합니다.
   if (isStaticWeb) {
+    try {
+      const driveState = await loadStateFromDrive();
+      if (driveState && stateDataCount(driveState) > 0) {
+        state = shouldPreferLocalState(localState, driveState) ? localState : driveState;
+        invalidateManagerCaches();
+        touchStateRevision();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        safeLocalBackupSnapshot(state, "drive-load");
+        return;
+      }
+    } catch (error) {
+      console.warn("[DRIVE LOAD]", error);
+    }
     state = localState;
     invalidateManagerCaches();
     touchStateRevision();
@@ -876,10 +890,23 @@ function persistState(options = {}) {
 
   const save = async () => {
     if (isStaticWeb) {
-      // Google Drive 자동저장 일시 중단: 브라우저 로컬 저장 + 안전백업만 수행합니다.
-      driveDataDirty = false;
-      persistFailureToastShown = false;
-      return { ok: true, target: "local-only", archived: false };
+      try {
+        const now = Date.now();
+        const shouldHistory = options.forceHistory === true || (driveDataDirty && (now - driveLastHistoryBackupAt >= DRIVE_STATE_HISTORY_MINUTES * 60 * 1000));
+        const result = await saveStateToDrive(data, { createHistory: shouldHistory, forceHistory: options.forceHistory === true });
+        persistFailureToastShown = false;
+        driveLastSuccessfulSaveAt = now;
+        if (result?.archived || shouldHistory) driveLastHistoryBackupAt = now;
+        driveDataDirty = false;
+        return { ok: true, target: "google-drive", archived: Boolean(result?.archived) };
+      } catch (error) {
+        console.warn("[DRIVE SAVE]", error);
+        if (!persistFailureToastShown) {
+          persistFailureToastShown = true;
+          showToast("Google Drive 저장 실패: 브라우저 안전백업은 유지됩니다.");
+        }
+        return { ok: false, target: "google-drive", error };
+      }
     }
 
     try {
@@ -983,12 +1010,47 @@ function normalizeState(loaded) {
 }
 
 async function saveDriveBeforeClose() {
-  // Google Drive 자동백업 일시 중단 중에는 종료 시 별도 네트워크 저장을 하지 않습니다.
-  return { ok: true, target: "local-only", skipped: true };
+  if (driveCloseBackupAttempted || driveCloseBackupInProgress || !DRIVE_CLOSE_BACKUP_ENABLED) return;
+  driveCloseBackupAttempted = true;
+  driveCloseBackupInProgress = true;
+  try {
+    const config = driveStateConfig();
+    if (!config.enabled || !isGitHubPagesHost()) return;
+    ensureManagerDataIntegrity(state);
+    state.appMeta = state.appMeta || {};
+    state.appMeta.lastStateUpdatedAt = new Date().toISOString();
+    state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
+    const data = JSON.stringify(state);
+    localStorage.setItem(STORAGE_KEY, data);
+    safeLocalBackupSnapshot(state, "before-browser-close");
+    const result = await saveStateToDrive(data, { createHistory: true, forceHistory: true, keepalive: true });
+    if (result?.ok !== false) {
+      driveDataDirty = false;
+      driveLastSuccessfulSaveAt = Date.now();
+      driveLastHistoryBackupAt = Date.now();
+    }
+  } catch (error) {
+    console.warn("[DRIVE CLOSE BACKUP]", error);
+  } finally {
+    driveCloseBackupInProgress = false;
+  }
 }
 
 function attachDriveCloseBackupHandlers() {
-  // 백업 구조 재설계 전까지 브라우저 종료 시 Google Drive 요청을 하지 않습니다.
+  if (!isGitHubPagesHost()) return;
+  window.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && driveDataDirty) {
+      // Best-effort background save when the tab becomes hidden.
+      saveDriveBeforeClose();
+    }
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (!driveDataDirty) return;
+    showToast("Google Drive에 마지막 백업을 저장하는 중입니다. 잠시 기다려 주세요.");
+    saveDriveBeforeClose();
+    event.preventDefault();
+    event.returnValue = "변경된 데이터가 있습니다. 종료 전에 Google Drive 자동 백업을 시도합니다.";
+  });
 }
 
 function saveState(message, options = {}) {
@@ -11450,7 +11512,7 @@ function confirmBackupRestoreInApp(recordCount, managerCount) {
         </div>
       </div>
       <div style="font-size:13px;line-height:1.55;color:#b42318;background:#fff4f2;border:1px solid #ffd6d2;border-radius:10px;padding:11px 12px;margin-bottom:18px;">
-        복원하면 현재 브라우저의 저장 데이터가 이 백업 데이터로 교체됩니다.\nGoogle Drive 자동저장은 현재 일시 중단되어 있습니다.
+        복원하면 현재 Google Drive 데이터도 이 백업 데이터로 저장됩니다.
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;">
         <button type="button" data-action="cancel"
@@ -11530,14 +11592,11 @@ async function importFullBackupFile(file) {
     const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
     let verifyRecordCount = restoredRecordCount;
     if (isStaticWeb) {
-      // 백업 복원은 Google Drive와 분리합니다. 먼저 브라우저 로컬 저장을 확정합니다.
-      ensureManagerDataIntegrity(state);
-      state.appMeta = state.appMeta || {};
-      state.appMeta.lastStateUpdatedAt = new Date().toISOString();
-      state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
+      showToast("전체 백업 복원 중 · Google Drive 저장을 확인하고 있습니다...");
+      const result = await saveStateToDrive(JSON.stringify(state), { createHistory: true });
+      if (!result?.ok) throw new Error("Google Drive 저장 확인 실패");
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      safeLocalBackupSnapshot(state, "full-backup-restore");
-      showToast("전체 백업 복원 완료 · 브라우저에 안전하게 저장했습니다.");
+      showToast("전체 백업 복원 완료 · Google Drive에 안전하게 저장했습니다.");
     } else {
       await persistState({ ensureManagers: true, immediateServer: true });
       const verifyResponse = await fetch(STATE_API_URL, { cache: "no-store" });
@@ -11556,14 +11615,14 @@ async function importFullBackupFile(file) {
     renderNow();
     showToast(`전체 백업 복원 완료 · 접수내역 ${verifyRecordCount}건`);
     const restoreTargetMessage = isStaticWeb
-      ? `접수내역 ${verifyRecordCount}건이 브라우저 로컬 저장소에 복원되었습니다.`
+      ? `접수내역 ${verifyRecordCount}건이 Google Drive에 저장되었습니다.`
       : `접수내역 ${verifyRecordCount}건이 PC 저장소에 저장되었습니다.`;
     window.alert(`전체 백업 복원이 완료되었습니다.\n\n${restoreTargetMessage}`);
     return true;
   } catch (error) {
     console.error("[BACKUP IMPORT] restore/save failed", error);
-    showToast("백업 복원 중 오류가 발생했습니다.");
-    window.alert("백업 파일은 읽었지만 복원 중 오류가 발생했습니다.\n\n백업 JSON 파일 형식과 브라우저 저장 상태를 확인해주세요.");
+    showToast("백업 복원 또는 Google Drive 저장 중 오류가 발생했습니다.");
+    window.alert("백업 파일은 읽었지만 복원 또는 Google Drive 저장 중 오류가 발생했습니다.\n\n인터넷 연결과 Google Drive 연결 상태를 확인해주세요.");
     return false;
   }
 }
@@ -11919,15 +11978,56 @@ function collectUserSettings() {
 }
 
 async function restoreDriveLatest() {
-  alert("Google Drive 복구 기능은 현재 일시 중단되어 있습니다.\n\n먼저 전체 백업 JSON 파일을 사용한 로컬 복원을 이용해주세요.");
+  try {
+    const driveState = await loadStateFromDrive();
+    if (!driveState || stateDataCount(driveState) === 0) throw new Error("Google Drive에 복구할 데이터가 없습니다.");
+    const recordCount = Array.isArray(driveState.records) ? driveState.records.length : 0;
+    const managerCount = Array.isArray(driveState.managers) ? driveState.managers.length : 0;
+    const ok = confirm(`Google Drive 최신 데이터로 복구합니다.\n\n접수내역 ${recordCount}건 · 매니저 ${managerCount}명\n\n현재 데이터가 최신 백업 내용으로 교체됩니다. 계속할까요?`);
+    if (!ok) return;
+    state = normalizeState(driveState);
+    invalidateManagerCaches();
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    safeLocalBackupSnapshot(state, "drive-restore");
+    renderNow();
+    showToast(`Google Drive 최신 백업 복구 완료 · 접수내역 ${recordCount}건`);
+  } catch (error) {
+    console.error("[DRIVE RESTORE]", error);
+    alert("Google Drive 최신 백업을 불러오지 못했습니다. URL·토큰·인터넷 연결을 확인해주세요.");
+  }
 }
 
 function saveDriveStateSettings() {
-  showToast("Google Drive 자동저장은 현재 일시 중단되어 있습니다.");
+  state.appMeta = state.appMeta || {};
+  state.appMeta.driveStateUrl = String($("#driveStateUrlInput")?.value || "").trim();
+  const token = String($("#driveStateTokenInput")?.value || "").trim();
+  if (token) localStorage.setItem(DRIVE_STATE_TOKEN_STORAGE_KEY, token);
+  else localStorage.removeItem(DRIVE_STATE_TOKEN_STORAGE_KEY);
+  delete state.appMeta.driveStateToken;
+  persistState({ immediateServer: true });
+  renderSettings();
+  showToast(state.appMeta.driveStateUrl ? "Google Drive 자동저장 설정을 저장했습니다." : "Google Drive 자동저장을 해제했습니다.");
 }
 
 async function testDriveStateConnection() {
-  showToast("Google Drive 연결 확인은 현재 일시 중단되어 있습니다.");
+  state.appMeta = state.appMeta || {};
+  const url = String($("#driveStateUrlInput")?.value || "").trim();
+  const token = String($("#driveStateTokenInput")?.value || "").trim();
+  if (!url) { alert("Google Apps Script 웹앱 URL을 입력해주세요."); return; }
+  try {
+    const query = new URLSearchParams({ action: "ping" });
+    if (token) query.set("token", token);
+    const response = await fetch(`${url}${url.includes("?") ? "&" : "?"}${query.toString()}`, { cache: "no-store" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const payload = await response.json();
+    if (!payload?.ok) throw new Error("응답 확인 실패");
+    showToast("Google Drive 자동저장 연결이 정상입니다.");
+    const status = $("#driveStateStatus");
+    if (status) status.textContent = "Google Drive 연결 확인 완료";
+  } catch (error) {
+    console.error("[DRIVE TEST]", error);
+    alert("Google Drive 연결을 확인하지 못했습니다. 웹앱 URL·권한·토큰을 확인해주세요.");
+  }
 }
 
 function saveMenuVisibilitySettings() {
