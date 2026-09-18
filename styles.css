@@ -24178,3 +24178,23 @@ body[data-view="records"] .record-form-row.row-basic {
     background:#faf8fd !important;
   }
 }
+
+/* V11.12 대한민국 공휴일/일요일 달력 표시 */
+#dashboardView .calendar-weekday:first-child {
+  color: #d43b3b !important;
+}
+#dashboardView .calendar-day.is-sunday > span,
+#dashboardView .calendar-day.is-holiday > span {
+  color: #d43b3b !important;
+  font-weight: 850 !important;
+}
+#dashboardView .calendar-day:not(.in-period).is-sunday > span,
+#dashboardView .calendar-day:not(.in-period).is-holiday > span {
+  color: #d98b8b !important;
+}
+#dashboardView .calendar-day.selected.is-sunday > span,
+#dashboardView .calendar-day.selected.is-holiday > span,
+#dashboardView .calendar-day.range-edge.is-sunday > span,
+#dashboardView .calendar-day.range-edge.is-holiday > span {
+  color: #ffe0e0 !important;
+}

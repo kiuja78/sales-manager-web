@@ -8839,6 +8839,162 @@ function renderDashboardManagerConditionSummary(records, managers) {
   `;
 }
 
+
+const koreanHolidayCache = new Map();
+const koreanLunarFormatter = (() => {
+  try {
+    return new Intl.DateTimeFormat("en-u-ca-chinese", { month: "numeric", day: "numeric", year: "numeric" });
+  } catch {
+    return null;
+  }
+})();
+
+function addIsoDays(iso, amount) {
+  const date = new Date(`${iso}T12:00:00`);
+  date.setDate(date.getDate() + amount);
+  return formatLocalDate(date);
+}
+
+function koreanLunarDateParts(iso) {
+  if (!koreanLunarFormatter) return null;
+  try {
+    const parts = koreanLunarFormatter.formatToParts(new Date(`${iso}T12:00:00`));
+    const monthText = String(parts.find((part) => part.type === "month")?.value || "");
+    const dayText = String(parts.find((part) => part.type === "day")?.value || "");
+    const relatedYearText = String(parts.find((part) => part.type === "relatedYear")?.value || "");
+    const leap = /bis|leap|윤/i.test(monthText);
+    const month = Number.parseInt(monthText, 10);
+    const day = Number.parseInt(dayText, 10);
+    const relatedYear = Number.parseInt(relatedYearText, 10);
+    if (!Number.isFinite(month) || !Number.isFinite(day)) return null;
+    return { month, day, relatedYear, leap };
+  } catch {
+    return null;
+  }
+}
+
+function buildKoreanHolidayMap(targetYear) {
+  const year = Number(targetYear);
+  if (!Number.isFinite(year)) return new Map();
+  if (koreanHolidayCache.has(year)) return koreanHolidayCache.get(year);
+
+  const baseDays = new Map();
+  const publicDays = new Map();
+  const singleEvents = [];
+  const groupEvents = [];
+
+  const addBase = (iso, name, source) => {
+    if (!iso || !name) return;
+    if (!baseDays.has(iso)) baseDays.set(iso, { names: new Set(), sources: new Set() });
+    const entry = baseDays.get(iso);
+    entry.names.add(name);
+    entry.sources.add(source);
+    publicDays.set(iso, entry);
+  };
+
+  const addSingle = (iso, name, substituteFromYear = Infinity) => {
+    const id = `single:${name}:${iso}`;
+    addBase(iso, name, id);
+    singleEvents.push({ id, iso, name, substituteFromYear });
+  };
+
+  const addGroup = (centerIso, name, labels, substituteFromYear = 2014) => {
+    if (!centerIso) return;
+    const id = `group:${name}:${centerIso}`;
+    const dates = [addIsoDays(centerIso, -1), centerIso, addIsoDays(centerIso, 1)];
+    dates.forEach((iso, index) => addBase(iso, labels[index], id));
+    groupEvents.push({ id, centerIso, name, dates, substituteFromYear });
+  };
+
+  for (let y = year - 1; y <= year + 1; y += 1) {
+    addSingle(`${y}-01-01`, "신정");
+    addSingle(`${y}-03-01`, "3·1절", 2022);
+    if (y >= 2026) addSingle(`${y}-05-01`, "노동절", 2026);
+    addSingle(`${y}-05-05`, "어린이날", 2014);
+    addSingle(`${y}-06-06`, "현충일");
+    addSingle(`${y}-08-15`, "광복절", 2022);
+    addSingle(`${y}-10-03`, "개천절", 2022);
+    addSingle(`${y}-10-09`, "한글날", 2022);
+    addSingle(`${y}-12-25`, "성탄절", 2023);
+
+    const start = new Date(`${y}-01-01T12:00:00`);
+    const end = new Date(`${y}-12-31T12:00:00`);
+    for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+      const iso = formatLocalDate(cursor);
+      const lunar = koreanLunarDateParts(iso);
+      if (!lunar || lunar.leap) continue;
+      if (lunar.month === 1 && lunar.day === 1) {
+        addGroup(iso, "설날", ["설날 연휴", "설날", "설날 연휴"], 2014);
+      } else if (lunar.month === 4 && lunar.day === 8) {
+        addSingle(iso, "부처님 오신 날", 2023);
+      } else if (lunar.month === 8 && lunar.day === 15) {
+        addGroup(iso, "추석", ["추석 연휴", "추석", "추석 연휴"], 2014);
+      }
+    }
+  }
+
+  const weekday = (iso) => new Date(`${iso}T12:00:00`).getDay();
+  const hasOtherBaseSource = (iso, ownId) => {
+    const entry = baseDays.get(iso);
+    return Boolean(entry && [...entry.sources].some((source) => source !== ownId));
+  };
+  const isBlockedSubstituteDate = (iso) => {
+    const day = weekday(iso);
+    return day === 0 || day === 6 || publicDays.has(iso);
+  };
+  const scheduleSubstitute = (afterIso, name, source) => {
+    let candidate = addIsoDays(afterIso, 1);
+    while (isBlockedSubstituteDate(candidate)) candidate = addIsoDays(candidate, 1);
+    const entry = { names: new Set([`${name} 대체공휴일`]), sources: new Set([source]) };
+    publicDays.set(candidate, entry);
+    return candidate;
+  };
+
+  const substituteTasks = [];
+  singleEvents.forEach((event) => {
+    const eventYear = Number(event.iso.slice(0, 4));
+    if (eventYear < event.substituteFromYear) return;
+    const day = weekday(event.iso);
+    if (day === 0 || day === 6 || hasOtherBaseSource(event.iso, event.id)) {
+      substituteTasks.push({ afterIso: event.iso, name: event.name, source: `sub:${event.id}` });
+    }
+  });
+
+  groupEvents.forEach((event) => {
+    const eventYear = Number(event.centerIso.slice(0, 4));
+    if (eventYear < event.substituteFromYear) return;
+    const needsSubstitute = event.dates.some((iso) => weekday(iso) === 0 || hasOtherBaseSource(iso, event.id));
+    if (needsSubstitute) {
+      substituteTasks.push({
+        afterIso: event.dates.slice().sort().slice(-1)[0],
+        name: event.name,
+        source: `sub:${event.id}`
+      });
+    }
+  });
+
+  substituteTasks
+    .sort((a, b) => a.afterIso.localeCompare(b.afterIso) || a.name.localeCompare(b.name, "ko"))
+    .forEach((task) => scheduleSubstitute(task.afterIso, task.name, task.source));
+
+  const result = new Map();
+  [...publicDays.entries()].forEach(([iso, entry]) => {
+    if (Number(iso.slice(0, 4)) !== year) return;
+    result.set(iso, {
+      name: [...entry.names].join(" · "),
+      names: [...entry.names]
+    });
+  });
+  koreanHolidayCache.set(year, result);
+  return result;
+}
+
+function koreanHolidayInfo(iso) {
+  const year = Number(String(iso || "").slice(0, 4));
+  if (!Number.isFinite(year)) return null;
+  return buildKoreanHolidayMap(year).get(iso) || null;
+}
+
 function renderDashboardCalendar() {
   const calendar = $("#dashboardCalendar");
   if (!calendar) return;
@@ -8873,16 +9029,21 @@ function renderDashboardCalendar() {
   for (const date = new Date(gridStart); date <= gridEnd; date.setDate(date.getDate() + 1)) {
     const iso = formatLocalDate(date);
     const count = countsByDate[iso] || 0;
+    const holiday = koreanHolidayInfo(iso);
+    const isSunday = date.getDay() === 0;
+    const holidayTitle = holiday?.name || (isSunday ? "일요일" : "");
     const classes = [
       "calendar-day",
       inDateRange(iso, safeStart, safeEnd) ? "in-period" : "",
       count ? "has-data" : "",
+      isSunday ? "is-sunday" : "",
+      holiday ? "is-holiday" : "",
       selectedStart && selectedEnd && inDateRange(iso, selectedStart, selectedEnd) ? "range-selected" : "",
       selectedStart && (iso === selectedStart || iso === selectedEnd) ? "range-edge" : "",
       iso === selectedDate ? "selected" : ""
     ].filter(Boolean).join(" ");
     parts.push(`
-      <button class="${classes}" type="button" data-date="${iso}">
+      <button class="${classes}" type="button" data-date="${iso}"${holidayTitle ? ` title="${escapeHtml(holidayTitle)}" aria-label="${escapeHtml(`${iso} ${holidayTitle}`)}"` : ""}>
         <span>${date.getDate()}</span>
         ${count ? `<small>${formatNumber(count)}건</small>` : "<small>&nbsp;</small>"}
       </button>
@@ -15587,7 +15748,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.11";
+const APP_VERSION = "v11.12";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
