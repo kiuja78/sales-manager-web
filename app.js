@@ -830,7 +830,16 @@ async function loadPersistedState() {
     try {
       primaryParsed = JSON.parse(primaryRaw);
       if (primaryParsed && typeof primaryParsed === "object") {
-        state = normalizeState(primaryParsed);
+        // 현재 스키마로 이미 저장된 데이터는 시작 시 전체 정규화를 다시 수행하지 않습니다.
+        // 대량 접수/급여 데이터에서 normalizeState()가 동기적으로 오래 걸려
+        // 시작 화면에서 멈춘 것처럼 보이던 문제를 방지합니다.
+        const savedSchema = Number(primaryParsed?.appMeta?.stateSchemaVersion || primaryParsed?.schemaVersion || 0);
+        const hasCoreArrays = Array.isArray(primaryParsed.managers) && Array.isArray(primaryParsed.records);
+        if (savedSchema === STATE_SCHEMA_VERSION && hasCoreArrays) {
+          state = primaryParsed;
+        } else {
+          state = normalizeState(primaryParsed);
+        }
         primaryValid = true; // 의도적으로 비어 있는 초기화 데이터도 유효한 데이터로 취급합니다.
       }
     } catch (error) {
@@ -841,6 +850,10 @@ async function loadPersistedState() {
   if (!primaryValid) {
     state = loadState();
   }
+  // 현재 스키마의 저장 데이터는 그대로 사용하되, 화면에서 요구하는 최소 메타만 보정합니다.
+  state.appMeta = state.appMeta && typeof state.appMeta === "object" ? state.appMeta : {};
+  state.menuVisibility = normalizeMenuVisibility(state.menuVisibility);
+  state.teamNames = Array.isArray(state.teamNames) && state.teamNames.length ? state.teamNames : ["A팀"];
   invalidateManagerCaches();
   touchStateRevision();
 
@@ -15689,7 +15702,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.06";
+const APP_VERSION = "v11.07";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
