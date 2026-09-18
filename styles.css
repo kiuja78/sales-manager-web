@@ -23943,136 +23943,76 @@ body[data-view="records"] .record-form-row.row-basic {
 .payroll-summary-meta{display:block;margin-top:7px;color:var(--muted,#6b7280);font-size:11px}
 @media (max-width:560px){.payroll-fee-breakdown{grid-template-columns:1fr}.payroll-fee-breakdown>div{display:flex;align-items:center;justify-content:space-between;gap:8px}.payroll-fee-breakdown small{margin:0}.payroll-fee-breakdown strong{font-size:12px}.payroll-fee-grand-total strong{font-size:16px}}
 
-/* V10.99 사용자설정 레이아웃 안정화: Google Drive 자동저장 설정은 화면에 노출하지 않음 */
-body[data-view="settings"] .settings-grid-main {
-  display: grid !important;
-  grid-template-columns: minmax(340px, 0.9fr) minmax(440px, 1.15fr) !important;
-  grid-auto-flow: row !important;
-  align-items: start !important;
-  gap: 16px !important;
-}
-body[data-view="settings"] .settings-grid-main > .version-update-card { grid-column: 1 !important; grid-row: 1 !important; }
-body[data-view="settings"] .settings-grid-main > .user-settings-card { grid-column: 1 !important; grid-row: 2 !important; }
-body[data-view="settings"] .settings-grid-main > .analytics-settings-card { grid-column: 2 !important; grid-row: 1 / span 2 !important; }
-body[data-view="settings"] .settings-grid-main > .menu-settings-card { grid-column: 2 !important; grid-row: 3 !important; }
-body[data-view="settings"] .settings-grid-main > .monthly-goal-card { grid-column: 1 !important; grid-row: 3 !important; }
-body[data-view="settings"] .settings-grid-main > .manager-settings-card { grid-column: 2 !important; grid-row: 4 !important; }
-body[data-view="settings"] .settings-grid-main > .custom-dashboard-card-settings-card { grid-column: 1 !important; grid-row: 4 !important; }
-@media (max-width: 1100px) {
-  body[data-view="settings"] .settings-grid-main { grid-template-columns: 1fr !important; }
-  body[data-view="settings"] .settings-grid-main > .settings-card { grid-column: 1 !important; grid-row: auto !important; }
-}
 
-/* V11.02 급여 합산/미매칭 개선 */
-.payroll-summary-card .payroll-fee-summary-only{margin-top:2px;margin-bottom:0}
-.payroll-grand-total-row{background:#eaf4ef !important;border-top:2px solid #2d6b54}
-.payroll-grand-total-row td{font-weight:900}
-.payroll-unmatched-panel{border-color:#e2c98d}
-.payroll-unmatched-panel .panel-head{background:#fff9e9}
-.payroll-unmatched-guide{padding:11px 14px;color:#6b5a2d;background:#fffcf2;border-bottom:1px solid #eee2bf;font-size:12px;line-height:1.5}
-.payroll-unmatched-row{background:#fffaf0}
-.payroll-unmatched-table th{background:#fff4d7}
-@media (max-width:700px){.payroll-unmatched-guide{font-size:11px}}
-
-/* V11.02 baseline - Google Drive 일시중단 + 급여 최종 리스트 컴팩트 UI */
+/* V11.03 급여 최종 리스트: 컴팩트 + 제목 고정
+   기능/데이터 로직은 변경하지 않고 표시 영역만 보정합니다. */
 #payrollView .payroll-table-wrap {
-  overflow:auto !important;
-  max-height:68vh !important;
+  max-height: 62vh !important;
+  overflow: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 #payrollView .payroll-table {
-  table-layout:fixed !important;
-  width:100% !important;
-  min-width:1100px !important;
-  border-collapse:collapse !important;
-}
-#payrollView .payroll-table th,
-#payrollView .payroll-table td {
-  padding:6px 7px !important;
-  height:auto !important;
-  min-height:0 !important;
-  line-height:1.25 !important;
-  vertical-align:middle !important;
-}
-#payrollView .payroll-table tbody tr {
-  height:34px !important;
-}
-#payrollView .payroll-table tbody td:nth-child(1),
-#payrollView .payroll-table tbody td:nth-child(2),
-#payrollView .payroll-table tbody td:nth-child(3),
-#payrollView .payroll-table tbody td:nth-child(5),
-#payrollView .payroll-table tbody td:nth-child(6),
-#payrollView .payroll-table tbody td:nth-child(7),
-#payrollView .payroll-table tbody td:nth-child(8),
-#payrollView .payroll-table tbody td:nth-child(9),
-#payrollView .payroll-table tbody td:nth-child(10),
-#payrollView .payroll-table tbody td:nth-child(12) {
-  white-space:nowrap !important;
-  overflow:hidden !important;
-  text-overflow:ellipsis !important;
-}
-#payrollView .payroll-table tbody td:nth-child(3),
-#payrollView .payroll-table tbody td:nth-child(4) {
-  white-space:normal !important;
-  overflow:hidden !important;
-  text-overflow:ellipsis !important;
-}
-#payrollView .payroll-table tbody td:nth-child(3) {
-  display:table-cell !important;
-  max-width:150px !important;
-}
-#payrollView .payroll-table tbody td:nth-child(4) {
-  max-width:300px !important;
-  line-height:1.25 !important;
-}
-#payrollView .payroll-table tbody td:nth-child(4) {
-  display:table-cell !important;
-}
-#payrollView .payroll-table .payroll-date-stack {
-  gap:1px !important;
-  line-height:1.1 !important;
-  white-space:nowrap !important;
-}
-#payrollView .payroll-table .payroll-date-stack span:last-child {
-  font-size:10px !important;
-}
-#payrollView .payroll-table .payroll-subtotal-row td,
-#payrollView .payroll-table .payroll-grand-total-row td {
-  padding:7px 6px !important;
-  white-space:nowrap !important;
-}
-#payrollView .payroll-unmatched-panel .payroll-table tbody tr {
-  height:34px !important;
-}
-@media (max-width:1100px) {
-  #payrollView .payroll-table th,
-  #payrollView .payroll-table td { padding:5px 5px !important; font-size:11px !important; }
-  #payrollView .payroll-table tbody td:nth-child(3) { max-width:120px !important; }
-  #payrollView .payroll-table tbody td:nth-child(4) { max-width:230px !important; }
-}
-
-/* PAYROLL SAFE UI PATCH: fixed header only, no JavaScript/startup changes */
-#payrollView .payroll-table-wrap {
-  position: relative !important;
-  overflow: auto !important;
-  max-height: 68vh !important;
-  -webkit-overflow-scrolling: touch !important;
+  width: 100%;
+  min-width: 1180px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 #payrollView .payroll-table thead th {
-  position: sticky !important;
-  top: 0 !important;
-  z-index: 30 !important;
-  background: #eef6f2 !important;
-  box-shadow: 0 2px 4px rgba(25,61,49,.10) !important;
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  background: #f1f7f3;
+  box-shadow: 0 1px 0 #d8e5de;
+  padding: 8px 6px;
+  line-height: 1.2;
+  white-space: nowrap;
 }
 #payrollView .payroll-table tbody td {
-  height: 36px !important;
-  padding-top: 5px !important;
-  padding-bottom: 5px !important;
+  padding: 6px 7px;
+  height: 36px;
+  line-height: 1.25;
+  vertical-align: middle;
 }
-#payrollView .payroll-table tbody tr {
-  height: 36px !important;
+#payrollView .payroll-table tbody tr:not(.payroll-subtotal-row):nth-child(even) td {
+  background: #fbfdfc;
 }
-#payrollView .payroll-table .payroll-subtotal-row td,
-#payrollView .payroll-table .payroll-grand-total-row td {
-  position: relative !important;
+#payrollView .payroll-table tbody tr:hover td {
+  background: #f4faf7;
+}
+#payrollView .payroll-table td:nth-child(1) { width: 9%; }
+#payrollView .payroll-table td:nth-child(2) { width: 12%; }
+#payrollView .payroll-table td:nth-child(3) { width: 8%; max-width: 100px; }
+#payrollView .payroll-table td:nth-child(4) { width: 23%; }
+#payrollView .payroll-table td:nth-child(5),
+#payrollView .payroll-table td:nth-child(6),
+#payrollView .payroll-table td:nth-child(7) { width: 8%; }
+#payrollView .payroll-table td:nth-child(8) { width: 7%; }
+#payrollView .payroll-table td:nth-child(9) { width: 5%; }
+#payrollView .payroll-table td:nth-child(10) { width: 10%; }
+#payrollView .payroll-table td:nth-child(11) { width: 10%; }
+#payrollView .payroll-table td:nth-child(3),
+#payrollView .payroll-table td:nth-child(4) {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#payrollView .payroll-date-stack {
+  display: grid;
+  gap: 1px;
+  line-height: 1.15;
+  font-size: 11px;
+  white-space: nowrap;
+}
+#payrollView .payroll-subtotal-row td {
+  padding: 7px 6px;
+  background: #edf6f1 !important;
+  border-top: 1px solid #cfe2d8;
+  font-weight: 700;
+}
+@media (max-width: 1100px) {
+  #payrollView .payroll-table th,
+  #payrollView .payroll-table td { padding: 5px 4px; }
+  #payrollView .payroll-table tbody td { height: 34px; font-size: 11px; }
 }

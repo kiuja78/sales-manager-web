@@ -3,14 +3,7 @@ const LOCAL_BACKUP_KEY = "myeongjang-sales-manager-backup-v1";
 const LOCAL_BACKUP_INDEX_KEY = "myeongjang-sales-manager-backup-index-v1";
 const LOCAL_BACKUP_LIMIT = 12;
 const STATE_API_URL = "/api/state";
-const DRIVE_STATE_DEFAULT_URL = String(window.MJ_DRIVE_CONFIG?.url || "").trim();
-const DRIVE_STATE_FOLDER_ID = String(window.MJ_DRIVE_CONFIG?.folderId || "").trim();
-const DRIVE_STATE_DEFAULT_TOKEN = "";
-const WEB_DRIVE_DISABLED = true;
-const DRIVE_STATE_TOKEN_STORAGE_KEY = "myeongjang-sales-manager-drive-token-v1";
-const DRIVE_STATE_HISTORY_MINUTES = 0;
-const DRIVE_CLOSE_BACKUP_ENABLED = false;
-const DRIVE_BACKUP_SUSPENDED = true;
+const DEFAULT_MOBILE_SYNC_URL = "https://script.google.com/macros/s/AKfycbyL8EOEKRYW6kOnZPQklRc5JNg_NbmZ6Qe93QgCxDXXXwwQtxipCrcJzHH-pD_JPslq/exec";
 
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
@@ -479,7 +472,7 @@ const sampleState = {
     branchName: "명장지국",
     masterName: "김건일",
     masterRole: "마스터",
-    driveStateUrl: DRIVE_STATE_DEFAULT_URL
+    mobileSyncUrl: DEFAULT_MOBILE_SYNC_URL
   },
   menuVisibility: normalizeMenuVisibility(),
   teamNames: ["원팀"],
@@ -598,11 +591,6 @@ let serverPersistTimer = 0;
 let serverPersistController = null;
 let serverPersistData = "";
 let persistFailureToastShown = false;
-let driveDataDirty = false;
-let driveLastSuccessfulSaveAt = 0;
-let driveLastHistoryBackupAt = 0;
-let driveCloseBackupInProgress = false;
-let driveCloseBackupAttempted = false;
 
 function invalidateManagerCaches() {
   managerIndexCache = null;
@@ -741,78 +729,8 @@ function shouldPreferLocalState(localState, serverState) {
   return false;
 }
 
-function isGitHubPagesHost() {
-  return /(^|\.)github\.io$/i.test(String(location.hostname || ""));
-}
-
-function migrateDriveTokenFromState() {
-  try {
-    const legacy = String(state?.appMeta?.driveStateToken || "").trim();
-    const current = String(localStorage.getItem(DRIVE_STATE_TOKEN_STORAGE_KEY) || "").trim();
-    if (!current && legacy) localStorage.setItem(DRIVE_STATE_TOKEN_STORAGE_KEY, legacy);
-    if (state?.appMeta && Object.prototype.hasOwnProperty.call(state.appMeta, "driveStateToken")) {
-      delete state.appMeta.driveStateToken;
-    }
-  } catch {}
-}
-
-function driveStateConfig() {
-  // [HARD OFF] 웹용 Google Drive 저장/불러오기는 현재 완전히 중단합니다.
-  // 백업 구조를 다시 설계할 때까지 어떠한 Drive 네트워크 요청도 발생하지 않습니다.
-  return { url: "", token: "", enabled: false };
-}
-
-async function loadStateFromDrive() {
-  // [HARD OFF] 웹용 Google Drive 불러오기 금지
-  if (WEB_DRIVE_DISABLED) return null;
-  const config = driveStateConfig();
-  if (!config.enabled) return null;
-  const query = new URLSearchParams({ action: "loadState" });
-  if (config.token) query.set("token", config.token);
-  const response = await fetch(`${config.url}${config.url.includes("?") ? "&" : "?"}${query.toString()}`, { cache: "no-store" });
-  if (!response.ok) throw new Error(`Google Drive 불러오기 실패 (${response.status})`);
-  const payload = await response.json();
-  const loaded = payload?.state && typeof payload.state === "object" ? payload.state : payload;
-  if (!loaded || typeof loaded !== "object") return null;
-  return normalizeState(loaded);
-}
-
-async function saveStateToDrive(serializedState, options = {}) {
-  // [HARD OFF] 웹용 Google Drive 저장 금지
-  if (WEB_DRIVE_DISABLED) return { ok: true, skipped: true, reason: "web-drive-disabled" };
-  const config = driveStateConfig();
-  if (!config.enabled) return { ok: false, skipped: true, reason: "not-configured" };
-  const response = await fetch(config.url, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=utf-8" },
-    keepalive: options.keepalive === true,
-    body: JSON.stringify({
-      action: "saveState",
-      token: config.token,
-      version: APP_VERSION,
-      state: JSON.parse(serializedState),
-      createHistory: options.createHistory !== false,
-      forceHistory: options.forceHistory === true
-    })
-  });
-  if (!response.ok) throw new Error(`Google Drive 저장 실패 (${response.status})`);
-  return await response.json().catch(() => ({ ok: true }));
-}
-
 async function loadPersistedState() {
   const localState = loadState();
-  migrateDriveTokenFromState();
-  const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
-
-  // 웹용은 현재 Google Drive를 사용하지 않습니다. 로컬 저장 데이터를 기준으로만 시작합니다.
-  if (isStaticWeb) {
-    state = localState;
-    invalidateManagerCaches();
-    touchStateRevision();
-    return;
-  }
-
-  // PC용은 로컬 서버의 파일 저장소를 주 저장소로 사용합니다.
   try {
     const response = await fetch(STATE_API_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("state api unavailable");
@@ -824,11 +742,16 @@ async function loadPersistedState() {
       const normalizedServer = normalizeState(loaded);
       const serverStamp = String(normalizedServer?.appMeta?.lastStateUpdatedAt || "");
       const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
-      if (shouldPreferLocalState(localState, normalizedServer) || (localStamp && serverStamp && localStamp > serverStamp)) {
+      if (shouldPreferLocalState(localState, normalizedServer)) {
         state = localState;
         invalidateManagerCaches();
         touchStateRevision();
-        safeLocalBackupSnapshot(state, "server-protection");
+        safeLocalBackupSnapshot(state, "server-empty-protection");
+        persistState({ immediateServer: true, allowEmptyServer: false });
+      } else if (localStamp && serverStamp && localStamp > serverStamp) {
+        state = localState;
+        invalidateManagerCaches();
+        touchStateRevision();
         persistState({ immediateServer: true, allowEmptyServer: false });
       } else {
         state = normalizedServer;
@@ -850,6 +773,7 @@ async function loadPersistedState() {
 }
 
 function persistState(options = {}) {
+  const ensureManagers = options.ensureManagers === true;
   const immediateServer = options.immediateServer === true;
   const allowEmptyServer = options.allowEmptyServer === true;
 
@@ -859,54 +783,55 @@ function persistState(options = {}) {
   let existingState = null;
   try { existingState = existingRaw ? normalizeState(JSON.parse(existingRaw)) : null; } catch { existingState = null; }
 
+  // Never overwrite a non-empty browser dataset with an empty state by accident.
   if (!allowEmptyServer && currentCount === 0 && stateDataCount(existingState) > 0) {
     state = existingState;
     showToast("빈 데이터 저장을 차단했습니다. 기존 데이터를 유지합니다.");
   }
 
+  // Always capture a browser-local safety copy BEFORE replacing the main storage value.
   safeLocalBackupSnapshot(state, "before-save");
   state.appMeta = state.appMeta || {};
   state.appMeta.lastStateUpdatedAt = new Date().toISOString();
   state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
-  if (isGitHubPagesHost() && driveStateConfig().enabled) state.appMeta.driveLastSaveAt = new Date().toISOString();
 
   const data = JSON.stringify(state);
   localStorage.setItem(STORAGE_KEY, data);
   touchStateRevision();
-  driveDataDirty = true;
 
-  const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
+  serverPersistData = data;
   window.clearTimeout(serverPersistTimer);
-  window.clearTimeout(window.__mjDriveSaveTimer);
 
-  const save = async () => {
-    if (isStaticWeb) {
-      // Google Drive 자동저장 일시 중단: 브라우저 로컬 저장 + 안전백업만 수행합니다.
-      driveDataDirty = false;
-      persistFailureToastShown = false;
-      return { ok: true, target: "local-only", archived: false };
+  const sendToServer = () => {
+    if (!serverPersistData) return Promise.resolve({ ok: true, skipped: true });
+    if (!allowEmptyServer && stateDataCount(state) === 0 && existingState && stateDataCount(existingState) > 0) {
+      return Promise.resolve({ ok: false, skipped: true, protected: true });
     }
-
-    try {
-      const response = await fetch(STATE_API_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json;charset=utf-8" },
-        body: data
-      });
+    serverPersistController?.abort();
+    serverPersistController = typeof AbortController === "function" ? new AbortController() : null;
+    const body = serverPersistData;
+    serverPersistData = "";
+    return fetch(STATE_API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json;charset=utf-8" },
+      body,
+      signal: serverPersistController?.signal
+    }).then((response) => {
       if (!response.ok) throw new Error(`state save failed (${response.status})`);
       persistFailureToastShown = false;
-      return { ok: true, target: "pc" };
-    } catch (error) {
+      return response;
+    }).catch((error) => {
+      if (error?.name === "AbortError") return { ok: false, aborted: true };
       if (!persistFailureToastShown) {
         persistFailureToastShown = true;
-        showToast("PC 저장 실패: 브라우저 안전백업은 유지됩니다.");
+        showToast("서버 저장 실패: 브라우저 자동백업에 안전하게 보관했습니다.");
       }
-      return { ok: false, target: "pc", error };
-    }
+      throw error;
+    });
   };
 
-  if (immediateServer) return save();
-  window.__mjDriveSaveTimer = window.setTimeout(save, 450);
+  if (immediateServer) return sendToServer();
+  serverPersistTimer = window.setTimeout(sendToServer, 280);
   return Promise.resolve({ ok: true, queued: true });
 }
 
@@ -946,19 +871,10 @@ function normalizeState(loaded) {
     contactNotes: Array.isArray(loaded.contactNotes) ? loaded.contactNotes.map(normalizeContactNote) : [],
     contactRequests: Array.isArray(loaded.contactRequests) ? loaded.contactRequests.map(normalizeContactNote) : [],
     payrollRecords: Array.isArray(loaded.payrollRecords) ? loaded.payrollRecords.map(normalizePayrollRecord) : [],
-    payrollUnmatchedRecords: Array.isArray(loaded.payrollUnmatchedRecords) ? loaded.payrollUnmatchedRecords.map(normalizePayrollRecord) : [],
     payrollManager: String(loaded.payrollManager || "").trim(),
     payrollMonth: String(loaded.payrollMonth || "").trim(),
     payrollArchives: Array.isArray(loaded.payrollArchives) ? loaded.payrollArchives.map(normalizePayrollArchive) : []
   };
-  // 이전 버전에서는 미매칭 급여 행도 payrollRecords에 함께 보관했습니다.
-  // V11.02부터는 미매칭 행을 별도 목록으로 분리해 최종 급여 합산에서 제외합니다.
-  const legacyPayrollRows = Array.isArray(next.payrollRecords) ? next.payrollRecords : [];
-  const savedUnmatchedRows = Array.isArray(next.payrollUnmatchedRecords) ? next.payrollUnmatchedRecords : [];
-  next.payrollRecords = legacyPayrollRows.filter((row) => row.matched);
-  if (!savedUnmatchedRows.length) {
-    next.payrollUnmatchedRecords = legacyPayrollRows.filter((row) => !row.matched);
-  }
   next.records = next.records.map((record) => {
     const normalizedRecord = { cashAmount: 0, activityType: "", ...record };
     normalizedRecord.activityType = normalizeActivityType(normalizedRecord.activityType);
@@ -985,15 +901,6 @@ function normalizeState(loaded) {
   }
   ensureAllRecordManualOrder(next.records);
   return next;
-}
-
-async function saveDriveBeforeClose() {
-  // Google Drive 자동백업 일시 중단 중에는 종료 시 별도 네트워크 저장을 하지 않습니다.
-  return { ok: true, target: "local-only", skipped: true };
-}
-
-function attachDriveCloseBackupHandlers() {
-  // 백업 구조 재설계 전까지 브라우저 종료 시 Google Drive 요청을 하지 않습니다.
 }
 
 function saveState(message, options = {}) {
@@ -7711,10 +7618,6 @@ function payrollFeeDisplay(value) {
   return toNumber(value) === 0 ? "" : formatWon(value);
 }
 
-function payrollUnmatchedTotal(rows) {
-  return payrollGroupTotals(Array.isArray(rows) ? rows : []);
-}
-
 function payrollDateStack(receivedDate, installDate) {
   return `<div class="payroll-date-stack"><span>${escapeHtml(receivedDate || "-")}</span><span>${escapeHtml(installDate || "-")}</span></div>`;
 }
@@ -7759,15 +7662,12 @@ function renderPayroll() {
   }
 
   const rows = selectedSeller === "ALL" ? allRows : allRows.filter((row) => (row.seller || state.payrollManager || "미지정") === selectedSeller);
-  const unmatchedAll = Array.isArray(state.payrollUnmatchedRecords) ? state.payrollUnmatchedRecords : [];
-  const unmatchedRows = selectedSeller === "ALL" ? unmatchedAll : unmatchedAll.filter((row) => (row.seller || state.payrollManager || "미지정") === selectedSeller);
   if (rowCount) rowCount.textContent = `${rows.length}건`;
   if (exportBtn) exportBtn.disabled = !rows.length;
   if (saveBtn) saveBtn.disabled = !rows.length || !String(state.payrollManager || "").trim() || !String(state.payrollMonth || "").trim();
   if (summary) {
     const mismatch = allRows.filter((row) => row.numberMismatch).length;
-    const unmatchedTotal = payrollUnmatchedTotal(unmatchedRows);
-    summary.textContent = `매칭 ${allRows.length}건 · 고객번호 불일치 ${mismatch}건 · 미매칭 ${unmatchedRows.length}건 (${formatWon(unmatchedTotal.fee)})`;
+    summary.textContent = `총 ${allRows.length}건 · 고객번호 불일치 ${mismatch}건`;
   }
 
   const summaryGrid = $("#payrollSummaryGrid");
@@ -7777,38 +7677,21 @@ function renderPayroll() {
       const t = payrollGroupTotals(groupRows);
       return `<div class="payroll-summary-card payroll-manager-summary-card">
         <span class="payroll-summary-manager">${escapeHtml(seller)}</span>
-        <div class="payroll-fee-grand-total payroll-fee-summary-only"><span>총 수수료</span><strong>${formatWon(t.fee)}</strong></div>
+        <div class="payroll-fee-breakdown">
+          <div><small>기본수수료</small><strong>${payrollFeeDisplay(t.baseFee) || "0원"}</strong></div>
+          <div><small>판매활성화</small><strong>${payrollFeeDisplay(t.salesActivation) || "0원"}</strong></div>
+          <div><small>추가수수료</small><strong>${payrollFeeDisplay(t.additionalFee) || "0원"}</strong></div>
+        </div>
+        <div class="payroll-fee-grand-total"><span>총 수수료</span><strong>${formatWon(t.fee)}</strong></div>
         <small class="payroll-summary-meta">건수 ${formatNumber(t.quantity)} · ${groupRows.length}개 리스트</small>
       </div>`;
     });
-    summaryGrid.innerHTML = cards.join("") || `<div class="payroll-summary-card"><span>급여 데이터</span><strong>0원</strong><small>매칭된 급여 데이터를 불러오세요.</small></div>`;
-  }
-
-  const unmatchedBody = $("#payrollUnmatchedBody");
-  const unmatchedCount = $("#payrollUnmatchedCount");
-  if (unmatchedCount) unmatchedCount.textContent = `${unmatchedRows.length}건`;
-  if (unmatchedBody) {
-    if (!unmatchedRows.length) {
-      unmatchedBody.innerHTML = `<tr><td colspan="9" class="empty-state">급여파일에는 있지만 접수리스트에서 매칭되지 않은 항목이 없습니다.</td></tr>`;
-    } else {
-      unmatchedBody.innerHTML = unmatchedRows.map((row) => `<tr class="payroll-unmatched-row">
-        <td>${escapeHtml(row.seller || state.payrollManager || "미지정")}</td>
-        <td>${escapeHtml(row.customerNo)}</td>
-        <td>${escapeHtml(row.customerName)}</td>
-        <td title="${escapeHtml(row.product)}">${escapeHtml(row.product)}</td>
-        <td class="money">${payrollFeeDisplay(row.baseFee)}</td>
-        <td class="money">${payrollFeeDisplay(row.salesActivation)}</td>
-        <td class="money">${payrollFeeDisplay(row.additionalFee)}</td>
-        <td class="money">${payrollFeeDisplay(payrollFeeTotal(row))}</td>
-        <td>${escapeHtml(row.category)}</td>
-        <td class="qty">${formatNumber(row.quantity)}</td>
-      </tr>`).join("");
-    }
+    summaryGrid.innerHTML = cards.join("") || `<div class="payroll-summary-card"><span>급여 데이터</span><strong>0원</strong><small>파일을 불러오세요.</small></div>`;
   }
 
   if (!body) return;
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="12" class="empty-state">매칭된 급여 데이터가 없습니다.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="11" class="empty-state">급여 엑셀 파일을 불러오면 변환 결과가 표시됩니다.</td></tr>`;
     return;
   }
 
@@ -7825,7 +7708,6 @@ function renderPayroll() {
         <td class="money">${payrollFeeDisplay(row.baseFee)}</td>
         <td class="money">${payrollFeeDisplay(row.salesActivation)}</td>
         <td class="money">${payrollFeeDisplay(row.additionalFee)}</td>
-        <td class="money">${payrollFeeDisplay(payrollFeeTotal(row))}</td>
         <td>${escapeHtml(row.category)}</td>
         <td class="qty">${formatNumber(row.quantity)}</td>
         <td>${payrollDateStack(row.receivedDate, row.installCompleteDate)}</td>
@@ -7838,21 +7720,11 @@ function renderPayroll() {
       <td class="money"><strong>${payrollFeeDisplay(t.baseFee)}</strong></td>
       <td class="money"><strong>${payrollFeeDisplay(t.salesActivation)}</strong></td>
       <td class="money"><strong>${payrollFeeDisplay(t.additionalFee)}</strong></td>
-      <td class="money"><strong>${payrollFeeDisplay(t.fee)}</strong></td>
       <td><strong>합계</strong></td>
       <td class="qty"><strong>${formatNumber(t.quantity)}</strong></td>
       <td></td><td></td>
     </tr>`);
   });
-  const grand = payrollGroupTotals(rows);
-  html.push(`<tr class="payroll-grand-total-row">
-    <td colspan="4"><strong>전체 합계</strong></td>
-    <td class="money"><strong>${payrollFeeDisplay(grand.baseFee)}</strong></td>
-    <td class="money"><strong>${payrollFeeDisplay(grand.salesActivation)}</strong></td>
-    <td class="money"><strong>${payrollFeeDisplay(grand.additionalFee)}</strong></td>
-    <td class="money"><strong>${payrollFeeDisplay(grand.fee)}</strong></td>
-    <td><strong>전체</strong></td><td class="qty"><strong>${formatNumber(grand.quantity)}</strong></td><td></td><td></td>
-  </tr>`);
   body.innerHTML = html.join("");
 }
 
@@ -7930,10 +7802,7 @@ async function importPayrollFile(file) {
   try {
     const rows = await parsePayrollFile(file);
     const targetMonth = state.payrollMonth || currentDashboardMonth();
-    const matchedRows = rows.filter((row) => row.matched);
-    const unmatchedRows = rows.filter((row) => !row.matched);
-    state.payrollUnmatchedRecords = unmatchedRows;
-    state.payrollRecords = matchedRows.filter((row) => {
+    state.payrollRecords = rows.filter((row) => {
       if (teamOperationMode(targetMonth) === "1") return true;
       const seller = String(row?.seller || "").trim();
       const manager = managerByName(seller);
@@ -7942,7 +7811,7 @@ async function importPayrollFile(file) {
     persistState({ immediateServer: true });
     renderPayroll();
     renderPayrollArchives();
-    showToast(`급여 ${rows.length}건 중 ${state.payrollRecords.length}건 매칭 · ${unmatchedRows.length}건 미매칭`);
+    showToast(`급여 ${rows.length}건을 변환했습니다.`);
   } catch (error) {
     console.error(error);
     showToast(`급여 엑셀을 읽지 못했습니다: ${error.message || error}`);
@@ -7950,17 +7819,17 @@ async function importPayrollFile(file) {
 }
 
 function createPayrollXlsxBlob(rows) {
-  const header = ["판매자", "고객번호", "고객명", "상품명", "기본수수료", "판매활성화", "추가수수료", "총수수료", "구분", "수량", "접수일\n설치완료일", "재렌탈이전번호"];
+  const header = ["판매자", "고객번호", "고객명", "상품명", "기본수수료", "판매활성화", "추가수수료", "구분", "수량", "접수일\n설치완료일", "재렌탈이전번호"];
   const data = [header];
   payrollSellerGroups(rows, state.payrollManager || "").forEach(([seller, groupRows]) => {
     groupRows.sort((a,b) => String(a.customerNo).localeCompare(String(b.customerNo), "ko") || String(a.product).localeCompare(String(b.product), "ko"));
     groupRows.forEach((row) => data.push([
       row.seller, row.customerNo, row.customerName, row.product,
-      toNumber(row.baseFee) || "", toNumber(row.salesActivation) || "", toNumber(row.additionalFee) || "", payrollFeeTotal(row) || "",
+      toNumber(row.baseFee) || "", toNumber(row.salesActivation) || "", toNumber(row.additionalFee) || "",
       row.category, row.quantity, `${row.receivedDate || ""}\n${row.installCompleteDate || ""}`, row.previousCustomerNo
     ]));
     const t = payrollGroupTotals(groupRows);
-    data.push([`${seller} 합계`, "", "", "", t.baseFee || "", t.salesActivation || "", t.additionalFee || "", t.fee || "", "합계", t.quantity, "", ""]);
+    data.push([`${seller} 합계`, "", "", "", t.baseFee || "", t.salesActivation || "", t.additionalFee || "", "합계", t.quantity, "", ""]);
   });
 
   const files = {
@@ -7975,7 +7844,7 @@ function createPayrollXlsxBlob(rows) {
 }
 
 function payrollSheetXml(rows) {
-  const widths = [16, 20, 14, 42, 14, 14, 14, 14, 12, 9, 20, 22];
+  const widths = [16, 20, 14, 42, 14, 14, 14, 12, 9, 20, 22];
   const sheetRows = rows.map((row, rowIndex) => {
     const rowNumber = rowIndex + 1;
     const isHeader = rowIndex === 0;
@@ -8006,7 +7875,6 @@ function exportPayrollExcel() {
 function clearPayrollData() {
   if (!window.confirm("현재 급여계산 데이터를 초기화할까요?")) return;
   state.payrollRecords = [];
-  state.payrollUnmatchedRecords = [];
   persistState({ immediateServer: true });
   renderPayroll();
   showToast("급여계산 데이터를 초기화했습니다.");
@@ -11259,12 +11127,11 @@ function renderSettings() {
   if ($("#menuVisibilityContactNote")) $("#menuVisibilityContactNote").checked = menuVisibility.contactnote;
   if ($("#menuVisibilityContactRequest")) $("#menuVisibilityContactRequest").checked = menuVisibility.contactrequest;
   if ($("#menuVisibilityRenewalGuide")) $("#menuVisibilityRenewalGuide").checked = menuVisibility.renewalguide;
-  const driveUrlInput = $("#driveStateUrlInput");
-  const driveTokenInput = $("#driveStateTokenInput");
-  if (driveUrlInput) { driveUrlInput.value = ""; driveUrlInput.disabled = true; }
-  if (driveTokenInput) { driveTokenInput.value = ""; driveTokenInput.disabled = true; }
-  const driveStatus = $("#driveStateStatus");
-  if (driveStatus) driveStatus.textContent = "Google Drive 자동저장 일시 중단 · 브라우저 로컬 저장 사용";
+  const mobileSyncUrlInput = $("#mobileSyncUrlInput");
+  if (mobileSyncUrlInput) mobileSyncUrlInput.value = state.appMeta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL || "";
+  if (state.appMeta.mobileLastSyncAt) {
+    setMobileSyncStatus(`마지막 동기화: ${new Date(state.appMeta.mobileLastSyncAt).toLocaleString("ko-KR")}`, "success");
+  }
 
   renderGoalSettingsForMonth($("#goalMonthInput")?.value || $("#monthFilter").value);
   renderCustomDashboardCardSettings();
@@ -11455,7 +11322,7 @@ function confirmBackupRestoreInApp(recordCount, managerCount) {
         </div>
       </div>
       <div style="font-size:13px;line-height:1.55;color:#b42318;background:#fff4f2;border:1px solid #ffd6d2;border-radius:10px;padding:11px 12px;margin-bottom:18px;">
-        복원하면 현재 브라우저의 저장 데이터가 이 백업 데이터로 교체됩니다.\nGoogle Drive 자동저장은 현재 일시 중단되어 있습니다.
+        복원하면 현재 브라우저에 저장된 데이터가 백업 내용으로 교체됩니다.
       </div>
       <div style="display:flex;gap:10px;justify-content:flex-end;">
         <button type="button" data-action="cancel"
@@ -11532,24 +11399,28 @@ async function importFullBackupFile(file) {
     const restoredRecordCount = Array.isArray(state.records) ? state.records.length : 0;
     showToast(`백업 데이터 적용 완료 · 접수내역 ${restoredRecordCount}건`);
 
-    const isStaticWeb = WEB_DRIVE_DISABLED || isGitHubPagesHost() || location.protocol === "file:";
+    // GitHub Pages(사용자 웹버전)에는 /api/state 서버가 존재하지 않습니다.
+    // 이 경우 localStorage에 복원된 데이터를 정상적으로 유지하고, 서버 검증은 건너뜁니다.
+    const isGitHubPages = /(^|\.)github\.io$/i.test(String(location.hostname || ""));
+    const canUseStateApi = !isGitHubPages && location.protocol !== "file:";
     let verifyRecordCount = restoredRecordCount;
-    if (isStaticWeb) {
-      // 백업 복원은 외부 저장소와 완전히 분리합니다. 브라우저 로컬 저장만 사용합니다.
-      ensureManagerDataIntegrity(state);
-      state.appMeta = state.appMeta || {};
-      state.appMeta.lastStateUpdatedAt = new Date().toISOString();
-      state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      safeLocalBackupSnapshot(state, "full-backup-restore");
-      showToast("전체 백업 복원 완료 · 브라우저에 안전하게 저장했습니다.");
-    } else {
+
+    if (canUseStateApi) {
+      showToast("전체 백업 복원 중 · 서버 저장을 확인하고 있습니다...");
       await persistState({ ensureManagers: true, immediateServer: true });
       const verifyResponse = await fetch(STATE_API_URL, { cache: "no-store" });
-      if (!verifyResponse.ok) throw new Error(`서버 저장 확인 실패 (${verifyResponse.status})`);
+      if (!verifyResponse.ok) {
+        throw new Error(`서버 저장 확인 실패 (${verifyResponse.status})`);
+      }
       const verifyData = await verifyResponse.json();
       verifyRecordCount = Array.isArray(verifyData.records) ? verifyData.records.length : 0;
-      if (verifyRecordCount !== restoredRecordCount) throw new Error(`저장 검증 불일치: expected=${restoredRecordCount}, actual=${verifyRecordCount}`);
+      if (verifyRecordCount !== restoredRecordCount) {
+        throw new Error(`저장 검증 불일치: expected=${restoredRecordCount}, actual=${verifyRecordCount}`);
+      }
+    } else {
+      // persistState()가 기본적으로 localStorage에 먼저 저장하므로 웹 정적 배포에서도 복원이 유지됩니다.
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      showToast("전체 백업 복원 완료 · 현재 브라우저에 안전하게 저장했습니다.");
     }
 
     selectedRecordId = "";
@@ -11559,16 +11430,17 @@ async function importFullBackupFile(file) {
     recordSequenceSort = "desc";
 
     renderNow();
+    setMobileSyncStatus("백업에서 모바일 동기화 설정까지 복원되었습니다.", "success");
     showToast(`전체 백업 복원 완료 · 접수내역 ${verifyRecordCount}건`);
-    const restoreTargetMessage = isStaticWeb
-      ? `접수내역 ${verifyRecordCount}건이 브라우저 로컬 저장소에 복원되었습니다.`
-      : `접수내역 ${verifyRecordCount}건이 PC 저장소에 저장되었습니다.`;
+    const restoreTargetMessage = canUseStateApi
+      ? `접수내역 ${verifyRecordCount}건이 서버 저장까지 확인되었습니다.`
+      : `접수내역 ${verifyRecordCount}건이 현재 브라우저에 저장되었습니다.`;
     window.alert(`전체 백업 복원이 완료되었습니다.\n\n${restoreTargetMessage}`);
     return true;
   } catch (error) {
     console.error("[BACKUP IMPORT] restore/save failed", error);
-    showToast("백업 복원 중 오류가 발생했습니다.");
-    window.alert("백업 파일은 읽었지만 복원 중 오류가 발생했습니다.\n\n백업 JSON 파일 형식과 브라우저 저장 상태를 확인해주세요.");
+    showToast("백업 복원 또는 현재 데이터 저장 중 오류가 발생했습니다.");
+    window.alert("백업 파일은 읽었지만 복원 또는 현재 데이터 저장 중 오류가 발생했습니다.\n\n백업 파일 형식과 브라우저 저장 상태를 확인해주세요.");
     return false;
   }
 }
@@ -11911,6 +11783,7 @@ function collectUserSettings() {
     branchName: $("#branchNameInput").value.trim(),
     masterName: $("#masterNameInput").value.trim(),
     masterRole: $("#masterRoleInput").value.trim() || "마스터",
+    mobileSyncUrl: previousMeta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL
   };
   const mode = teamOperationMode(currentDashboardMonth());
   const teamInput = $("#masterTeamInput");
@@ -11921,18 +11794,6 @@ function collectUserSettings() {
   } else if (mode === "1") {
     state.appMeta.userTeam = "";
   }
-}
-
-async function restoreDriveLatest() {
-  alert("Google Drive 복구 기능은 현재 일시 중단되어 있습니다.\n\n먼저 전체 백업 JSON 파일을 사용한 로컬 복원을 이용해주세요.");
-}
-
-function saveDriveStateSettings() {
-  showToast("Google Drive 자동저장은 현재 일시 중단되어 있습니다.");
-}
-
-async function testDriveStateConnection() {
-  showToast("Google Drive 연결 확인은 현재 일시 중단되어 있습니다.");
 }
 
 function saveMenuVisibilitySettings() {
@@ -14935,6 +14796,10 @@ function attachEvents() {
   $("#shareKakaoBtn")?.addEventListener("click", shareKakaoImage);
   $("#managerPerformancePrintBtn")?.addEventListener("click", printCurrentManagerPerformance);
   $("#printDashboardBtn").addEventListener("click", printDashboard);
+  $("#mobileSyncQuickBtn")?.addEventListener("click", syncMobileGoogleSheet);
+  $("#mobileSyncBtn")?.addEventListener("click", syncMobileGoogleSheet);
+  $("#saveMobileSyncUrlBtn")?.addEventListener("click", saveMobileSyncUrl);
+  $("#copyMobileSyncUrlBtn")?.addEventListener("click", copyMobileSyncUrl);
   $("#saveCustomCardsBtn")?.addEventListener("click", () => {
     collectCustomDashboardCards();
     persistState();
@@ -14944,9 +14809,6 @@ function attachEvents() {
   });
   $("#resetCustomCardsBtn")?.addEventListener("click", resetCustomDashboardCards);
   $("#saveAnalyticsSettingsBtn")?.addEventListener("click", saveAnalyticsSettings);
-  $("#saveDriveStateSettingsBtn")?.addEventListener("click", saveDriveStateSettings);
-  $("#testDriveStateBtn")?.addEventListener("click", testDriveStateConnection);
-  $("#restoreDriveLatestBtn")?.addEventListener("click", restoreDriveLatest);
   $("#saveMenuVisibilityBtn")?.addEventListener("click", saveMenuVisibilitySettings);
   $$('input[name="analyticsStartMode"], input[name="analyticsMonthStatusMode"]').forEach((node) => node.addEventListener("change", () => {
     syncAnalyticsGuidedControls();
@@ -15809,7 +15671,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.02";
+const APP_VERSION = "v11.03";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -16065,7 +15927,237 @@ window.copyCurrentManagerShareImage = copyCurrentManagerShareImage;
 window.saveCurrentManagerShareImage = saveCurrentManagerShareImage;
 
 
-attachDriveCloseBackupHandlers();
+function mobileSyncConfig() {
+  const meta = state.appMeta || {};
+  const url = String(meta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL || "").trim();
+  return {
+    url,
+    enabled: Boolean(url)
+  };
+}
+
+function setMobileSyncStatus(message, type = "info") {
+  const nodes = [$("#mobileSyncStatus")].filter(Boolean);
+  nodes.forEach((node) => {
+    node.textContent = message || "";
+    node.dataset.type = type;
+  });
+}
+
+
+function normalizePhoneForMobileSync(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (!digits) return raw;
+  if (digits.length === 10 && !digits.startsWith("0")) return `0${digits}`;
+  return digits;
+}
+
+function mobileSyncMonthList() {
+  const monthSet = new Set();
+  if (state.monthSettings && typeof state.monthSettings === "object") {
+    Object.keys(state.monthSettings).forEach((month) => {
+      if (/^\d{4}-\d{2}$/.test(month)) monthSet.add(month);
+    });
+  }
+  (state.records || []).forEach((record) => {
+    const month = recordGoalMonth(record);
+    if (/^\d{4}-\d{2}$/.test(month)) monthSet.add(month);
+  });
+  const current = $("#monthFilter")?.value || monthIso();
+  if (/^\d{4}-\d{2}$/.test(current)) monthSet.add(current);
+  return Array.from(monthSet).sort();
+}
+
+function mobileSyncRecordsForMonth(month) {
+  const targetPeriod = monthPeriod(month);
+  const periodStart = targetPeriod.start || `${month}-01`;
+  const periodEnd = targetPeriod.end || lastDayOfMonth(month);
+  return (state.records || []).filter((record) => {
+    if (!record || record.status === "취소") return false;
+    return inDateRange(record.receivedDate, periodStart, periodEnd);
+  });
+}
+
+function mobileSyncSnapshotForMonth(month) {
+  const setting = monthSetting(month);
+  const targetPeriod = monthPeriod(month);
+  const records = mobileSyncRecordsForMonth(month);
+  const goals = calculatedGoals(month);
+  const totals = applyManualStatsToTotals(actuals(records), "", month);
+  const managers = teamManagers(month).map((manager) => {
+    const managerRecords = records.filter((record) => record.manager === manager.name);
+    const managerTotals = applyManualStatsToTotals(actuals(managerRecords), manager.name, month);
+    const goal = managerGoalFor(manager.name, month);
+    return {
+      month,
+      name: manager.name,
+      team: managerTeamForMonth(manager, month),
+      goal,
+      newCount: managerTotals.newCount,
+      packageCount: managerTotals.packageCount,
+      rentalActual: managerTotals.rentalActual,
+      cashActual: managerTotals.cashActual,
+      businessActual: managerTotals.businessActual,
+      renewalActual: managerTotals.renewalActual,
+      orderConsActual: managerTotals.orderConsActual,
+      supportActual: toNumber(managerTotals.supportActual),
+      refundActual: managerTotals.refundActual,
+      finalActual: managerTotals.managerFinalActual,
+      shortage: Math.max(toNumber(goal) - managerTotals.managerFinalActual, 0)
+    };
+  });
+  const safeRecord = (record) => ({
+    month,
+    id: record.id || "",
+    receivedDate: record.receivedDate || "",
+    installDate: record.installDate || "",
+    status: record.status || "",
+    manager: record.manager || "",
+    category: record.category || "",
+    activityType: recordActivityType(record),
+    count: toNumber(record.count),
+    customerName: record.customerName || "",
+    customerNo: record.customerNo || "",
+    previousCustomer: record.previousCustomer || "",
+    phone: normalizePhoneForMobileSync(record.phone),
+    product: record.product || "",
+    seller: record.seller || "",
+    memo: record.memo || "",
+    updatedAt: record.updatedAt || record.createdAt || ""
+  });
+  return {
+    month,
+    setting: {
+      accountCount: setting.accountCount || 0,
+      periodStart: targetPeriod.start,
+      periodEnd: targetPeriod.end
+    },
+    goals,
+    totals,
+    managers,
+    records: records.map(safeRecord)
+  };
+}
+
+function mobileSyncPayload() {
+  const month = $("#monthFilter")?.value || monthIso();
+  const months = mobileSyncMonthList();
+  const snapshots = months.map(mobileSyncSnapshotForMonth);
+  const currentSnapshot = snapshots.find((item) => item.month === month) || mobileSyncSnapshotForMonth(month);
+  const allRecordCount = snapshots.reduce((sum, item) => sum + (Array.isArray(item.records) ? item.records.length : 0), 0);
+  return {
+    app: "MJ_Sales_Manager",
+    version: APP_VERSION,
+    syncedAt: new Date().toISOString(),
+    month,
+    branch: state.appMeta || {},
+    setting: currentSnapshot.setting,
+    goals: currentSnapshot.goals,
+    totals: currentSnapshot.totals,
+    managers: currentSnapshot.managers,
+    records: currentSnapshot.records,
+    monthSnapshots: snapshots,
+    monthOptions: snapshots.map((item) => ({
+      month: item.month,
+      periodStart: item.setting?.periodStart || "",
+      periodEnd: item.setting?.periodEnd || "",
+      recordCount: Array.isArray(item.records) ? item.records.length : 0
+    })),
+    totalSyncedRecordCount: allRecordCount
+  };
+}
+
+
+function postMobilePayloadByForm(url, payload) {
+  return new Promise((resolve) => {
+    const iframeName = `mobile-sync-frame-${Date.now()}`;
+    const iframe = document.createElement("iframe");
+    iframe.name = iframeName;
+    iframe.style.display = "none";
+    document.body.appendChild(iframe);
+
+    const form = document.createElement("form");
+    form.method = "POST";
+    form.action = url;
+    form.target = iframeName;
+    form.style.display = "none";
+
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = "payload";
+    input.value = JSON.stringify(payload);
+    form.appendChild(input);
+
+    document.body.appendChild(form);
+    form.submit();
+
+    window.setTimeout(() => {
+      form.remove();
+      iframe.remove();
+      resolve();
+    }, 1800);
+  });
+}
+
+async function syncMobileGoogleSheet() {
+  const config = mobileSyncConfig();
+  if (!config.url) {
+    setMobileSyncStatus("모바일 동기화 URL을 먼저 입력해 주세요.", "warn");
+    alert("사용자/목표/매니저 등록 화면에서 모바일 동기화 URL을 먼저 입력해 주세요.");
+    switchView("settings");
+    return;
+  }
+  const payload = mobileSyncPayload();
+  if (!payload.totalSyncedRecordCount) {
+    const ok = confirm(`모든 목표월을 합쳐 전송할 접수내역이 0건입니다. 그래도 모바일 동기화를 진행할까요?`);
+    if (!ok) return;
+  }
+  setMobileSyncStatus(`모바일용 데이터를 Google Sheet로 전송 중입니다... (${payload.totalSyncedRecordCount || payload.records.length}건)`, "info");
+  try {
+    await postMobilePayloadByForm(config.url, payload);
+    const meta = state.appMeta || {};
+    meta.mobileLastSyncAt = new Date().toISOString();
+    state.appMeta = meta;
+    persistState();
+    setMobileSyncStatus(`모바일 동기화 전송 완료 · ${payload.records.length}건 · 구글시트를 새로고침해 확인하세요.`, "success");
+    showToast(`모바일 동기화 전송 완료 · ${payload.records.length}건`);
+  } catch (error) {
+    console.error(error);
+    setMobileSyncStatus("모바일 동기화 실패: URL 또는 인터넷 연결을 확인해 주세요.", "error");
+    alert("모바일 동기화에 실패했습니다. Apps Script URL과 인터넷 연결을 확인해 주세요.");
+  }
+}
+
+function saveMobileSyncUrl() {
+  const input = $("#mobileSyncUrlInput");
+  const value = String(input?.value || "").trim();
+  const meta = state.appMeta || {};
+  meta.mobileSyncUrl = value;
+  state.appMeta = meta;
+  saveState(value ? "모바일 동기화 URL을 저장했습니다." : "모바일 동기화 URL을 비웠습니다.");
+  setMobileSyncStatus(value ? "모바일 동기화 URL이 저장되었습니다." : "모바일 동기화 URL이 비어 있습니다.", value ? "success" : "warn");
+}
+
+function copyMobileSyncUrl() {
+  const value = String($("#mobileSyncUrlInput")?.value || state.appMeta?.mobileSyncUrl || "").trim();
+  if (!value) {
+    alert("복사할 모바일 동기화 URL이 없습니다.");
+    return;
+  }
+  navigator.clipboard?.writeText(value).then(() => {
+    setMobileSyncStatus("모바일 동기화 URL을 복사했습니다.", "success");
+  }).catch(() => {
+    alert(value);
+  });
+}
+
+window.syncMobileGoogleSheet = syncMobileGoogleSheet;
+window.saveMobileSyncUrl = saveMobileSyncUrl;
+window.copyMobileSyncUrl = copyMobileSyncUrl;
+
+
 window.MJ_SALES_VERSION = APP_VERSION;
 window.MJ_SALES_SCHEMA_VERSION = STATE_SCHEMA_VERSION;
 window.checkForProgramUpdate = checkForProgramUpdate;
