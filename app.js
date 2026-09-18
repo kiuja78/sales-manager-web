@@ -7,6 +7,7 @@ const DURABLE_DB_NAME = "mj-sales-manager-durable-v1";
 const DURABLE_STORE_NAME = "snapshots";
 const DURABLE_SNAPSHOT_KEY = "latest";
 let durableBackupWriteTimer = 0;
+let durableBackupWritePromise = Promise.resolve();
 
 function openDurableBackupDb() {
   return new Promise((resolve, reject) => {
@@ -66,10 +67,40 @@ async function readDurableBackupSnapshot() {
   }
 }
 
+
+async function clearDurableBackupSnapshots() {
+  try {
+    window.clearTimeout(durableBackupWriteTimer);
+    durableBackupWriteTimer = 0;
+    // 이미 시작된 백업 쓰기가 있다면 먼저 끝낸 뒤 비웁니다. 완전 초기화 직후
+    // 늦게 끝난 이전 백업이 다시 살아나는 경쟁 조건을 막습니다.
+    try { await durableBackupWritePromise; } catch (_) {}
+    if (!window.indexedDB) return true;
+    const db = await openDurableBackupDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DURABLE_STORE_NAME, "readwrite");
+      tx.objectStore(DURABLE_STORE_NAME).clear();
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error("IndexedDB clear failed"));
+      tx.onabort = () => reject(tx.error || new Error("IndexedDB clear aborted"));
+    });
+    db.close();
+    return true;
+  } catch (error) {
+    console.warn("[DURABLE BACKUP] clear failed", error);
+    return false;
+  }
+}
+
 function queueDurableBackup(reason = "auto") {
   window.clearTimeout(durableBackupWriteTimer);
   durableBackupWriteTimer = window.setTimeout(() => {
-    writeDurableBackupSnapshot(state, reason);
+    durableBackupWriteTimer = 0;
+    let snapshotState = state;
+    try { snapshotState = structuredClone(state); } catch (_) {}
+    durableBackupWritePromise = durableBackupWritePromise
+      .catch(() => false)
+      .then(() => writeDurableBackupSnapshot(snapshotState, reason));
   }, 180);
 }
 
@@ -674,6 +705,16 @@ function stateDataCount(value) {
   return counts.reduce((a, b) => a + b, 0);
 }
 
+function isCorePersistedState(value) {
+  return Boolean(
+    value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Array.isArray(value.records)
+    && Array.isArray(value.managers)
+  );
+}
+
 function safeLocalBackupSnapshot(sourceState = state, reason = "auto") {
   try {
     const snapshot = {
@@ -715,29 +756,21 @@ function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
     const backup = readAutoLocalBackup();
-    if (backup?.data) return normalizeState(backup.data);
+    if (isCorePersistedState(backup?.data)) return normalizeState(backup.data);
     return structuredClone(sampleState);
   }
   try {
     const loaded = JSON.parse(raw);
-    return normalizeState(loaded);
-  } catch {
-    const backup = readAutoLocalBackup();
-    if (backup?.data) return normalizeState(backup.data);
-    return structuredClone(sampleState);
+    if (isCorePersistedState(loaded)) return normalizeState(loaded);
+    console.warn("[STARTUP] stored state is incomplete; recovery source will be used instead");
+  } catch (error) {
+    console.warn("[STARTUP] stored state parse failed", error);
   }
+  const backup = readAutoLocalBackup();
+  if (isCorePersistedState(backup?.data)) return normalizeState(backup.data);
+  return structuredClone(sampleState);
 }
 
-function shouldPreferLocalState(localState, serverState) {
-  const localCount = stateDataCount(localState);
-  const serverCount = stateDataCount(serverState);
-  const localRecords = Array.isArray(localState?.records) ? localState.records.length : 0;
-  const serverRecords = Array.isArray(serverState?.records) ? serverState.records.length : 0;
-  // A non-empty local state must never be replaced by an empty/near-empty server response.
-  if (localCount > 0 && serverCount === 0) return true;
-  if (localRecords > 0 && serverRecords === 0) return true;
-  return false;
-}
 
 async function loadPersistedState() {
   // 시작 화면은 외부/비동기 저장소를 기다리지 않고 즉시 로컬 저장 데이터를 사용합니다.
@@ -749,7 +782,7 @@ async function loadPersistedState() {
   if (primaryRaw) {
     try {
       primaryParsed = JSON.parse(primaryRaw);
-      if (primaryParsed && typeof primaryParsed === "object") {
+      if (isCorePersistedState(primaryParsed)) {
         // 현재 스키마로 이미 저장된 데이터는 시작 시 전체 정규화를 다시 수행하지 않습니다.
         // 대량 접수/급여 데이터에서 normalizeState()가 동기적으로 오래 걸려
         // 시작 화면에서 멈춘 것처럼 보이던 문제를 방지합니다.
@@ -772,7 +805,9 @@ async function loadPersistedState() {
             console.warn("[STARTUP] migrated state persist failed", error);
           }
         }
-        primaryValid = true; // 의도적으로 비어 있는 초기화 데이터도 유효한 데이터로 취급합니다.
+        primaryValid = true; // records/managers가 빈 배열이어도 구조가 정상이라면 유효한 초기화 데이터입니다.
+      } else {
+        console.warn("[STARTUP] local storage state is incomplete; attempting recovery backup");
       }
     } catch (error) {
       console.warn("[STARTUP] local storage parse failed", error);
@@ -780,7 +815,14 @@ async function loadPersistedState() {
   }
 
   if (!primaryValid) {
-    state = loadState();
+    const backup = readAutoLocalBackup();
+    if (isCorePersistedState(backup?.data)) {
+      state = normalizeState(backup.data);
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) {}
+      primaryValid = true;
+    } else {
+      state = structuredClone(sampleState);
+    }
   }
   // 현재 스키마의 저장 데이터는 그대로 사용하되, 화면에서 요구하는 최소 메타만 보정합니다.
   state.appMeta = state.appMeta && typeof state.appMeta === "object" ? state.appMeta : {};
@@ -808,7 +850,7 @@ function restoreFromDurableBackupInBackground() {
       if (currentRaw) {
         try {
           const current = JSON.parse(currentRaw);
-          if (current && typeof current === "object") return;
+          if (isCorePersistedState(current)) return;
         } catch (_) {}
       }
       state = normalizeState(durable.data);
@@ -823,12 +865,15 @@ function restoreFromDurableBackupInBackground() {
 }
 
 function persistState(options = {}) {
-  // options는 기존 호출부 호환을 위해 유지하지만, 현재 기준본에서는 서버 저장을 사용하지 않습니다.
-  ensureManagerDataIntegrity(state);
+  // 완전 초기화처럼 의도적으로 빈 조직 상태를 저장할 때는 무결성 보정을 건너뜁니다.
+  if (options.ensureManagers !== false) ensureManagerDataIntegrity(state);
   const currentCount = stateDataCount(state);
   const existingRaw = localStorage.getItem(STORAGE_KEY);
   let existingState = null;
-  try { existingState = existingRaw ? JSON.parse(existingRaw) : null; } catch { existingState = null; }
+  try {
+    const parsedExisting = existingRaw ? JSON.parse(existingRaw) : null;
+    existingState = isCorePersistedState(parsedExisting) ? parsedExisting : null;
+  } catch { existingState = null; }
 
   // 비어 있는 상태가 기존의 실제 데이터를 실수로 덮어쓰는 것을 방지합니다.
   // 기존 상태의 건수 확인만을 위해 전체 normalizeState()를 매 저장마다 다시 돌리지 않습니다.
@@ -837,14 +882,16 @@ function persistState(options = {}) {
     showToast("빈 데이터 저장을 차단했습니다. 기존 데이터를 유지합니다.");
   }
 
-  safeLocalBackupSnapshot(state, "before-save");
+  safeLocalBackupSnapshot(state, "pre-persist-current");
   state.appMeta = state.appMeta || {};
   state.appMeta.lastStateUpdatedAt = new Date().toISOString();
   state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
+  const previousRevision = Number(state.appMeta.persistRevision || 0);
+  state.appMeta.persistRevision = (Number.isFinite(previousRevision) && previousRevision > 0 ? previousRevision : 0) + 1;
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   touchStateRevision();
-  queueDurableBackup("before-save");
+  queueDurableBackup("persist-current");
   return Promise.resolve({ ok: true, local: true });
 }
 
@@ -3989,17 +4036,19 @@ function analyticsMonthlyMetrics(month, entityName = "") {
   const reportedRecords = analyticsReportedRecords(month, entityName);
   const actualAllRecords = analyticsActualRecords(month, entityName, true);
   const actualPureRecords = analyticsActualRecords(month, entityName, false);
-  const activityRecords = reportedRecords.filter((record) => analyticsActivityFlags(record).support);
   const reported = analyticsCategoryTotals(reportedRecords);
   const actual = analyticsCategoryTotals(actualPureRecords);
   const manual = analyticsManualStat(entityName, month);
-  const reportBusiness = reported.newCount + reported.packageCount + reported.rentalCount + reported.cashCount;
+  const consCount = analyticsKeywordActivityCount(reportedRecords, "cons");
+  const supportCount = analyticsKeywordActivityCount(reportedRecords, "support");
+  const actualSupportCount = analyticsKeywordActivityCount(actualPureRecords, "support");
+  // 대시보드와 동일하게 지원은 영업실적에 1회 반영하고, 컨스는 별도 관리 건수로만 집계합니다.
+  const reportBusiness = reported.newCount + reported.packageCount + reported.rentalCount + reported.cashCount + supportCount;
   const renewal = toNumber(manual.renewal);
   const refund = toNumber(manual.refund);
-  // 종합/최종실적은 재약정을 더하고 환수를 차감합니다.
   const reportFinal = reportBusiness + renewal - refund;
-  // 실제 접수건수는 판매유형 원자료이므로 환수·재약정과 분리합니다.
-  const actualPure = actual.newCount + actual.packageCount + actual.rentalCount + actual.cashCount;
+  // 실제 판매자 기준 접수실적도 같은 기준으로 지원을 1회 반영합니다.
+  const actualPure = actual.newCount + actual.packageCount + actual.rentalCount + actual.cashCount + actualSupportCount;
   const actualEvaluated = actual.newCount + actual.packageCount + actual.rentalCount;
   const goal = analyticsGoalFor(entityName, month);
   return {
@@ -4008,7 +4057,6 @@ function analyticsMonthlyMetrics(month, entityName = "") {
     reportedRecords,
     actualAllRecords,
     actualPureRecords,
-    activityRecords,
     reportNew: reported.newCount,
     reportPackage: reported.packageCount,
     reportRental: reported.rentalCount,
@@ -4024,8 +4072,8 @@ function analyticsMonthlyMetrics(month, entityName = "") {
     actualCash: actual.cashCount,
     actualPure,
     actualEvaluated,
-    consCount: toNumber(manual.orderCons),
-    supportCount: analyticsKeywordActivityCount(activityRecords, "support"),
+    consCount,
+    supportCount,
     difference: reportFinal - actualPure,
     goal,
     rate: goal > 0 ? reportFinal / goal * 100 : 0
@@ -4275,7 +4323,7 @@ function analyticsBuildRecommendations(months, summaries, teamAverages) {
     items.push({ id: "overall-goal", scope: "지국 전체", priority: "긴급", title: `${formatMonthLabel(endMonth)} 최종실적 목표 부족 ${formatNumber(shortage)}건 집중관리`, detail: period.remainingDays > 0 ? `남은 ${period.remainingDays}일 동안 최종실적 기준 하루 평균 ${formatNumber(shortage / period.remainingDays)}건이 필요합니다.` : `공식 목표 대비 ${formatNumber(shortage)}건이 부족합니다.` });
   }
   if (overall.difference > 0) {
-    items.push({ id: "overall-pure-gap", scope: "지국 전체", priority: "높음", title: `최종실적과 실제 접수실적 차이 ${formatNumber(overall.difference)}건 점검`, detail: `재약정 ${formatNumber(overall.renewal)}건을 더하고 환수 ${formatNumber(overall.refund)}건을 차감한 최종실적입니다. 컨스 ${formatNumber(overall.consCount)}건과 지원 ${formatNumber(overall.supportCount)}건은 참고값입니다.` });
+    items.push({ id: "overall-pure-gap", scope: "지국 전체", priority: "높음", title: `최종실적과 실제 접수실적 차이 ${formatNumber(overall.difference)}건 점검`, detail: `재약정 ${formatNumber(overall.renewal)}건을 더하고 환수 ${formatNumber(overall.refund)}건을 차감한 최종실적입니다. 컨스 등록 ${formatNumber(overall.consCount)}건은 지급관리 현황으로 확인하며, 지원은 ${formatNumber(overall.supportCount)}건입니다.` });
   }
   summaries.forEach((summary, index) => {
     if (!summary.average.months) return;
@@ -4329,7 +4377,10 @@ function renderAnalyticsCategoryMix(metrics) {
   const box = $("#analyticsCategoryMix");
   if (!box) return;
   const rows = [["actualNew", "신규", "new"], ["actualPackage", "패키지", "package"], ["actualRental", "재렌탈", "rental"], ["actualCash", "일시불", "cash"]];
-  const total = Math.max(1, metrics.actualPure);
+  // 이 차트는 '판매종류 구성'만 보여주므로 화면에 표시하는 4개 판매종류의 합을 분모로 사용합니다.
+  // 지원/컨스 현황 때문에 비율 합계가 100%가 되지 않던 표시 오류를 방지합니다.
+  const categoryTotal = rows.reduce((sum, [key]) => sum + toNumber(metrics[key]), 0);
+  const total = Math.max(1, categoryTotal);
   box.innerHTML = rows.map(([key, label, className]) => {
     const value = toNumber(metrics[key]);
     const rate = value / total * 100;
@@ -4345,7 +4396,7 @@ function renderAnalyticsDiagnosis(endMetrics, completedMetrics, period, summarie
     diagnostics.push({ tone: "danger", text: `${formatMonthLabel(endMetrics.month)}은 데이터 상태가 미입력입니다. 월평균과 강약점 분석에 포함하지 않습니다.` });
   } else {
     diagnostics.push({ tone: endMetrics.difference > 0 ? "watch" : "good", text: `${formatMonthLabel(endMetrics.month)} 최종실적은 ${formatNumber(endMetrics.reportFinal)}건, 실제 접수실적은 ${formatNumber(endMetrics.actualPure)}건입니다. 재약정 ${formatNumber(endMetrics.renewal)}건을 더하고 환수 ${formatNumber(endMetrics.refund)}건을 차감했습니다.` });
-    diagnostics.push({ tone: endMetrics.actualPure > 0 ? "good" : "danger", text: `실제실적 구성은 신규 ${formatNumber(endMetrics.actualNew)}, 패키지 ${formatNumber(endMetrics.actualPackage)}, 재렌탈 ${formatNumber(endMetrics.actualRental)}, 일시불 ${formatNumber(endMetrics.actualCash)}건입니다.` });
+    diagnostics.push({ tone: endMetrics.actualPure > 0 ? "good" : "danger", text: `판매종류 구성은 신규 ${formatNumber(endMetrics.actualNew)}, 패키지 ${formatNumber(endMetrics.actualPackage)}, 재렌탈 ${formatNumber(endMetrics.actualRental)}, 일시불 ${formatNumber(endMetrics.actualCash)}건이며, 컨스 등록 ${formatNumber(endMetrics.consCount)}건 · 지원 ${formatNumber(endMetrics.supportCount)}건입니다.` });
   }
   const average = analyticsAverage(completedMetrics.map((item) => item.actualEvaluated));
   diagnostics.push({ tone: completedMetrics.length >= 2 ? "good" : "watch", text: `입력완료된 완료월 ${completedMetrics.length}개월의 평가대상 영업 평균은 ${formatNumber(average)}건입니다. 일시불은 단순 건수로만 표시하고 평가에서는 제외합니다. 미입력월과 현재 진행월은 평균에서 제외했습니다.` });
@@ -4408,7 +4459,7 @@ function renderAnalyticsManagerDetail(summary, teamAverages, months) {
   const diagnosis = analyticsStrengthWeakness(summary, teamAverages, months);
   const topProduct = analyticsTopProductFamily(summary.managerName, months);
   const kpis = $("#analyticsManagerDetailKpis");
-  if (kpis) kpis.innerHTML = `<article><span>분석개월</span><strong>${summary.average.months}</strong><em>${summary.analysisStartMonth ? `${formatMonthLabel(summary.analysisStartMonth)}부터` : "자료없음"}</em></article><article><span>평가 월평균</span><strong>${formatNumber(summary.average.actualEvaluated)}</strong><em>신규·패키지·재렌탈 기준</em></article><article><span>선택월 최종실적</span><strong>${formatNumber(summary.current.reportFinal)}</strong><em>접수 ${formatNumber(summary.current.actualPure)}건</em></article><article><span>환수</span><strong>${formatNumber(summary.current.refund)}</strong><em>최종실적에서 차감</em></article><article><span>주력 제품군</span><strong>${escapeHtml(topProduct?.family || "-")}</strong><em>${topProduct ? `${formatNumber(topProduct.units)}대` : "자료없음"}</em></article><article><span>최근 추세</span><strong>${summary.trendRate >= 0 ? "+" : ""}${Math.round(summary.trendRate)}%</strong><em>최근3개월 vs 이전3개월</em></article><article><span>별도 활동</span><strong>${formatNumber(summary.current.consCount + summary.current.supportCount)}</strong><em>컨스 ${formatNumber(summary.current.consCount)} · 지원 ${formatNumber(summary.current.supportCount)}</em></article>`;
+  if (kpis) kpis.innerHTML = `<article><span>분석개월</span><strong>${summary.average.months}</strong><em>${summary.analysisStartMonth ? `${formatMonthLabel(summary.analysisStartMonth)}부터` : "자료없음"}</em></article><article><span>평가 월평균</span><strong>${formatNumber(summary.average.actualEvaluated)}</strong><em>신규·패키지·재렌탈 기준</em></article><article><span>선택월 최종실적</span><strong>${formatNumber(summary.current.reportFinal)}</strong><em>접수 ${formatNumber(summary.current.actualPure)}건</em></article><article><span>환수</span><strong>${formatNumber(summary.current.refund)}</strong><em>최종실적에서 차감</em></article><article><span>주력 제품군</span><strong>${escapeHtml(topProduct?.family || "-")}</strong><em>${topProduct ? `${formatNumber(topProduct.units)}대` : "자료없음"}</em></article><article><span>최근 추세</span><strong>${summary.trendRate >= 0 ? "+" : ""}${Math.round(summary.trendRate)}%</strong><em>최근3개월 vs 이전3개월</em></article><article><span>컨스·지원 현황</span><strong>${formatNumber(summary.current.consCount + summary.current.supportCount)}</strong><em>컨스 ${formatNumber(summary.current.consCount)} · 지원 ${formatNumber(summary.current.supportCount)}</em></article>`;
   const bars = $("#analyticsManagerCompareBars");
   if (bars) bars.innerHTML = ["actualNew", "actualPackage", "actualRental"].map((key) => {
     const managerValue = summary.average[key];
@@ -7870,17 +7921,17 @@ async function importPayrollFile(file) {
 }
 
 function createPayrollXlsxBlob(rows) {
-  const header = ["판매자", "고객번호", "고객명", "상품명", "기본수수료", "판매활성화", "추가수수료", "구분", "수량", "접수일\n설치완료일", "재렌탈이전번호"];
+  const header = ["판매자", "고객번호", "고객명", "상품명", "기본수수료", "판매활성화", "추가수수료", "합계금액", "구분", "수량", "접수일\n설치완료일", "재렌탈이전번호"];
   const data = [header];
   payrollSellerGroups(rows, state.payrollManager || "").forEach(([seller, groupRows]) => {
     groupRows.sort((a,b) => String(a.customerNo).localeCompare(String(b.customerNo), "ko") || String(a.product).localeCompare(String(b.product), "ko"));
     groupRows.forEach((row) => data.push([
       row.seller, row.customerNo, row.customerName, row.product,
-      toNumber(row.baseFee) || "", toNumber(row.salesActivation) || "", toNumber(row.additionalFee) || "",
+      toNumber(row.baseFee) || "", toNumber(row.salesActivation) || "", toNumber(row.additionalFee) || "", payrollFeeTotal(row) || "",
       row.category, row.quantity, `${row.receivedDate || ""}\n${row.installCompleteDate || ""}`, row.previousCustomerNo
     ]));
     const t = payrollGroupTotals(groupRows);
-    data.push([`${seller} 합계`, "", "", "", t.baseFee || "", t.salesActivation || "", t.additionalFee || "", "합계", t.quantity, "", ""]);
+    data.push([`${seller} 합계`, "", "", "", t.baseFee || "", t.salesActivation || "", t.additionalFee || "", t.fee || "", "합계", t.quantity, "", ""]);
   });
 
   const files = {
@@ -8223,7 +8274,7 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
           ${metric("일시불", metrics.cashCount)}
         </div>
         <div class="manager-zone-subline">
-          ${actualMode ? "" : `<button type="button" class="cons-manage-button" data-cons-manage="${escapeHtml(managerName)}"><span>컨스</span> <b>${consDisplay}</b></button><span>지원 <b>${formatNumber(toNumber(metrics.supportCount))}</b></span>`}
+          ${actualMode ? `<span>지원 <b>${formatNumber(toNumber(metrics.supportCount))}</b></span>` : `<button type="button" class="cons-manage-button" data-cons-manage="${escapeHtml(managerName)}"><span>컨스</span> <b>${consDisplay}</b></button><span>지원 <b>${formatNumber(toNumber(metrics.supportCount))}</b></span>`}
           <span>재약정 <b>${formatNumber(toNumber(metrics.renewal))}</b></span>
           <span>환수 <b class="refund">${formatNumber(toNumber(metrics.refund))}</b></span>
         </div>
@@ -8397,7 +8448,7 @@ function renderManagerPerformanceTable(records, salesManagers) {
   }
 
   const assignedHeaders = ["매니저","신규","패키지","재렌탈","일시불","컨스","지원","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
-  const actualHeaders = ["매니저","신규","패키지","재렌탈","일시불","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
+  const actualHeaders = ["매니저","신규","패키지","재렌탈","일시불","지원","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
   const headers = actualMode ? actualHeaders : assignedHeaders;
   if (head) head.innerHTML = headers.map((label) => `<th>${label}</th>`).join("");
 
@@ -8438,6 +8489,7 @@ function renderManagerPerformanceTable(records, salesManagers) {
           <td class="primary-metric">${blankZeroNumber(exactMetrics.packageCount)}</td>
           <td class="primary-metric">${blankZeroNumber(exactMetrics.rentalCount)}</td>
           <td class="primary-metric">${blankZeroNumber(exactMetrics.cashCount)}</td>
+          <td class="activity-value-cell support-auto-cell">${blankZeroNumber(exactMetrics.supportCount)}</td>
           <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(exactMetrics.business)}</strong></td>
           <td class="manual-light">${blankZeroNumber(exactMetrics.renewal)}</td>
           <td class="manual-light refund-text">${exactMetrics.refund ? `-${formatNumber(exactMetrics.refund)}` : ""}</td>
@@ -8519,6 +8571,7 @@ function renderManagerPerformanceTable(records, salesManagers) {
         <td class="primary-metric">${blankZeroNumber(totals.packageCount)}</td>
         <td class="primary-metric">${blankZeroNumber(totals.rentalCount)}</td>
         <td class="primary-metric">${blankZeroNumber(totals.cashCount)}</td>
+        <td class="activity-value-cell support-auto-cell">${blankZeroNumber(totals.supportCount)}</td>
         <td class="business-cell metric-emphasis"><strong>${blankZeroNumber(totals.business)}</strong></td>
         <td>${blankZeroNumber(totals.renewal)}</td>
         <td class="refund-text">${totals.refund ? `-${formatNumber(totals.refund)}` : ""}</td>
@@ -11475,7 +11528,11 @@ function extractBackupData(payload) {
 }
 
 function looksLikeBackupData(data) {
-  if (!data || typeof data !== "object") return false;
+  if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+  // 전체 백업/구버전 원본 state 모두 records 또는 managers 배열을 핵심 구조로 가집니다.
+  // appMeta 하나만 있는 임의 JSON을 전체 백업으로 오인하지 않도록 최소 구조를 확인합니다.
+  const hasCoreState = Array.isArray(data.records) || Array.isArray(data.managers);
+  if (!hasCoreState) return false;
   return Array.isArray(data.records)
     || Array.isArray(data.managers)
     || Array.isArray(data.promotions)
@@ -11486,13 +11543,13 @@ function looksLikeBackupData(data) {
     || Array.isArray(data.payrollUnmatchedRecords)
     || Array.isArray(data.payrollArchives)
     || Array.isArray(data.todos)
-    || data.todosByDate
-    || data.appMeta
-    || data.monthSettings
+    || Boolean(data.todosByDate)
+    || Boolean(data.appMeta)
+    || Boolean(data.monthSettings)
     || Array.isArray(data.dashboardCustomCards)
-    || data.managerManualStats
-    || data.managerManualOrder
-    || data.managerMonthlyGoals;
+    || Boolean(data.managerManualStats)
+    || Boolean(data.managerManualOrder)
+    || Boolean(data.managerMonthlyGoals);
 }
 
 async function readBackupFileText(file) {
@@ -11645,14 +11702,21 @@ async function importFullBackupFile(file) {
 
   try {
     showToast("백업 데이터 적용 중...");
+    const currentPersistRevision = Number(state?.appMeta?.persistRevision || 0);
     state = normalizeState(data);
+    state.appMeta = state.appMeta && typeof state.appMeta === "object" ? state.appMeta : {};
+    const restoredPersistRevision = Number(state.appMeta.persistRevision || 0);
+    state.appMeta.persistRevision = Math.max(
+      Number.isFinite(currentPersistRevision) ? currentPersistRevision : 0,
+      Number.isFinite(restoredPersistRevision) ? restoredPersistRevision : 0
+    );
     invalidateManagerCaches();
     const restoredRecordCount = Array.isArray(state.records) ? state.records.length : 0;
     showToast(`백업 데이터 적용 완료 · 접수내역 ${restoredRecordCount}건`);
 
-    // 복원은 외부 서버와 완전히 분리합니다. JSON → normalize → Local Storage 저장 순서로만 처리합니다.
-    await persistState({ ensureManagers: true });
-    showToast("전체 백업 복원 완료 · 현재 브라우저에 안전하게 저장했습니다.");
+    const restoreSaveResult = await persistState({ ensureManagers: true, immediateServer: true, allowEmptyServer: true });
+    if (restoreSaveResult?.ok === false) throw new Error("복원 데이터 저장에 실패했습니다.");
+    showToast("전체 백업 복원 완료 · 안전하게 저장했습니다.");
 
     selectedRecordId = "";
     selectedChecklistId = "";
@@ -12532,10 +12596,6 @@ function exportPromotionSummaryCsv() {
   ]);
   const csv = [header, ...rows].map((row) => row.map(toCsvValue).join(",")).join("\\n");
   downloadFile(`promotion-summary-${todayIso()}.csv`, "text/csv;charset=utf-8", `\\ufeff${csv}`);
-}
-
-function backupJson() {
-  downloadFile(`sales-backup-${todayIso()}.json`, "application/json;charset=utf-8", JSON.stringify(state, null, 2));
 }
 
 
@@ -15731,7 +15791,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.16";
+const APP_VERSION = "v11.17";
 const STATE_SCHEMA_VERSION = 4;
 
 function normalizeVersionText(version = "") {
@@ -15766,14 +15826,27 @@ function closeCompleteResetModal() {
   if (modal) modal.hidden = true;
   document.body.classList.remove("complete-reset-open");
 }
-function executeCompleteReset() {
+async function executeCompleteReset() {
   const check = $("#completeResetBackupConfirm");
   if (!check?.checked) return;
   if (!window.confirm("정말 모든 데이터를 삭제할까요? 삭제 후에는 복구할 수 없습니다.")) return;
-  const fresh = normalizeState({ ...sampleState, records: [], managers: [], promotions: [], checklistItems: [], contactNotes: [], contactRequests: [], todos: [], todosByDate: {}, managerManualStats: {}, managerMonthlyGoals: {}, payrollRecords: [], payrollUnmatchedRecords: [], payrollArchives: [], appMeta: { ...sampleState.appMeta, branchName: "명장지국", masterName: "김건일", masterRole: "마스터" } });
+  const previousPersistRevision = Number(state?.appMeta?.persistRevision || 0);
+  const fresh = normalizeState({ ...sampleState, records: [], managers: [], promotions: [], checklistItems: [], contactNotes: [], contactRequests: [], todos: [], todosByDate: {}, managerManualStats: {}, managerManualOrder: {}, managerMonthlyGoals: {}, operatingGoals: {}, managementEvaluationInputs: {}, managementEvaluationPolicies: {}, payrollRecords: [], payrollUnmatchedRecords: [], payrollArchives: [], appMeta: { ...sampleState.appMeta, branchName: "명장지국", masterName: "김건일", masterRole: "마스터" } });
   state = fresh;
+  state.appMeta = state.appMeta && typeof state.appMeta === "object" ? state.appMeta : {};
+  state.appMeta.persistRevision = Number.isFinite(previousPersistRevision) && previousPersistRevision > 0 ? previousPersistRevision : 0;
   invalidateManagerCaches();
-  persistState({ ensureManagers: false, immediateServer: true });
+  try {
+    const resetSaveResult = await persistState({ ensureManagers: false, immediateServer: true, allowEmptyServer: true });
+    if (resetSaveResult?.ok === false) throw new Error("초기화 데이터 저장에 실패했습니다.");
+    localStorage.removeItem(LOCAL_BACKUP_KEY);
+    localStorage.removeItem(LOCAL_BACKUP_INDEX_KEY);
+    await clearDurableBackupSnapshots();
+  } catch (error) {
+    console.error("[COMPLETE RESET] save failed", error);
+    showToast("초기화 데이터를 저장하지 못했습니다. 다시 시도해 주세요.");
+    return;
+  }
   closeCompleteResetModal();
   renderNow();
   showToast("모든 프로그램 데이터를 초기화했습니다.");

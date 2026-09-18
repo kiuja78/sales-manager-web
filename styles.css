@@ -19587,27 +19587,34 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 #managerStatsTable.actual-performance-table thead th:nth-child(3),
 #managerStatsTable.actual-performance-table thead th:nth-child(4),
 #managerStatsTable.actual-performance-table thead th:nth-child(5),
-#managerStatsTable.actual-performance-table thead th:nth-child(7),
+#managerStatsTable.actual-performance-table thead th:nth-child(8),
 #managerStatsTable.actual-performance-table tbody td:nth-child(2),
 #managerStatsTable.actual-performance-table tbody td:nth-child(3),
 #managerStatsTable.actual-performance-table tbody td:nth-child(4),
 #managerStatsTable.actual-performance-table tbody td:nth-child(5),
-#managerStatsTable.actual-performance-table tbody td:nth-child(7) {
+#managerStatsTable.actual-performance-table tbody td:nth-child(8) {
   background: #f5f9ff !important;
   color: #17221d !important;
 }
 
+/* 실제 실적: 지원은 자동 집계 활동값으로 구분 */
+#managerStatsTable.actual-performance-table thead th:nth-child(6),
+#managerStatsTable.actual-performance-table tbody td:nth-child(6) {
+  background: #f4f0fb !important;
+  color: #56476d !important;
+}
+
 /* 실제 실적: 환수는 열 전체 흰색 */
-#managerStatsTable.actual-performance-table thead th:nth-child(8),
-#managerStatsTable.actual-performance-table tbody td:nth-child(8) {
+#managerStatsTable.actual-performance-table thead th:nth-child(9),
+#managerStatsTable.actual-performance-table tbody td:nth-child(9) {
   background: #ffffff !important;
 }
 
 /* 실제 실적: 영업실적/최종실적 동일 강조색 */
-#managerStatsTable.actual-performance-table thead th:nth-child(6),
-#managerStatsTable.actual-performance-table thead th:nth-child(9),
-#managerStatsTable.actual-performance-table tbody td:nth-child(6),
-#managerStatsTable.actual-performance-table tbody td:nth-child(9),
+#managerStatsTable.actual-performance-table thead th:nth-child(7),
+#managerStatsTable.actual-performance-table thead th:nth-child(10),
+#managerStatsTable.actual-performance-table tbody td:nth-child(7),
+#managerStatsTable.actual-performance-table tbody td:nth-child(10),
 #managerStatsTable.actual-performance-table tbody td.business-cell,
 #managerStatsTable.actual-performance-table tbody td.final-cell {
   background: #dcefe7 !important;
@@ -19615,13 +19622,13 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 }
 
 /* 실제 실적: 상시목표/상시부족은 매니저별 실적과 동일 */
-#managerStatsTable.actual-performance-table thead th:nth-child(10),
-#managerStatsTable.actual-performance-table tbody td:nth-child(10) {
+#managerStatsTable.actual-performance-table thead th:nth-child(11),
+#managerStatsTable.actual-performance-table tbody td:nth-child(11) {
   background: #fff0bd !important;
   color: #6b4a00 !important;
 }
-#managerStatsTable.actual-performance-table thead th:nth-child(11),
-#managerStatsTable.actual-performance-table tbody td:nth-child(11) {
+#managerStatsTable.actual-performance-table thead th:nth-child(12),
+#managerStatsTable.actual-performance-table tbody td:nth-child(12) {
   background: #eee9fa !important;
 }
 
@@ -24199,7 +24206,7 @@ body[data-view="records"] .record-form-row.row-basic {
   color: #ffe0e0 !important;
 }
 
-/* V11.16 컨스 지급관리 접수목록 */
+/* V11.17 컨스 지급관리 접수목록 */
 .cons-payment-records{margin-top:16px;padding-top:14px;border-top:1px solid #e5ece8}
 .cons-payment-records-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
 .cons-payment-records-head strong{font-size:13px;color:#355247}
