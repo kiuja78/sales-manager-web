@@ -762,26 +762,12 @@ function driveStateConfig() {
   return { url, token, enabled: Boolean(url) };
 }
 
-async function fetchWithTimeout(resource, options = {}, timeoutMs = 5000) {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    return await fetch(resource, { ...options, signal: controller.signal });
-  } finally {
-    window.clearTimeout(timer);
-  }
-}
-
 async function loadStateFromDrive() {
   const config = driveStateConfig();
   if (!config.enabled) return null;
   const query = new URLSearchParams({ action: "loadState" });
   if (config.token) query.set("token", config.token);
-  const response = await fetchWithTimeout(
-    `${config.url}${config.url.includes("?") ? "&" : "?"}${query.toString()}`,
-    { cache: "no-store" },
-    5000
-  );
+  const response = await fetch(`${config.url}${config.url.includes("?") ? "&" : "?"}${query.toString()}`, { cache: "no-store" });
   if (!response.ok) throw new Error(`Google Drive 불러오기 실패 (${response.status})`);
   const payload = await response.json();
   const loaded = payload?.state && typeof payload.state === "object" ? payload.state : payload;
@@ -809,59 +795,35 @@ async function saveStateToDrive(serializedState, options = {}) {
   return await response.json().catch(() => ({ ok: true }));
 }
 
-function applyLoadedState(nextState, source = "load") {
-  if (!nextState || typeof nextState !== "object") return;
-  state = normalizeState(nextState);
-  invalidateManagerCaches();
-  touchStateRevision();
-  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
-  safeLocalBackupSnapshot(state, source);
-}
-
-async function syncDriveStateInBackground(localState) {
-  try {
-    const driveState = await loadStateFromDrive();
-    if (!driveState || stateDataCount(driveState) === 0) return;
-    const driveStamp = String(driveState?.appMeta?.lastStateUpdatedAt || "");
-    const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
-    const localCount = stateDataCount(localState);
-    const driveCount = stateDataCount(driveState);
-    const localIsNewer = localStamp && driveStamp && localStamp > driveStamp;
-    if (shouldPreferLocalState(localState, driveState) || localIsNewer) {
-      // 브라우저의 더 최신 데이터는 Drive가 빈/오래된 상태일 때 유지합니다.
-      if (localCount > 0 && (!driveStamp || localIsNewer || driveCount === 0)) {
-        driveDataDirty = true;
-        persistState({ immediateServer: true, allowEmptyServer: false });
-      }
-      return;
-    }
-    applyLoadedState(driveState, "drive-load");
-    if (typeof renderNow === "function") renderNow();
-  } catch (error) {
-    console.warn("[DRIVE LOAD BACKGROUND]", error);
-    // 외부 저장소가 실패해도 화면은 계속 사용할 수 있어야 합니다.
-  }
-}
-
 async function loadPersistedState() {
   const localState = loadState();
   migrateDriveTokenFromState();
   const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
 
-  // 웹 시작 단계에서는 절대로 Google Drive나 대용량 백업 저장을 기다리지 않습니다.
-  // 먼저 메모리 상태만 즉시 적용하고, 화면이 열린 뒤 Drive 동기화를 별도로 시작합니다.
-  // 초기화가 멈춰 메뉴 이벤트가 연결되지 않는 문제를 방지하기 위한 핵심 안전장치입니다.
+  // 웹용은 Google Drive를 주 저장소로 사용합니다. 설정되지 않았으면 기존 브라우저 저장값으로 안전하게 동작합니다.
   if (isStaticWeb) {
+    try {
+      const driveState = await loadStateFromDrive();
+      if (driveState && stateDataCount(driveState) > 0) {
+        state = shouldPreferLocalState(localState, driveState) ? localState : driveState;
+        invalidateManagerCaches();
+        touchStateRevision();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        safeLocalBackupSnapshot(state, "drive-load");
+        return;
+      }
+    } catch (error) {
+      console.warn("[DRIVE LOAD]", error);
+    }
     state = localState;
     invalidateManagerCaches();
     touchStateRevision();
-    return localState;
+    return;
   }
 
-  // PC용은 로컬 서버 파일 저장소를 백그라운드에서 확인하되, API가 없으면 로컬 데이터로 즉시 사용합니다.
-  applyLoadedState(localState, "local-load");
+  // PC용은 로컬 서버의 파일 저장소를 주 저장소로 사용합니다.
   try {
-    const response = await fetchWithTimeout(STATE_API_URL, { cache: "no-store" }, 4000);
+    const response = await fetch(STATE_API_URL, { cache: "no-store" });
     if (!response.ok) throw new Error("state api unavailable");
     const loaded = await response.json();
     const hasServerData = loaded && typeof loaded === "object" && (
@@ -872,13 +834,27 @@ async function loadPersistedState() {
       const serverStamp = String(normalizedServer?.appMeta?.lastStateUpdatedAt || "");
       const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
       if (shouldPreferLocalState(localState, normalizedServer) || (localStamp && serverStamp && localStamp > serverStamp)) {
+        state = localState;
+        invalidateManagerCaches();
+        touchStateRevision();
+        safeLocalBackupSnapshot(state, "server-protection");
         persistState({ immediateServer: true, allowEmptyServer: false });
       } else {
-        applyLoadedState(normalizedServer, "server-load");
+        state = normalizedServer;
+        invalidateManagerCaches();
+        touchStateRevision();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        safeLocalBackupSnapshot(state, "server-load");
       }
+    } else {
+      state = localState;
+      invalidateManagerCaches();
+      touchStateRevision();
     }
   } catch {
-    // 로컬 데이터로 계속 실행합니다.
+    state = localState;
+    invalidateManagerCaches();
+    touchStateRevision();
   }
 }
 
@@ -934,11 +910,11 @@ function persistState(options = {}) {
     }
 
     try {
-      const response = await fetchWithTimeout(STATE_API_URL, {
+      const response = await fetch(STATE_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json;charset=utf-8" },
         body: data
-      }, 8000);
+      });
       if (!response.ok) throw new Error(`state save failed (${response.status})`);
       persistFailureToastShown = false;
       return { ok: true, target: "pc" };
@@ -998,7 +974,7 @@ function normalizeState(loaded) {
     payrollArchives: Array.isArray(loaded.payrollArchives) ? loaded.payrollArchives.map(normalizePayrollArchive) : []
   };
   // 이전 버전에서는 미매칭 급여 행도 payrollRecords에 함께 보관했습니다.
-  // V11.03부터는 미매칭 행을 별도 목록으로 분리해 최종 급여 합산에서 제외합니다.
+  // V11.02부터는 미매칭 행을 별도 목록으로 분리해 최종 급여 합산에서 제외합니다.
   const legacyPayrollRows = Array.isArray(next.payrollRecords) ? next.payrollRecords : [];
   const savedUnmatchedRows = Array.isArray(next.payrollUnmatchedRecords) ? next.payrollUnmatchedRecords : [];
   next.payrollRecords = legacyPayrollRows.filter((row) => row.matched);
@@ -14744,19 +14720,7 @@ function printRenewalGuide() {
   iframe.contentWindow.onafterprint = cleanup;
 }
 
-function attachCriticalNavEvents() {
-  $$(".nav-item").forEach((item) => {
-    if (item.dataset.navEventsAttached === "1") return;
-    item.dataset.navEventsAttached = "1";
-    item.addEventListener("click", () => switchView(item.dataset.view));
-  });
-}
-
 function attachEvents() {
-  // 메뉴는 다른 부가 이벤트보다 먼저 연결합니다. 이후 어느 한 부분에서 오류가 나도
-  // 핵심 화면 전환 기능은 반드시 살아 있도록 합니다.
-  attachCriticalNavEvents();
-
   $$("#printManagerStats [data-manager-performance-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       const nextMode = button.dataset.managerPerformanceTab === "actual" ? "actual" : "assigned";
@@ -14910,7 +14874,7 @@ function attachEvents() {
     syncEvaluationPolicySettingsVisibility();
   });
 
-  // 핵심 메뉴 이벤트는 함수 시작부에서 이미 연결했습니다.
+  $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
   attachMobileAppEvents();
   attachMobileFullMenuEvents();
   setMobileRecordTab($("#recordsView")?.dataset.mobileRecordTab || "main");
@@ -15940,7 +15904,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.05";
+const APP_VERSION = "v11.03";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -16143,22 +16107,12 @@ function initStartupIntro() {
   const progress = $("#startupIntroProgress");
   const messages = ["업무 화면을 구성하고 있습니다", "저장 데이터를 확인하고 있습니다", "영업현황을 불러오는 중입니다"];
   let idx = 0;
-  let removed = false;
-  const removeIntro = () => {
-    if (removed) return;
-    removed = true;
-    intro.classList.add("startup-intro-hidden");
-    window.setTimeout(() => intro.remove(), 420);
-  };
-  window.__mjRemoveStartupIntro = removeIntro;
-  const timer = window.setInterval(() => {
+  const timer = setInterval(() => {
     idx += 1;
     if (status) status.textContent = messages[Math.min(idx, messages.length - 1)];
     if (progress) progress.style.width = `${Math.min(100, 30 + idx * 35)}%`;
-    if (idx >= 2) { window.clearInterval(timer); window.setTimeout(removeIntro, 250); }
+    if (idx >= 2) { clearInterval(timer); setTimeout(() => { intro.classList.add("startup-intro-hidden"); setTimeout(() => intro.remove(), 420); }, 420); }
   }, 430);
-  // 저장 서버가 응답하지 않아도 시작 화면에 영원히 머물지 않도록 하는 최종 안전장치
-  window.setTimeout(removeIntro, 6500);
 }
 
 async function init() {
@@ -16184,25 +16138,12 @@ async function init() {
   const dayFilter = $("#dayFilter");
   if (dayFilter) dayFilter.value = "";
   setDashboardRange(period.start, dashboardDefaultEnd(period));
-  try {
-    attachEvents();
-  } catch (error) {
-    console.error("[ATTACH EVENTS] 일부 보조 이벤트 연결 실패", error);
-    // 어떤 보조 UI 초기화가 실패해도 핵심 메뉴는 다시 연결합니다.
-    attachCriticalNavEvents();
-  }
+  attachEvents();
   document.body.dataset.view = currentView;
   const recordsView = $("#recordsView");
   if (recordsView && !recordsView.dataset.mobileRecordTab) recordsView.dataset.mobileRecordTab = "main";
   resetRecordForm();
   renderNow();
-  window.__mjRemoveStartupIntro?.();
-
-  // 업무 화면을 먼저 띄운 뒤 Google Drive 최신 데이터를 백그라운드에서 확인합니다.
-  // Drive가 느리거나 일시적으로 실패해도 화면 전환/입력은 막히지 않습니다.
-  if (isGitHubPagesHost() || location.protocol === "file:") {
-    void syncDriveStateInBackground(state);
-  }
   setSettingsVersionStatus(SALES_MANAGER_LATEST_VERSION, compareVersionText(APP_VERSION, SALES_MANAGER_LATEST_VERSION) < 0
     ? "새 버전이 있습니다. 업데이트 버튼을 눌러 바로 다운로드하세요."
     : "현재 최신 버전을 사용 중입니다.");
