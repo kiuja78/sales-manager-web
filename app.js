@@ -7794,8 +7794,8 @@ function renderPayroll() {
       unmatchedBody.innerHTML = unmatchedRows.map((row) => `<tr class="payroll-unmatched-row">
         <td>${escapeHtml(row.seller || state.payrollManager || "미지정")}</td>
         <td>${escapeHtml(row.customerNo)}</td>
-        <td><span class="payroll-cell-ellipsis payroll-customer-name">${escapeHtml(row.customerName)}</span></td>
-        <td title="${escapeHtml(row.product)}"><span class="payroll-cell-ellipsis payroll-product-name">${escapeHtml(row.product)}</span></td>
+        <td>${escapeHtml(row.customerName)}</td>
+        <td title="${escapeHtml(row.product)}">${escapeHtml(row.product)}</td>
         <td class="money">${payrollFeeDisplay(row.baseFee)}</td>
         <td class="money">${payrollFeeDisplay(row.salesActivation)}</td>
         <td class="money">${payrollFeeDisplay(row.additionalFee)}</td>
@@ -7820,8 +7820,8 @@ function renderPayroll() {
       html.push(`<tr>
         <td>${escapeHtml(row.seller)}</td>
         <td class="${customerClass}" title="${row.numberMismatch ? `주문리스트 고객번호: ${escapeHtml(row.matchedCustomerNo || "-")}` : ""}">${escapeHtml(row.customerNo)}</td>
-        <td title="${escapeHtml(row.customerName)}"><span class="payroll-cell-ellipsis payroll-customer-name">${escapeHtml(row.customerName)}</span></td>
-        <td title="${escapeHtml(row.product)}"><span class="payroll-cell-ellipsis payroll-product-name">${escapeHtml(row.product)}</span></td>
+        <td title="${escapeHtml(row.customerName)}">${escapeHtml(row.customerName)}</td>
+        <td title="${escapeHtml(row.product)}">${escapeHtml(row.product)}</td>
         <td class="money">${payrollFeeDisplay(row.baseFee)}</td>
         <td class="money">${payrollFeeDisplay(row.salesActivation)}</td>
         <td class="money">${payrollFeeDisplay(row.additionalFee)}</td>
@@ -15809,7 +15809,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.03";
+const APP_VERSION = "v11.02";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
