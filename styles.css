@@ -19239,7 +19239,7 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 .payroll-page-head{align-items:flex-end}
 .payroll-guide{margin:6px 0 0;color:var(--muted,#6b7280);font-size:13px;line-height:1.5}
 .payroll-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-.payroll-file-button{cursor:pointer;display:inline-flex;align-items:center;justify-content:center}
+.payroll-file-button{cursor:pointer;display:inline-flex;align-items:center;justify-content:center;color:#fff!important;font-weight:800;letter-spacing:.01em;text-shadow:0 1px 0 rgba(0,0,0,.15)}
 .payroll-summary-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
 .payroll-summary-card{border:1px solid var(--line,#e5e7eb);border-radius:14px;padding:13px 14px;background:var(--surface,#fff);min-width:0}
 .payroll-summary-card span{display:block;color:var(--muted,#6b7280);font-size:12px;margin-bottom:6px}
@@ -19264,9 +19264,9 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 .payroll-table-wrap{max-height:none;overflow:visible}
 .payroll-table{width:100%;min-width:0;table-layout:fixed}
 .payroll-table th,.payroll-table td{white-space:normal;vertical-align:middle;overflow-wrap:anywhere}
-.payroll-table th:nth-child(1){width:9%}.payroll-table th:nth-child(2){width:12%}.payroll-table th:nth-child(3){width:8%}.payroll-table th:nth-child(4){width:23%}
-.payroll-table th:nth-child(5),.payroll-table th:nth-child(6),.payroll-table th:nth-child(7){width:8%}
-.payroll-table th:nth-child(8){width:7%}.payroll-table th:nth-child(9){width:5%}.payroll-table th:nth-child(10){width:10%}.payroll-table th:nth-child(11){width:10%}
+.payroll-table th:nth-child(1){width:8%}.payroll-table th:nth-child(2){width:11%}.payroll-table th:nth-child(3){width:8%}.payroll-table th:nth-child(4){width:21%}
+.payroll-table th:nth-child(5),.payroll-table th:nth-child(6),.payroll-table th:nth-child(7),.payroll-table th:nth-child(8){width:8%}
+.payroll-table th:nth-child(9){width:7%}.payroll-table th:nth-child(10){width:5%}.payroll-table th:nth-child(11){width:10%}.payroll-table th:nth-child(12){width:10%}
 .payroll-table td{font-size:12px;line-height:1.25}
 .payroll-table td.money,.payroll-table td.qty{text-align:center}
 .payroll-table td:nth-child(3){max-width:100px}
@@ -19275,6 +19275,13 @@ body[data-view="dashboard"] .top-actions .dashboard-action {
 .payroll-date-stack span:first-child{font-weight:700}
 .payroll-date-stack span:last-child{color:var(--muted,#6b7280);font-size:11px}
 .payroll-customer-mismatch{color:#c62828!important;font-weight:800!important;background:#fff0f0}
+.payroll-total-fee-cell{background:#eff8f2;color:#0f6b47;font-weight:800}
+.payroll-total-fee-cell strong{color:#0f6b47}
+.payroll-fee-grand-total-only{margin-top:4px}
+.payroll-unmatched-panel .panel-head span:last-child{font-weight:700;color:#8b5e16}
+.payroll-unmatched-wrap{margin-top:0}
+.payroll-unmatched-table th:nth-child(1){width:16%}.payroll-unmatched-table th:nth-child(2){width:10%}.payroll-unmatched-table th:nth-child(3){width:35%}.payroll-unmatched-table th:nth-child(4){width:12%}.payroll-unmatched-table th:nth-child(5){width:8%}.payroll-unmatched-table th:nth-child(6){width:7%}.payroll-unmatched-table th:nth-child(7){width:12%}
+.payroll-unmatched-table td:nth-child(3){line-height:1.25}
 .payroll-subtotal-row td{white-space:nowrap}
 @media (max-width:1100px){.payroll-table{font-size:11px}.payroll-table th,.payroll-table td{padding:5px 4px}.payroll-table td{font-size:11px}}
 
@@ -23981,17 +23988,18 @@ body[data-view="records"] .record-form-row.row-basic {
 #payrollView .payroll-table tbody tr:hover td {
   background: #f4faf7;
 }
-#payrollView .payroll-table td:nth-child(1) { width: 9%; }
-#payrollView .payroll-table td:nth-child(2) { width: 12%; }
+#payrollView .payroll-table td:nth-child(1) { width: 8%; }
+#payrollView .payroll-table td:nth-child(2) { width: 11%; }
 #payrollView .payroll-table td:nth-child(3) { width: 8%; max-width: 100px; }
-#payrollView .payroll-table td:nth-child(4) { width: 23%; }
+#payrollView .payroll-table td:nth-child(4) { width: 21%; }
 #payrollView .payroll-table td:nth-child(5),
 #payrollView .payroll-table td:nth-child(6),
-#payrollView .payroll-table td:nth-child(7) { width: 8%; }
-#payrollView .payroll-table td:nth-child(8) { width: 7%; }
-#payrollView .payroll-table td:nth-child(9) { width: 5%; }
-#payrollView .payroll-table td:nth-child(10) { width: 10%; }
+#payrollView .payroll-table td:nth-child(7),
+#payrollView .payroll-table td:nth-child(8) { width: 8%; }
+#payrollView .payroll-table td:nth-child(9) { width: 7%; }
+#payrollView .payroll-table td:nth-child(10) { width: 5%; }
 #payrollView .payroll-table td:nth-child(11) { width: 10%; }
+#payrollView .payroll-table td:nth-child(12) { width: 10%; }
 #payrollView .payroll-table td:nth-child(3),
 #payrollView .payroll-table td:nth-child(4) {
   white-space: nowrap;

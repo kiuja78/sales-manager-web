@@ -594,6 +594,11 @@ const sampleState = {
   checklistItems: [],
   contactNotes: [],
   contactRequests: [],
+  payrollRecords: [],
+  payrollUnmatchedRecords: [],
+  payrollManager: "",
+  payrollMonth: "",
+  payrollArchives: [],
   records: [
     {
       id: "r1", status: "접수", receivedDate: "2026-05-04", installDate: "2026-05-07",
@@ -967,6 +972,7 @@ function normalizeState(loaded) {
     contactNotes: Array.isArray(loaded.contactNotes) ? loaded.contactNotes.map(normalizeContactNote) : [],
     contactRequests: Array.isArray(loaded.contactRequests) ? loaded.contactRequests.map(normalizeContactNote) : [],
     payrollRecords: Array.isArray(loaded.payrollRecords) ? loaded.payrollRecords.map(normalizePayrollRecord) : [],
+    payrollUnmatchedRecords: Array.isArray(loaded.payrollUnmatchedRecords) ? loaded.payrollUnmatchedRecords.map(normalizePayrollRecord) : [],
     payrollManager: String(loaded.payrollManager || "").trim(),
     payrollMonth: String(loaded.payrollMonth || "").trim(),
     payrollArchives: Array.isArray(loaded.payrollArchives) ? loaded.payrollArchives.map(normalizePayrollArchive) : []
@@ -7516,12 +7522,14 @@ function normalizePayrollRecord(raw = {}) {
 
 function normalizePayrollArchive(raw = {}) {
   const records = Array.isArray(raw.records) ? raw.records.map(normalizePayrollRecord) : [];
+  const unmatchedRecords = Array.isArray(raw.unmatchedRecords) ? raw.unmatchedRecords.map(normalizePayrollRecord) : [];
   return {
     id: String(raw.id || uid("payroll")).trim(),
     month: String(raw.month || "").trim(),
     manager: String(raw.manager || "").trim(),
     savedAt: String(raw.savedAt || "").trim(),
-    records
+    records,
+    unmatchedRecords
   };
 }
 
@@ -7636,7 +7644,8 @@ function payrollNetQuantity(record) {
 
 async function parsePayrollFile(file) {
   const workbook = await readXlsx(file);
-  const parsed = [];
+  const matchedRows = [];
+  const unmatchedRows = [];
   const required = ["고객번호", "고객명", "상품명", "접수일", "설치완료일", "수량", "기본수수료", "판매할성화", "추가수수료", "구분"];
   workbook.sheets.forEach((sheet) => {
     const rows = sheet.rows || [];
@@ -7659,7 +7668,7 @@ async function parsePayrollFile(file) {
       const category = String(payrollHeaderValue(row, header, ["구분"]) || "").trim();
       const refund = category.includes("환수");
       const match = resolvePayrollSeller(customerNo, customerName, product, state.payrollManager || "");
-      parsed.push(normalizePayrollRecord({
+      (match.matched ? matchedRows : unmatchedRows).push(normalizePayrollRecord({
         seller: match.seller,
         customerNo,
         customerName,
@@ -7681,7 +7690,11 @@ async function parsePayrollFile(file) {
       }));
     }
   });
-  return parsed;
+  return {
+    matchedRows,
+    unmatchedRows,
+    totalRows: matchedRows.length + unmatchedRows.length
+  };
 }
 
 function payrollFeeTotal(record) {
@@ -7765,9 +7778,10 @@ function renderPayroll() {
   if (rowCount) rowCount.textContent = `${rows.length}건`;
   if (exportBtn) exportBtn.disabled = !rows.length;
   if (saveBtn) saveBtn.disabled = !rows.length || !String(state.payrollManager || "").trim() || !String(state.payrollMonth || "").trim();
+  const unmatchedRows = Array.isArray(state.payrollUnmatchedRecords) ? state.payrollUnmatchedRecords : [];
   if (summary) {
     const mismatch = allRows.filter((row) => row.numberMismatch).length;
-    summary.textContent = `총 ${allRows.length}건 · 고객번호 불일치 ${mismatch}건`;
+    summary.textContent = `매칭 ${allRows.length}건 · 고객번호 불일치 ${mismatch}건 · 접수리스트 미매칭 ${unmatchedRows.length}건`;
   }
 
   const summaryGrid = $("#payrollSummaryGrid");
@@ -7777,21 +7791,36 @@ function renderPayroll() {
       const t = payrollGroupTotals(groupRows);
       return `<div class="payroll-summary-card payroll-manager-summary-card">
         <span class="payroll-summary-manager">${escapeHtml(seller)}</span>
-        <div class="payroll-fee-breakdown">
-          <div><small>기본수수료</small><strong>${payrollFeeDisplay(t.baseFee) || "0원"}</strong></div>
-          <div><small>판매활성화</small><strong>${payrollFeeDisplay(t.salesActivation) || "0원"}</strong></div>
-          <div><small>추가수수료</small><strong>${payrollFeeDisplay(t.additionalFee) || "0원"}</strong></div>
-        </div>
-        <div class="payroll-fee-grand-total"><span>총 수수료</span><strong>${formatWon(t.fee)}</strong></div>
+        <div class="payroll-fee-grand-total payroll-fee-grand-total-only"><span>총 수수료 합계</span><strong>${formatWon(t.fee)}</strong></div>
         <small class="payroll-summary-meta">건수 ${formatNumber(t.quantity)} · ${groupRows.length}개 리스트</small>
       </div>`;
     });
     summaryGrid.innerHTML = cards.join("") || `<div class="payroll-summary-card"><span>급여 데이터</span><strong>0원</strong><small>파일을 불러오세요.</small></div>`;
   }
 
+  const unmatchedBody = $("#payrollUnmatchedTableBody");
+  const unmatchedCount = $("#payrollUnmatchedCount");
+  if (unmatchedCount) unmatchedCount.textContent = `${unmatchedRows.length}건`;
+  if (unmatchedBody) {
+    if (!unmatchedRows.length) {
+      unmatchedBody.innerHTML = `<tr><td colspan="7" class="empty-state">접수리스트에 없는 급여 엑셀 목록은 없습니다.</td></tr>`;
+    } else {
+      unmatchedBody.innerHTML = unmatchedRows.map((row) => `
+        <tr>
+          <td>${escapeHtml(row.customerNo)}</td>
+          <td title="${escapeHtml(row.customerName)}">${escapeHtml(row.customerName)}</td>
+          <td title="${escapeHtml(row.product)}">${escapeHtml(row.product)}</td>
+          <td class="money payroll-total-fee-cell"><strong>${formatWon(payrollFeeTotal(row))}</strong></td>
+          <td>${escapeHtml(row.category)}</td>
+          <td class="qty">${formatNumber(row.quantity)}</td>
+          <td>${payrollDateStack(row.receivedDate, row.installCompleteDate)}</td>
+        </tr>`).join("");
+    }
+  }
+
   if (!body) return;
   if (!rows.length) {
-    body.innerHTML = `<tr><td colspan="11" class="empty-state">급여 엑셀 파일을 불러오면 변환 결과가 표시됩니다.</td></tr>`;
+    body.innerHTML = `<tr><td colspan="12" class="empty-state">급여 엑셀 파일을 불러오면 변환 결과가 표시됩니다.</td></tr>`;
     return;
   }
 
@@ -7808,6 +7837,7 @@ function renderPayroll() {
         <td class="money">${payrollFeeDisplay(row.baseFee)}</td>
         <td class="money">${payrollFeeDisplay(row.salesActivation)}</td>
         <td class="money">${payrollFeeDisplay(row.additionalFee)}</td>
+        <td class="money payroll-total-fee-cell"><strong>${formatWon(payrollFeeTotal(row))}</strong></td>
         <td>${escapeHtml(row.category)}</td>
         <td class="qty">${formatNumber(row.quantity)}</td>
         <td>${payrollDateStack(row.receivedDate, row.installCompleteDate)}</td>
@@ -7820,6 +7850,7 @@ function renderPayroll() {
       <td class="money"><strong>${payrollFeeDisplay(t.baseFee)}</strong></td>
       <td class="money"><strong>${payrollFeeDisplay(t.salesActivation)}</strong></td>
       <td class="money"><strong>${payrollFeeDisplay(t.additionalFee)}</strong></td>
+      <td class="money payroll-total-fee-cell"><strong>${formatWon(t.fee)}</strong></td>
       <td><strong>합계</strong></td>
       <td class="qty"><strong>${formatNumber(t.quantity)}</strong></td>
       <td></td><td></td>
@@ -7843,7 +7874,7 @@ function renderPayrollArchives() {
     return `<div class="payroll-archive-row">
       <div class="payroll-archive-main">
         <strong>${escapeHtml(payrollArchiveLabel(archive))}</strong>
-        <span>${formatNumber((archive.records || []).length)}건 · ${formatWon(total.fee)} · 최종건수 ${formatNumber(total.quantity)}</span>
+        <span>매칭 ${formatNumber((archive.records || []).length)}건 · 미매칭 ${formatNumber((archive.unmatchedRecords || []).length)}건 · ${formatWon(total.fee)} · 최종건수 ${formatNumber(total.quantity)}</span>
         ${saved ? `<small>저장일 ${escapeHtml(saved)}</small>` : ""}
       </div>
       <div class="payroll-archive-actions">
@@ -7864,7 +7895,14 @@ function savePayrollArchive() {
   const archives = Array.isArray(state.payrollArchives) ? state.payrollArchives : [];
   const existing = archives.find((item) => item.month === month && item.manager === manager);
   if (existing && !window.confirm(`${month.replace("-", "년 ")}월 ${manager} 급여가 이미 저장되어 있습니다.\n기존 저장본을 새 결과로 덮어쓸까요?`)) return;
-  const snapshot = { id: existing?.id || uid("payroll"), month, manager, savedAt: new Date().toISOString(), records: structuredClone(records) };
+  const snapshot = {
+    id: existing?.id || uid("payroll"),
+    month,
+    manager,
+    savedAt: new Date().toISOString(),
+    records: structuredClone(records),
+    unmatchedRecords: structuredClone(Array.isArray(state.payrollUnmatchedRecords) ? state.payrollUnmatchedRecords : [])
+  };
   state.payrollArchives = existing ? archives.map((item) => item.id === existing.id ? snapshot : item) : [...archives, snapshot];
   state.payrollManager = manager; state.payrollMonth = month;
   persistState({ immediateServer: true });
@@ -7875,7 +7913,7 @@ function savePayrollArchive() {
 function loadPayrollArchive(id) {
   const archive = (state.payrollArchives || []).find((item) => item.id === id);
   if (!archive) return;
-  state.payrollManager = archive.manager; state.payrollMonth = archive.month; state.payrollRecords = structuredClone(archive.records || []);
+  state.payrollManager = archive.manager; state.payrollMonth = archive.month; state.payrollRecords = structuredClone(archive.records || []); state.payrollUnmatchedRecords = structuredClone(archive.unmatchedRecords || []);
   const filter = $("#payrollSellerFilter"); if (filter) filter.value = "ALL";
   persistState({ immediateServer: true }); renderPayroll(); renderPayrollArchives();
   showToast(`${payrollArchiveLabel(archive)}를 불러왔습니다.`);
@@ -7900,18 +7938,19 @@ async function importPayrollFile(file) {
   state.payrollManager = manager;
   state.payrollMonth = String($("#payrollMonthInput")?.value || state.payrollMonth || "").trim();
   try {
-    const rows = await parsePayrollFile(file);
+    const parsed = await parsePayrollFile(file);
     const targetMonth = state.payrollMonth || currentDashboardMonth();
-    state.payrollRecords = rows.filter((row) => {
+    state.payrollRecords = parsed.matchedRows.filter((row) => {
       if (teamOperationMode(targetMonth) === "1") return true;
       const seller = String(row?.seller || "").trim();
       const manager = managerByName(seller);
       return Boolean(manager && managerTeamForMonth(manager, targetMonth) === currentUserTeamName(targetMonth));
     });
+    state.payrollUnmatchedRecords = parsed.unmatchedRows;
     persistState({ immediateServer: true });
     renderPayroll();
     renderPayrollArchives();
-    showToast(`급여 ${rows.length}건을 변환했습니다.`);
+    showToast(`급여 엑셀 ${parsed.totalRows}건 중 매칭 ${parsed.matchedRows.length}건, 미매칭 ${parsed.unmatchedRows.length}건을 반영했습니다.`);
   } catch (error) {
     console.error(error);
     showToast(`급여 엑셀을 읽지 못했습니다: ${error.message || error}`);
@@ -7944,7 +7983,7 @@ function createPayrollXlsxBlob(rows) {
 }
 
 function payrollSheetXml(rows) {
-  const widths = [16, 20, 14, 42, 14, 14, 14, 12, 9, 20, 22];
+  const widths = [16, 20, 14, 42, 14, 14, 14, 14, 12, 9, 20, 22];
   const sheetRows = rows.map((row, rowIndex) => {
     const rowNumber = rowIndex + 1;
     const isHeader = rowIndex === 0;
@@ -7952,14 +7991,15 @@ function payrollSheetXml(rows) {
     const cells = row.map((value, colIndex) => {
       const ref = `${columnName(colIndex + 1)}${rowNumber}`;
       const text = String(value ?? "");
-      const style = isHeader ? 1 : (isSubtotal ? (colIndex >= 4 && colIndex <= 6 ? 4 : 2) : (colIndex >= 4 && colIndex <= 6 ? 3 : 0));
+      const moneyColumn = colIndex >= 4 && colIndex <= 7;
+      const style = isHeader ? 1 : (isSubtotal ? (moneyColumn ? 4 : 2) : (moneyColumn ? 3 : 0));
       return `<c r="${ref}" s="${style}" t="inlineStr"><is><t xml:space="preserve">${escapeXmlText(text).replace(/\n/g, "&#10;")}</t></is></c>`;
     }).join("");
     return `<row r="${rowNumber}" ht="${isHeader ? 30 : 22}" customHeight="1">${cells}</row>`;
   }).join("");
   const cols = widths.map((w, i) => `<col min="${i+1}" max="${i+1}" width="${w}" customWidth="1"/>`).join("");
   const lastRow = Math.max(1, rows.length);
-  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>${cols}</cols><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>${sheetRows}</sheetData><autoFilter ref="A1:K${lastRow}"/></worksheet>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><cols>${cols}</cols><sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews><sheetData>${sheetRows}</sheetData><autoFilter ref="A1:L${lastRow}"/></worksheet>`;
 }
 
 function exportPayrollExcel() {
@@ -7975,6 +8015,7 @@ function exportPayrollExcel() {
 function clearPayrollData() {
   if (!window.confirm("현재 급여계산 데이터를 초기화할까요?")) return;
   state.payrollRecords = [];
+  state.payrollUnmatchedRecords = [];
   persistState({ immediateServer: true });
   renderPayroll();
   showToast("급여계산 데이터를 초기화했습니다.");
