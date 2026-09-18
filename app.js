@@ -809,33 +809,55 @@ async function saveStateToDrive(serializedState, options = {}) {
   return await response.json().catch(() => ({ ok: true }));
 }
 
+function applyLoadedState(nextState, source = "load") {
+  if (!nextState || typeof nextState !== "object") return;
+  state = normalizeState(nextState);
+  invalidateManagerCaches();
+  touchStateRevision();
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch {}
+  safeLocalBackupSnapshot(state, source);
+}
+
+async function syncDriveStateInBackground(localState) {
+  try {
+    const driveState = await loadStateFromDrive();
+    if (!driveState || stateDataCount(driveState) === 0) return;
+    const driveStamp = String(driveState?.appMeta?.lastStateUpdatedAt || "");
+    const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
+    const localCount = stateDataCount(localState);
+    const driveCount = stateDataCount(driveState);
+    const localIsNewer = localStamp && driveStamp && localStamp > driveStamp;
+    if (shouldPreferLocalState(localState, driveState) || localIsNewer) {
+      // 브라우저의 더 최신 데이터는 Drive가 빈/오래된 상태일 때 유지합니다.
+      if (localCount > 0 && (!driveStamp || localIsNewer || driveCount === 0)) {
+        driveDataDirty = true;
+        persistState({ immediateServer: true, allowEmptyServer: false });
+      }
+      return;
+    }
+    applyLoadedState(driveState, "drive-load");
+    if (typeof renderNow === "function") renderNow();
+  } catch (error) {
+    console.warn("[DRIVE LOAD BACKGROUND]", error);
+    // 외부 저장소가 실패해도 화면은 계속 사용할 수 있어야 합니다.
+  }
+}
+
 async function loadPersistedState() {
   const localState = loadState();
   migrateDriveTokenFromState();
   const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
 
-  // 웹용은 Google Drive를 주 저장소로 사용합니다. 설정되지 않았으면 기존 브라우저 저장값으로 안전하게 동작합니다.
+  // 웹은 먼저 브라우저 안전 데이터를 즉시 적용해 화면을 열고,
+  // Google Drive 동기화는 백그라운드에서 수행합니다. 외부 API 지연으로 시작 화면이 멈추지 않습니다.
   if (isStaticWeb) {
-    try {
-      const driveState = await loadStateFromDrive();
-      if (driveState && stateDataCount(driveState) > 0) {
-        state = shouldPreferLocalState(localState, driveState) ? localState : driveState;
-        invalidateManagerCaches();
-        touchStateRevision();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        safeLocalBackupSnapshot(state, "drive-load");
-        return;
-      }
-    } catch (error) {
-      console.warn("[DRIVE LOAD]", error);
-    }
-    state = localState;
-    invalidateManagerCaches();
-    touchStateRevision();
+    applyLoadedState(localState, "local-load");
+    void syncDriveStateInBackground(localState);
     return;
   }
 
-  // PC용은 로컬 서버의 파일 저장소를 주 저장소로 사용합니다.
+  // PC용은 로컬 서버 파일 저장소를 백그라운드에서 확인하되, API가 없으면 로컬 데이터로 즉시 사용합니다.
+  applyLoadedState(localState, "local-load");
   try {
     const response = await fetchWithTimeout(STATE_API_URL, { cache: "no-store" }, 4000);
     if (!response.ok) throw new Error("state api unavailable");
@@ -848,27 +870,13 @@ async function loadPersistedState() {
       const serverStamp = String(normalizedServer?.appMeta?.lastStateUpdatedAt || "");
       const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
       if (shouldPreferLocalState(localState, normalizedServer) || (localStamp && serverStamp && localStamp > serverStamp)) {
-        state = localState;
-        invalidateManagerCaches();
-        touchStateRevision();
-        safeLocalBackupSnapshot(state, "server-protection");
         persistState({ immediateServer: true, allowEmptyServer: false });
       } else {
-        state = normalizedServer;
-        invalidateManagerCaches();
-        touchStateRevision();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        safeLocalBackupSnapshot(state, "server-load");
+        applyLoadedState(normalizedServer, "server-load");
       }
-    } else {
-      state = localState;
-      invalidateManagerCaches();
-      touchStateRevision();
     }
   } catch {
-    state = localState;
-    invalidateManagerCaches();
-    touchStateRevision();
+    // 로컬 데이터로 계속 실행합니다.
   }
 }
 
@@ -15918,7 +15926,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.04";
+const APP_VERSION = "v11.05";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
