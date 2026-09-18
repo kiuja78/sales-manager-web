@@ -652,7 +652,11 @@ const sampleState = {
   ]
 };
 
-let state = loadState();
+// IMPORTANT: do not read/normalize persisted data while the `state` binding is still
+// being initialized. normalizeManager() can consult configuredTeamNames(), which reads
+// the global state. With legacy data this used to throw a TDZ ReferenceError before
+// init() even ran, leaving the startup overlay on screen. Persisted data is loaded in init().
+let state = structuredClone(sampleState);
 let currentView = "dashboard";
 let managerPerformanceMode = "assigned";
 let selectedRecordId = "";
@@ -838,7 +842,19 @@ async function loadPersistedState() {
         if (savedSchema === STATE_SCHEMA_VERSION && hasCoreArrays) {
           state = primaryParsed;
         } else {
+          // Legacy data is normalized exactly once, then stamped with the current schema
+          // so the next startup can take the fast path. Keep a recovery snapshot first.
+          safeLocalBackupSnapshot(primaryParsed, "before-schema-migration");
           state = normalizeState(primaryParsed);
+          state.appMeta = state.appMeta && typeof state.appMeta === "object" ? state.appMeta : {};
+          state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
+          try {
+            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+            // Keep the pre-migration local snapshot intact; write the migrated copy to IndexedDB.
+            queueDurableBackup("after-schema-migration");
+          } catch (error) {
+            console.warn("[STARTUP] migrated state persist failed", error);
+          }
         }
         primaryValid = true; // 의도적으로 비어 있는 초기화 데이터도 유효한 데이터로 취급합니다.
       }
@@ -933,7 +949,7 @@ function normalizeState(loaded) {
     teamNames: configuredTeams,
     appMeta: { ...sampleState.appMeta, ...(loaded.appMeta || {}) },
     menuVisibility: normalizeMenuVisibility(loaded.menuVisibility),
-    managers: loadedManagers.map((manager) => normalizeManager(manager)),
+    managers: loadedManagers.map((manager) => normalizeManager(manager, configuredTeams)),
     records: Array.isArray(loaded.records) ? loaded.records : sampleState.records,
     promotions: Array.isArray(loaded.promotions) ? loaded.promotions.map(normalizePromotion) : sampleState.promotions.map(normalizePromotion),
     monthSettings: { ...sampleState.monthSettings, ...(loaded.monthSettings || {}) },
@@ -1994,8 +2010,11 @@ function managerStatusForMonth(managerOrName, month = currentDashboardMonth()) {
   return manager.status === "inactive" ? "inactive" : "active";
 }
 
-function normalizeManager(manager = {}) {
-  const names = configuredTeamNames();
+function normalizeManager(manager = {}, teamNamesOverride = null) {
+  const overrideNames = Array.isArray(teamNamesOverride)
+    ? teamNamesOverride.map(normalizeTeamName).filter(Boolean)
+    : [];
+  const names = overrideNames.length ? [...new Set(overrideNames)] : configuredTeamNames();
   const explicitTeam = normalizeTeamName(manager.team);
   const fallbackTeam = explicitTeam || names[0] || "원팀";
   const joinedMonth = normalizeManagerMonth(manager.joinedMonth || manager.startMonth);
@@ -2308,9 +2327,10 @@ function ensureRecordManagerReference(record, managers = state.managers || []) {
 function ensureManagerDataIntegrity(targetState = state) {
   if (!targetState || typeof targetState !== "object") return targetState;
 
+  const targetTeamNames = normalizeTeamNames(targetState.teamNames, targetState.managers);
   targetState.managers = (Array.isArray(targetState.managers) ? targetState.managers : [])
     .map((manager, index) => {
-      const normalized = normalizeManager(manager);
+      const normalized = normalizeManager(manager, targetTeamNames);
       if (!(normalized.displayOrder > 0)) normalized.displayOrder = index + 1;
       return normalized;
     });
@@ -15702,7 +15722,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.07";
+const APP_VERSION = "v11.08";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
