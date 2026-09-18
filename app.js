@@ -2,8 +2,6 @@ const STORAGE_KEY = "myeongjang-sales-manager-v1";
 const LOCAL_BACKUP_KEY = "myeongjang-sales-manager-backup-v1";
 const LOCAL_BACKUP_INDEX_KEY = "myeongjang-sales-manager-backup-index-v1";
 const LOCAL_BACKUP_LIMIT = 12;
-const STATE_API_URL = "/api/state";
-const DEFAULT_MOBILE_SYNC_URL = "https://script.google.com/macros/s/AKfycbyL8EOEKRYW6kOnZPQklRc5JNg_NbmZ6Qe93QgCxDXXXwwQtxipCrcJzHH-pD_JPslq/exec";
 
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
@@ -472,11 +470,10 @@ const sampleState = {
     branchName: "명장지국",
     masterName: "김건일",
     masterRole: "마스터",
-    mobileSyncUrl: DEFAULT_MOBILE_SYNC_URL
+    teamOperationMode: "1"
   },
   menuVisibility: normalizeMenuVisibility(),
   teamNames: ["원팀"],
-  appMeta: { teamOperationMode: "1" },
   managers: [
     { id: "m1", name: "김재곤", team: "B팀", goal: 31 },
     { id: "m2", name: "박은영", team: "B팀", goal: 31 },
@@ -587,10 +584,6 @@ let managerIndexCache = null;
 let allManagerNamesCache = { revision: -1, names: [] };
 let stateRevision = 0;
 let renderFrameId = 0;
-let serverPersistTimer = 0;
-let serverPersistController = null;
-let serverPersistData = "";
-let persistFailureToastShown = false;
 
 function invalidateManagerCaches() {
   managerIndexCache = null;
@@ -730,109 +723,34 @@ function shouldPreferLocalState(localState, serverState) {
 }
 
 async function loadPersistedState() {
-  const localState = loadState();
-  try {
-    const response = await fetch(STATE_API_URL, { cache: "no-store" });
-    if (!response.ok) throw new Error("state api unavailable");
-    const loaded = await response.json();
-    const hasServerData = loaded && typeof loaded === "object" && (
-      Array.isArray(loaded.records) || Array.isArray(loaded.managers) || loaded.appMeta || loaded.monthSettings
-    );
-    if (hasServerData) {
-      const normalizedServer = normalizeState(loaded);
-      const serverStamp = String(normalizedServer?.appMeta?.lastStateUpdatedAt || "");
-      const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
-      if (shouldPreferLocalState(localState, normalizedServer)) {
-        state = localState;
-        invalidateManagerCaches();
-        touchStateRevision();
-        safeLocalBackupSnapshot(state, "server-empty-protection");
-        persistState({ immediateServer: true, allowEmptyServer: false });
-      } else if (localStamp && serverStamp && localStamp > serverStamp) {
-        state = localState;
-        invalidateManagerCaches();
-        touchStateRevision();
-        persistState({ immediateServer: true, allowEmptyServer: false });
-      } else {
-        state = normalizedServer;
-        invalidateManagerCaches();
-        touchStateRevision();
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        safeLocalBackupSnapshot(state, "server-load");
-      }
-    } else {
-      state = localState;
-      invalidateManagerCaches();
-      touchStateRevision();
-    }
-  } catch {
-    state = localState;
-    invalidateManagerCaches();
-    touchStateRevision();
-  }
+  // 웹 정적 배포에서는 외부 서버/API를 조회하지 않고 브라우저 저장 데이터만 사용합니다.
+  state = loadState();
+  invalidateManagerCaches();
+  touchStateRevision();
 }
 
 function persistState(options = {}) {
-  const ensureManagers = options.ensureManagers === true;
-  const immediateServer = options.immediateServer === true;
-  const allowEmptyServer = options.allowEmptyServer === true;
-
+  // options는 기존 호출부 호환을 위해 유지하지만, 현재 기준본에서는 서버 저장을 사용하지 않습니다.
   ensureManagerDataIntegrity(state);
   const currentCount = stateDataCount(state);
   const existingRaw = localStorage.getItem(STORAGE_KEY);
   let existingState = null;
   try { existingState = existingRaw ? normalizeState(JSON.parse(existingRaw)) : null; } catch { existingState = null; }
 
-  // Never overwrite a non-empty browser dataset with an empty state by accident.
-  if (!allowEmptyServer && currentCount === 0 && stateDataCount(existingState) > 0) {
+  // 비어 있는 상태가 기존의 실제 데이터를 실수로 덮어쓰는 것을 방지합니다.
+  if (currentCount === 0 && stateDataCount(existingState) > 0 && options.allowEmptyServer !== true) {
     state = existingState;
     showToast("빈 데이터 저장을 차단했습니다. 기존 데이터를 유지합니다.");
   }
 
-  // Always capture a browser-local safety copy BEFORE replacing the main storage value.
   safeLocalBackupSnapshot(state, "before-save");
   state.appMeta = state.appMeta || {};
   state.appMeta.lastStateUpdatedAt = new Date().toISOString();
   state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
 
-  const data = JSON.stringify(state);
-  localStorage.setItem(STORAGE_KEY, data);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   touchStateRevision();
-
-  serverPersistData = data;
-  window.clearTimeout(serverPersistTimer);
-
-  const sendToServer = () => {
-    if (!serverPersistData) return Promise.resolve({ ok: true, skipped: true });
-    if (!allowEmptyServer && stateDataCount(state) === 0 && existingState && stateDataCount(existingState) > 0) {
-      return Promise.resolve({ ok: false, skipped: true, protected: true });
-    }
-    serverPersistController?.abort();
-    serverPersistController = typeof AbortController === "function" ? new AbortController() : null;
-    const body = serverPersistData;
-    serverPersistData = "";
-    return fetch(STATE_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json;charset=utf-8" },
-      body,
-      signal: serverPersistController?.signal
-    }).then((response) => {
-      if (!response.ok) throw new Error(`state save failed (${response.status})`);
-      persistFailureToastShown = false;
-      return response;
-    }).catch((error) => {
-      if (error?.name === "AbortError") return { ok: false, aborted: true };
-      if (!persistFailureToastShown) {
-        persistFailureToastShown = true;
-        showToast("서버 저장 실패: 브라우저 자동백업에 안전하게 보관했습니다.");
-      }
-      throw error;
-    });
-  };
-
-  if (immediateServer) return sendToServer();
-  serverPersistTimer = window.setTimeout(sendToServer, 280);
-  return Promise.resolve({ ok: true, queued: true });
+  return Promise.resolve({ ok: true, local: true });
 }
 
 function ensureAllRecordManualOrder(records) {
@@ -11127,12 +11045,6 @@ function renderSettings() {
   if ($("#menuVisibilityContactNote")) $("#menuVisibilityContactNote").checked = menuVisibility.contactnote;
   if ($("#menuVisibilityContactRequest")) $("#menuVisibilityContactRequest").checked = menuVisibility.contactrequest;
   if ($("#menuVisibilityRenewalGuide")) $("#menuVisibilityRenewalGuide").checked = menuVisibility.renewalguide;
-  const mobileSyncUrlInput = $("#mobileSyncUrlInput");
-  if (mobileSyncUrlInput) mobileSyncUrlInput.value = state.appMeta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL || "";
-  if (state.appMeta.mobileLastSyncAt) {
-    setMobileSyncStatus(`마지막 동기화: ${new Date(state.appMeta.mobileLastSyncAt).toLocaleString("ko-KR")}`, "success");
-  }
-
   renderGoalSettingsForMonth($("#goalMonthInput")?.value || $("#monthFilter").value);
   renderCustomDashboardCardSettings();
   renderTeamOperationSettings();
@@ -11399,29 +11311,9 @@ async function importFullBackupFile(file) {
     const restoredRecordCount = Array.isArray(state.records) ? state.records.length : 0;
     showToast(`백업 데이터 적용 완료 · 접수내역 ${restoredRecordCount}건`);
 
-    // GitHub Pages(사용자 웹버전)에는 /api/state 서버가 존재하지 않습니다.
-    // 이 경우 localStorage에 복원된 데이터를 정상적으로 유지하고, 서버 검증은 건너뜁니다.
-    const isGitHubPages = /(^|\.)github\.io$/i.test(String(location.hostname || ""));
-    const canUseStateApi = !isGitHubPages && location.protocol !== "file:";
-    let verifyRecordCount = restoredRecordCount;
-
-    if (canUseStateApi) {
-      showToast("전체 백업 복원 중 · 서버 저장을 확인하고 있습니다...");
-      await persistState({ ensureManagers: true, immediateServer: true });
-      const verifyResponse = await fetch(STATE_API_URL, { cache: "no-store" });
-      if (!verifyResponse.ok) {
-        throw new Error(`서버 저장 확인 실패 (${verifyResponse.status})`);
-      }
-      const verifyData = await verifyResponse.json();
-      verifyRecordCount = Array.isArray(verifyData.records) ? verifyData.records.length : 0;
-      if (verifyRecordCount !== restoredRecordCount) {
-        throw new Error(`저장 검증 불일치: expected=${restoredRecordCount}, actual=${verifyRecordCount}`);
-      }
-    } else {
-      // persistState()가 기본적으로 localStorage에 먼저 저장하므로 웹 정적 배포에서도 복원이 유지됩니다.
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-      showToast("전체 백업 복원 완료 · 현재 브라우저에 안전하게 저장했습니다.");
-    }
+    // 복원은 외부 서버와 완전히 분리합니다. JSON → normalize → Local Storage 저장 순서로만 처리합니다.
+    await persistState({ ensureManagers: true });
+    showToast("전체 백업 복원 완료 · 현재 브라우저에 안전하게 저장했습니다.");
 
     selectedRecordId = "";
     selectedChecklistId = "";
@@ -11430,12 +11322,7 @@ async function importFullBackupFile(file) {
     recordSequenceSort = "desc";
 
     renderNow();
-    setMobileSyncStatus("백업에서 모바일 동기화 설정까지 복원되었습니다.", "success");
-    showToast(`전체 백업 복원 완료 · 접수내역 ${verifyRecordCount}건`);
-    const restoreTargetMessage = canUseStateApi
-      ? `접수내역 ${verifyRecordCount}건이 서버 저장까지 확인되었습니다.`
-      : `접수내역 ${verifyRecordCount}건이 현재 브라우저에 저장되었습니다.`;
-    window.alert(`전체 백업 복원이 완료되었습니다.\n\n${restoreTargetMessage}`);
+    window.alert(`전체 백업 복원이 완료되었습니다.\n\n접수내역 ${restoredRecordCount}건이 현재 브라우저에 저장되었습니다.`);
     return true;
   } catch (error) {
     console.error("[BACKUP IMPORT] restore/save failed", error);
@@ -11782,8 +11669,7 @@ function collectUserSettings() {
     ...previousMeta,
     branchName: $("#branchNameInput").value.trim(),
     masterName: $("#masterNameInput").value.trim(),
-    masterRole: $("#masterRoleInput").value.trim() || "마스터",
-    mobileSyncUrl: previousMeta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL
+    masterRole: $("#masterRoleInput").value.trim() || "마스터"
   };
   const mode = teamOperationMode(currentDashboardMonth());
   const teamInput = $("#masterTeamInput");
@@ -13840,21 +13726,7 @@ function normalizeImportedDate(value) {
 }
 
 async function readExcelImport(file) {
-  if (location.protocol === "http:" || location.protocol === "https:") {
-    try {
-      const response = await fetch("/api/import-xlsx", {
-        method: "POST",
-        headers: { "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
-        body: file
-      });
-      if (response.ok) return await response.json();
-      const errorBody = await response.json().catch(() => ({}));
-      throw new Error(errorBody.error || `서버 응답 오류 ${response.status}`);
-    } catch (error) {
-      if (location.protocol === "http:" || location.protocol === "https:") throw error;
-      // Fall through to browser-side parsing for static file usage.
-    }
-  }
+  // 정적 웹 배포에서도 동일하게 동작하도록 브라우저에서 직접 XLSX를 파싱합니다.
   return parseWorkbookClient(await readXlsx(file));
 }
 
@@ -14646,11 +14518,6 @@ function attachEvents() {
   setMobileRecordTab($("#recordsView")?.dataset.mobileRecordTab || "main");
   syncMobileAppNav(currentView);
   syncMobileMenuVisibility();
-  $("#payrollManagerInput")?.addEventListener("change", (event) => {
-    state.payrollManager = event.target.value || "";
-    persistState({ immediateServer: true });
-    renderPayroll();
-  });
   $("#payrollImportInput")?.addEventListener("change", (event) => { importPayrollFile(event.target.files?.[0]); event.target.value = ""; });
   $("#payrollSellerFilter")?.addEventListener("change", renderPayroll);
   $("#payrollManagerInput")?.addEventListener("change", (event) => { state.payrollManager = String(event.target.value || "").trim(); persistState({ immediateServer: true }); renderPayroll(); });
@@ -14796,10 +14663,6 @@ function attachEvents() {
   $("#shareKakaoBtn")?.addEventListener("click", shareKakaoImage);
   $("#managerPerformancePrintBtn")?.addEventListener("click", printCurrentManagerPerformance);
   $("#printDashboardBtn").addEventListener("click", printDashboard);
-  $("#mobileSyncQuickBtn")?.addEventListener("click", syncMobileGoogleSheet);
-  $("#mobileSyncBtn")?.addEventListener("click", syncMobileGoogleSheet);
-  $("#saveMobileSyncUrlBtn")?.addEventListener("click", saveMobileSyncUrl);
-  $("#copyMobileSyncUrlBtn")?.addEventListener("click", copyMobileSyncUrl);
   $("#saveCustomCardsBtn")?.addEventListener("click", () => {
     collectCustomDashboardCards();
     persistState();
@@ -15671,7 +15534,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.03";
+const APP_VERSION = "v11.04";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -15925,237 +15788,6 @@ window.openManagerShareModal = openManagerShareModal;
 window.kakaoShareCurrentManagerImage = kakaoShareCurrentManagerImage;
 window.copyCurrentManagerShareImage = copyCurrentManagerShareImage;
 window.saveCurrentManagerShareImage = saveCurrentManagerShareImage;
-
-
-function mobileSyncConfig() {
-  const meta = state.appMeta || {};
-  const url = String(meta.mobileSyncUrl || DEFAULT_MOBILE_SYNC_URL || "").trim();
-  return {
-    url,
-    enabled: Boolean(url)
-  };
-}
-
-function setMobileSyncStatus(message, type = "info") {
-  const nodes = [$("#mobileSyncStatus")].filter(Boolean);
-  nodes.forEach((node) => {
-    node.textContent = message || "";
-    node.dataset.type = type;
-  });
-}
-
-
-function normalizePhoneForMobileSync(value) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-  const digits = raw.replace(/[^0-9]/g, "");
-  if (!digits) return raw;
-  if (digits.length === 10 && !digits.startsWith("0")) return `0${digits}`;
-  return digits;
-}
-
-function mobileSyncMonthList() {
-  const monthSet = new Set();
-  if (state.monthSettings && typeof state.monthSettings === "object") {
-    Object.keys(state.monthSettings).forEach((month) => {
-      if (/^\d{4}-\d{2}$/.test(month)) monthSet.add(month);
-    });
-  }
-  (state.records || []).forEach((record) => {
-    const month = recordGoalMonth(record);
-    if (/^\d{4}-\d{2}$/.test(month)) monthSet.add(month);
-  });
-  const current = $("#monthFilter")?.value || monthIso();
-  if (/^\d{4}-\d{2}$/.test(current)) monthSet.add(current);
-  return Array.from(monthSet).sort();
-}
-
-function mobileSyncRecordsForMonth(month) {
-  const targetPeriod = monthPeriod(month);
-  const periodStart = targetPeriod.start || `${month}-01`;
-  const periodEnd = targetPeriod.end || lastDayOfMonth(month);
-  return (state.records || []).filter((record) => {
-    if (!record || record.status === "취소") return false;
-    return inDateRange(record.receivedDate, periodStart, periodEnd);
-  });
-}
-
-function mobileSyncSnapshotForMonth(month) {
-  const setting = monthSetting(month);
-  const targetPeriod = monthPeriod(month);
-  const records = mobileSyncRecordsForMonth(month);
-  const goals = calculatedGoals(month);
-  const totals = applyManualStatsToTotals(actuals(records), "", month);
-  const managers = teamManagers(month).map((manager) => {
-    const managerRecords = records.filter((record) => record.manager === manager.name);
-    const managerTotals = applyManualStatsToTotals(actuals(managerRecords), manager.name, month);
-    const goal = managerGoalFor(manager.name, month);
-    return {
-      month,
-      name: manager.name,
-      team: managerTeamForMonth(manager, month),
-      goal,
-      newCount: managerTotals.newCount,
-      packageCount: managerTotals.packageCount,
-      rentalActual: managerTotals.rentalActual,
-      cashActual: managerTotals.cashActual,
-      businessActual: managerTotals.businessActual,
-      renewalActual: managerTotals.renewalActual,
-      orderConsActual: managerTotals.orderConsActual,
-      supportActual: toNumber(managerTotals.supportActual),
-      refundActual: managerTotals.refundActual,
-      finalActual: managerTotals.managerFinalActual,
-      shortage: Math.max(toNumber(goal) - managerTotals.managerFinalActual, 0)
-    };
-  });
-  const safeRecord = (record) => ({
-    month,
-    id: record.id || "",
-    receivedDate: record.receivedDate || "",
-    installDate: record.installDate || "",
-    status: record.status || "",
-    manager: record.manager || "",
-    category: record.category || "",
-    activityType: recordActivityType(record),
-    count: toNumber(record.count),
-    customerName: record.customerName || "",
-    customerNo: record.customerNo || "",
-    previousCustomer: record.previousCustomer || "",
-    phone: normalizePhoneForMobileSync(record.phone),
-    product: record.product || "",
-    seller: record.seller || "",
-    memo: record.memo || "",
-    updatedAt: record.updatedAt || record.createdAt || ""
-  });
-  return {
-    month,
-    setting: {
-      accountCount: setting.accountCount || 0,
-      periodStart: targetPeriod.start,
-      periodEnd: targetPeriod.end
-    },
-    goals,
-    totals,
-    managers,
-    records: records.map(safeRecord)
-  };
-}
-
-function mobileSyncPayload() {
-  const month = $("#monthFilter")?.value || monthIso();
-  const months = mobileSyncMonthList();
-  const snapshots = months.map(mobileSyncSnapshotForMonth);
-  const currentSnapshot = snapshots.find((item) => item.month === month) || mobileSyncSnapshotForMonth(month);
-  const allRecordCount = snapshots.reduce((sum, item) => sum + (Array.isArray(item.records) ? item.records.length : 0), 0);
-  return {
-    app: "MJ_Sales_Manager",
-    version: APP_VERSION,
-    syncedAt: new Date().toISOString(),
-    month,
-    branch: state.appMeta || {},
-    setting: currentSnapshot.setting,
-    goals: currentSnapshot.goals,
-    totals: currentSnapshot.totals,
-    managers: currentSnapshot.managers,
-    records: currentSnapshot.records,
-    monthSnapshots: snapshots,
-    monthOptions: snapshots.map((item) => ({
-      month: item.month,
-      periodStart: item.setting?.periodStart || "",
-      periodEnd: item.setting?.periodEnd || "",
-      recordCount: Array.isArray(item.records) ? item.records.length : 0
-    })),
-    totalSyncedRecordCount: allRecordCount
-  };
-}
-
-
-function postMobilePayloadByForm(url, payload) {
-  return new Promise((resolve) => {
-    const iframeName = `mobile-sync-frame-${Date.now()}`;
-    const iframe = document.createElement("iframe");
-    iframe.name = iframeName;
-    iframe.style.display = "none";
-    document.body.appendChild(iframe);
-
-    const form = document.createElement("form");
-    form.method = "POST";
-    form.action = url;
-    form.target = iframeName;
-    form.style.display = "none";
-
-    const input = document.createElement("input");
-    input.type = "hidden";
-    input.name = "payload";
-    input.value = JSON.stringify(payload);
-    form.appendChild(input);
-
-    document.body.appendChild(form);
-    form.submit();
-
-    window.setTimeout(() => {
-      form.remove();
-      iframe.remove();
-      resolve();
-    }, 1800);
-  });
-}
-
-async function syncMobileGoogleSheet() {
-  const config = mobileSyncConfig();
-  if (!config.url) {
-    setMobileSyncStatus("모바일 동기화 URL을 먼저 입력해 주세요.", "warn");
-    alert("사용자/목표/매니저 등록 화면에서 모바일 동기화 URL을 먼저 입력해 주세요.");
-    switchView("settings");
-    return;
-  }
-  const payload = mobileSyncPayload();
-  if (!payload.totalSyncedRecordCount) {
-    const ok = confirm(`모든 목표월을 합쳐 전송할 접수내역이 0건입니다. 그래도 모바일 동기화를 진행할까요?`);
-    if (!ok) return;
-  }
-  setMobileSyncStatus(`모바일용 데이터를 Google Sheet로 전송 중입니다... (${payload.totalSyncedRecordCount || payload.records.length}건)`, "info");
-  try {
-    await postMobilePayloadByForm(config.url, payload);
-    const meta = state.appMeta || {};
-    meta.mobileLastSyncAt = new Date().toISOString();
-    state.appMeta = meta;
-    persistState();
-    setMobileSyncStatus(`모바일 동기화 전송 완료 · ${payload.records.length}건 · 구글시트를 새로고침해 확인하세요.`, "success");
-    showToast(`모바일 동기화 전송 완료 · ${payload.records.length}건`);
-  } catch (error) {
-    console.error(error);
-    setMobileSyncStatus("모바일 동기화 실패: URL 또는 인터넷 연결을 확인해 주세요.", "error");
-    alert("모바일 동기화에 실패했습니다. Apps Script URL과 인터넷 연결을 확인해 주세요.");
-  }
-}
-
-function saveMobileSyncUrl() {
-  const input = $("#mobileSyncUrlInput");
-  const value = String(input?.value || "").trim();
-  const meta = state.appMeta || {};
-  meta.mobileSyncUrl = value;
-  state.appMeta = meta;
-  saveState(value ? "모바일 동기화 URL을 저장했습니다." : "모바일 동기화 URL을 비웠습니다.");
-  setMobileSyncStatus(value ? "모바일 동기화 URL이 저장되었습니다." : "모바일 동기화 URL이 비어 있습니다.", value ? "success" : "warn");
-}
-
-function copyMobileSyncUrl() {
-  const value = String($("#mobileSyncUrlInput")?.value || state.appMeta?.mobileSyncUrl || "").trim();
-  if (!value) {
-    alert("복사할 모바일 동기화 URL이 없습니다.");
-    return;
-  }
-  navigator.clipboard?.writeText(value).then(() => {
-    setMobileSyncStatus("모바일 동기화 URL을 복사했습니다.", "success");
-  }).catch(() => {
-    alert(value);
-  });
-}
-
-window.syncMobileGoogleSheet = syncMobileGoogleSheet;
-window.saveMobileSyncUrl = saveMobileSyncUrl;
-window.copyMobileSyncUrl = copyMobileSyncUrl;
 
 
 window.MJ_SALES_VERSION = APP_VERSION;
