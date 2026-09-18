@@ -762,12 +762,26 @@ function driveStateConfig() {
   return { url, token, enabled: Boolean(url) };
 }
 
+async function fetchWithTimeout(resource, options = {}, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(resource, { ...options, signal: controller.signal });
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 async function loadStateFromDrive() {
   const config = driveStateConfig();
   if (!config.enabled) return null;
   const query = new URLSearchParams({ action: "loadState" });
   if (config.token) query.set("token", config.token);
-  const response = await fetch(`${config.url}${config.url.includes("?") ? "&" : "?"}${query.toString()}`, { cache: "no-store" });
+  const response = await fetchWithTimeout(
+    `${config.url}${config.url.includes("?") ? "&" : "?"}${query.toString()}`,
+    { cache: "no-store" },
+    5000
+  );
   if (!response.ok) throw new Error(`Google Drive 불러오기 실패 (${response.status})`);
   const payload = await response.json();
   const loaded = payload?.state && typeof payload.state === "object" ? payload.state : payload;
@@ -823,7 +837,7 @@ async function loadPersistedState() {
 
   // PC용은 로컬 서버의 파일 저장소를 주 저장소로 사용합니다.
   try {
-    const response = await fetch(STATE_API_URL, { cache: "no-store" });
+    const response = await fetchWithTimeout(STATE_API_URL, { cache: "no-store" }, 4000);
     if (!response.ok) throw new Error("state api unavailable");
     const loaded = await response.json();
     const hasServerData = loaded && typeof loaded === "object" && (
@@ -910,11 +924,11 @@ function persistState(options = {}) {
     }
 
     try {
-      const response = await fetch(STATE_API_URL, {
+      const response = await fetchWithTimeout(STATE_API_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json;charset=utf-8" },
         body: data
-      });
+      }, 8000);
       if (!response.ok) throw new Error(`state save failed (${response.status})`);
       persistFailureToastShown = false;
       return { ok: true, target: "pc" };
@@ -15904,7 +15918,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.02";
+const APP_VERSION = "v11.04";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -16107,12 +16121,22 @@ function initStartupIntro() {
   const progress = $("#startupIntroProgress");
   const messages = ["업무 화면을 구성하고 있습니다", "저장 데이터를 확인하고 있습니다", "영업현황을 불러오는 중입니다"];
   let idx = 0;
-  const timer = setInterval(() => {
+  let removed = false;
+  const removeIntro = () => {
+    if (removed) return;
+    removed = true;
+    intro.classList.add("startup-intro-hidden");
+    window.setTimeout(() => intro.remove(), 420);
+  };
+  window.__mjRemoveStartupIntro = removeIntro;
+  const timer = window.setInterval(() => {
     idx += 1;
     if (status) status.textContent = messages[Math.min(idx, messages.length - 1)];
     if (progress) progress.style.width = `${Math.min(100, 30 + idx * 35)}%`;
-    if (idx >= 2) { clearInterval(timer); setTimeout(() => { intro.classList.add("startup-intro-hidden"); setTimeout(() => intro.remove(), 420); }, 420); }
+    if (idx >= 2) { window.clearInterval(timer); window.setTimeout(removeIntro, 250); }
   }, 430);
+  // 저장 서버가 응답하지 않아도 시작 화면에 영원히 머물지 않도록 하는 최종 안전장치
+  window.setTimeout(removeIntro, 6500);
 }
 
 async function init() {
@@ -16144,6 +16168,7 @@ async function init() {
   if (recordsView && !recordsView.dataset.mobileRecordTab) recordsView.dataset.mobileRecordTab = "main";
   resetRecordForm();
   renderNow();
+  window.__mjRemoveStartupIntro?.();
   setSettingsVersionStatus(SALES_MANAGER_LATEST_VERSION, compareVersionText(APP_VERSION, SALES_MANAGER_LATEST_VERSION) < 0
     ? "새 버전이 있습니다. 업데이트 버튼을 눌러 바로 다운로드하세요."
     : "현재 최신 버전을 사용 중입니다.");
