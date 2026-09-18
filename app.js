@@ -8,6 +8,7 @@ const DRIVE_STATE_FOLDER_ID = String(window.MJ_DRIVE_CONFIG?.folderId || "").tri
 const DRIVE_STATE_DEFAULT_TOKEN = String(window.MJ_DRIVE_CONFIG?.token || "").trim();
 const DRIVE_STATE_TOKEN_STORAGE_KEY = "myeongjang-sales-manager-drive-token-v1";
 const DRIVE_STATE_HISTORY_MINUTES = 5;
+const DRIVE_CLOSE_BACKUP_ENABLED = true;
 
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
@@ -595,6 +596,11 @@ let serverPersistTimer = 0;
 let serverPersistController = null;
 let serverPersistData = "";
 let persistFailureToastShown = false;
+let driveDataDirty = false;
+let driveLastSuccessfulSaveAt = 0;
+let driveLastHistoryBackupAt = 0;
+let driveCloseBackupInProgress = false;
+let driveCloseBackupAttempted = false;
 
 function invalidateManagerCaches() {
   managerIndexCache = null;
@@ -775,12 +781,14 @@ async function saveStateToDrive(serializedState, options = {}) {
   const response = await fetch(config.url, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
+    keepalive: options.keepalive === true,
     body: JSON.stringify({
       action: "saveState",
       token: config.token,
       version: APP_VERSION,
       state: JSON.parse(serializedState),
-      createHistory: options.createHistory !== false
+      createHistory: options.createHistory !== false,
+      forceHistory: options.forceHistory === true
     })
   });
   if (!response.ok) throw new Error(`Google Drive 저장 실패 (${response.status})`);
@@ -874,6 +882,7 @@ function persistState(options = {}) {
   const data = JSON.stringify(state);
   localStorage.setItem(STORAGE_KEY, data);
   touchStateRevision();
+  driveDataDirty = true;
 
   const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
   window.clearTimeout(serverPersistTimer);
@@ -882,9 +891,14 @@ function persistState(options = {}) {
   const save = async () => {
     if (isStaticWeb) {
       try {
-        await saveStateToDrive(data, { createHistory: true });
+        const now = Date.now();
+        const shouldHistory = options.forceHistory === true || (driveDataDirty && (now - driveLastHistoryBackupAt >= DRIVE_STATE_HISTORY_MINUTES * 60 * 1000));
+        const result = await saveStateToDrive(data, { createHistory: shouldHistory, forceHistory: options.forceHistory === true });
         persistFailureToastShown = false;
-        return { ok: true, target: "google-drive" };
+        driveLastSuccessfulSaveAt = now;
+        if (result?.archived || shouldHistory) driveLastHistoryBackupAt = now;
+        driveDataDirty = false;
+        return { ok: true, target: "google-drive", archived: Boolean(result?.archived) };
       } catch (error) {
         console.warn("[DRIVE SAVE]", error);
         if (!persistFailureToastShown) {
@@ -984,6 +998,50 @@ function normalizeState(loaded) {
   }
   ensureAllRecordManualOrder(next.records);
   return next;
+}
+
+async function saveDriveBeforeClose() {
+  if (driveCloseBackupAttempted || driveCloseBackupInProgress || !DRIVE_CLOSE_BACKUP_ENABLED) return;
+  driveCloseBackupAttempted = true;
+  driveCloseBackupInProgress = true;
+  try {
+    const config = driveStateConfig();
+    if (!config.enabled || !isGitHubPagesHost()) return;
+    ensureManagerDataIntegrity(state);
+    state.appMeta = state.appMeta || {};
+    state.appMeta.lastStateUpdatedAt = new Date().toISOString();
+    state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
+    const data = JSON.stringify(state);
+    localStorage.setItem(STORAGE_KEY, data);
+    safeLocalBackupSnapshot(state, "before-browser-close");
+    const result = await saveStateToDrive(data, { createHistory: true, forceHistory: true, keepalive: true });
+    if (result?.ok !== false) {
+      driveDataDirty = false;
+      driveLastSuccessfulSaveAt = Date.now();
+      driveLastHistoryBackupAt = Date.now();
+    }
+  } catch (error) {
+    console.warn("[DRIVE CLOSE BACKUP]", error);
+  } finally {
+    driveCloseBackupInProgress = false;
+  }
+}
+
+function attachDriveCloseBackupHandlers() {
+  if (!isGitHubPagesHost()) return;
+  window.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && driveDataDirty) {
+      // Best-effort background save when the tab becomes hidden.
+      saveDriveBeforeClose();
+    }
+  });
+  window.addEventListener("beforeunload", (event) => {
+    if (!driveDataDirty) return;
+    showToast("Google Drive에 마지막 백업을 저장하는 중입니다. 잠시 기다려 주세요.");
+    saveDriveBeforeClose();
+    event.preventDefault();
+    event.returnValue = "변경된 데이터가 있습니다. 종료 전에 Google Drive 자동 백업을 시도합니다.";
+  });
 }
 
 function saveState(message, options = {}) {
@@ -15798,7 +15856,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v10.99";
+const APP_VERSION = "v11.01";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -16054,6 +16112,7 @@ window.copyCurrentManagerShareImage = copyCurrentManagerShareImage;
 window.saveCurrentManagerShareImage = saveCurrentManagerShareImage;
 
 
+attachDriveCloseBackupHandlers();
 window.MJ_SALES_VERSION = APP_VERSION;
 window.MJ_SALES_SCHEMA_VERSION = STATE_SCHEMA_VERSION;
 window.checkForProgramUpdate = checkForProgramUpdate;

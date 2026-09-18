@@ -1,4 +1,4 @@
-// Google Drive 자동저장 기본 설정 (V10.99)
+// Google Drive 자동저장 기본 설정 (V11.01)
 // 사용자설정 화면에는 Drive 연결 정보를 노출하지 않습니다.
 // Apps Script URL, Drive 폴더 ID, 저장 토큰은 프로그램 내부에서 사용합니다.
 window.MJ_DRIVE_CONFIG = {
