@@ -805,11 +805,47 @@ async function loadPersistedState() {
     try {
       const driveState = await loadStateFromDrive();
       if (driveState && stateDataCount(driveState) > 0) {
-        state = shouldPreferLocalState(localState, driveState) ? localState : driveState;
+        const localCount = stateDataCount(localState);
+        const driveCount = stateDataCount(driveState);
+        const localStamp = String(localState?.appMeta?.lastStateUpdatedAt || "");
+        const driveStamp = String(driveState?.appMeta?.lastStateUpdatedAt || "");
+        const localIsNewer = Boolean(localStamp && driveStamp && localStamp > driveStamp);
+        const keepLocal = shouldPreferLocalState(localState, driveState) || localIsNewer;
+
+        state = keepLocal ? localState : driveState;
         invalidateManagerCaches();
         touchStateRevision();
         localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-        safeLocalBackupSnapshot(state, "drive-load");
+        safeLocalBackupSnapshot(state, keepLocal ? "local-protected-on-drive-load" : "drive-load");
+
+        // 웹 업데이트 후 브라우저에 더 최근 데이터가 남아 있으면
+        // 오래된 Google Drive 데이터가 그 값을 덮어쓰지 않도록 보호합니다.
+        // 이 경우 최신 로컬 상태를 Drive에도 즉시 동기화합니다.
+        if (keepLocal && localCount > 0 && (localIsNewer || driveCount === 0)) {
+          try {
+            const syncResult = await saveStateToDrive(JSON.stringify(state), { createHistory: true, forceHistory: true });
+            if (syncResult?.ok) driveDataDirty = false;
+          } catch (syncError) {
+            console.warn("[DRIVE LOAD] newer local state sync failed", syncError);
+          }
+        }
+        return;
+      }
+
+      // Drive가 비어 있거나 아직 초기화되지 않은 경우에는
+      // 기존 브라우저 데이터가 있으면 절대 빈 데이터로 교체하지 않습니다.
+      if (stateDataCount(localState) > 0) {
+        state = localState;
+        invalidateManagerCaches();
+        touchStateRevision();
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        safeLocalBackupSnapshot(state, "local-protected-empty-drive");
+        try {
+          const syncResult = await saveStateToDrive(JSON.stringify(state), { createHistory: true, forceHistory: true });
+          if (syncResult?.ok) driveDataDirty = false;
+        } catch (syncError) {
+          console.warn("[DRIVE LOAD] empty drive initialization failed", syncError);
+        }
         return;
       }
     } catch (error) {
@@ -15904,7 +15940,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.02";
+const APP_VERSION = "v11.07";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
