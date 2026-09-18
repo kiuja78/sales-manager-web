@@ -1575,8 +1575,8 @@ function actuals(records) {
   const supportActual = activityTypeCount(active, "지원");
   const renewalActual = 0;
   const refundActual = 0;
-  // 영업실적 = 신규 + 패키지 + 재렌탈 + 일시불 + 컨스 + 지원
-  const coreActual = newActual + rentalActual + orderConsActual + supportActual;
+  // 컨스는 기존 판매접수에 붙는 관리 구분이므로 별도 건수로만 집계하고 영업실적 계산에는 중복 가산하지 않습니다.
+  const coreActual = newActual + rentalActual + supportActual;
   const businessActual = coreActual;
   const overallActual = coreActual - refundActual + renewalActual;
   const managerFinalActual = businessActual + renewalActual - refundActual;
@@ -1638,7 +1638,7 @@ function memoKeywordCount(records, keyword) {
 }
 
 function exactManagerSalesMetrics(records, managerName = "") {
-  // 접수리스트의 판매종류 + 구분을 모두 실제 영업실적에 반영합니다.
+  // 판매종류 기준 실적에 지원을 반영하고, 컨스는 별도 관리 건수로만 표시합니다.
   const base = applyManualStatsToTotals(actuals(records), managerName);
   const newCount = toNumber(base.newCount);
   const packageCount = toNumber(base.packageCount);
@@ -1648,7 +1648,7 @@ function exactManagerSalesMetrics(records, managerName = "") {
   const refund = toNumber(base.refundActual);
   const consCount = toNumber(base.orderConsActual);
   const supportCount = toNumber(base.supportActual);
-  const business = newCount + packageCount + rentalCount + cashCount + consCount + supportCount;
+  const business = newCount + packageCount + rentalCount + cashCount + supportCount;
   const final = business + renewal - refund;
   return {
     newCount, packageCount, rentalCount, cashCount, consCount, supportCount,
@@ -8142,7 +8142,7 @@ function managerPerformanceDisplayManagers(salesManagers, actualMode = false) {
 }
 
 function actualManagerSalesMetrics(records, managerName = "") {
-  // 실제 실적현황도 접수리스트의 구분(컨스/지원)을 포함해 계산합니다.
+  // 실제 실적현황에서도 컨스는 별도 관리 건수로만 집계합니다.
   // 재약정/환수는 해당 매니저의 기존 수기값을 그대로 반영합니다.
   const base = actuals(records);
   const manual = manualStatFor(managerName);
@@ -8154,7 +8154,7 @@ function actualManagerSalesMetrics(records, managerName = "") {
   const refund = toNumber(manual.refund);
   const consCount = toNumber(base.orderConsActual);
   const supportCount = toNumber(base.supportActual);
-  const business = newCount + packageCount + rentalCount + cashCount + consCount + supportCount;
+  const business = newCount + packageCount + rentalCount + cashCount + supportCount;
   const final = business + renewal - refund;
   return {
     newCount, packageCount, rentalCount, cashCount, consCount, supportCount,
@@ -8247,6 +8247,39 @@ function renderManagerPerformanceMobileCards(rowMetrics, actualMode = false) {
 }
 
 
+function consRegisteredRecordsForManager(managerName, sourceRecords = null) {
+  const records = Array.isArray(sourceRecords)
+    ? sourceRecords
+    : (typeof getCurrentDashboardRecords === "function" ? getCurrentDashboardRecords() : filteredRecords());
+  return (records || [])
+    .filter((record) => record && record.status !== "취소")
+    .filter((record) => String(record.manager || "").trim() === String(managerName || "").trim())
+    .filter((record) => recordActivityType(record) === "컨스")
+    .sort((a, b) => String(a.receivedDate || "").localeCompare(String(b.receivedDate || "")) || String(a.customerName || "").localeCompare(String(b.customerName || ""), "ko"));
+}
+
+function renderConsPaymentRecordList(managerName, sourceRecords = null) {
+  const host = $("#consPaymentRecordList");
+  const count = $("#consPaymentRecordCount");
+  if (!host) return;
+  const rows = consRegisteredRecordsForManager(managerName, sourceRecords);
+  if (count) count.textContent = `${formatNumber(rows.length)}건`;
+  if (!rows.length) {
+    host.innerHTML = `<div class="cons-payment-record-empty">등록된 컨스 접수건이 없습니다.</div>`;
+    return;
+  }
+  host.innerHTML = `<div class="cons-payment-record-table-wrap"><table class="cons-payment-record-table">
+    <thead><tr><th>접수일</th><th>고객명</th><th>상품명</th><th>판매유형</th><th>상태</th></tr></thead>
+    <tbody>${rows.map((record) => `<tr>
+      <td>${escapeHtml(record.receivedDate || "-")}</td>
+      <td>${escapeHtml(record.customerName || "-")}</td>
+      <td title="${escapeHtml(record.product || "")}">${escapeHtml(record.product || "-")}</td>
+      <td>${escapeHtml(normalizeCategory(record.category) || "-")}</td>
+      <td>${escapeHtml(record.status || "-")}</td>
+    </tr>`).join("")}</tbody>
+  </table></div>`;
+}
+
 function openConsPaymentManager(managerName) {
   const month = manualStatsMonthKey();
   const stat = manualStatFor(managerName, month);
@@ -8267,6 +8300,7 @@ function openConsPaymentManager(managerName) {
   $("#consPaymentPaid").textContent = formatNumber(paid);
   $("#consPaymentPending").textContent = formatNumber(pending);
   $("#consPaymentMemo").value = stat.consMemo || "";
+  renderConsPaymentRecordList(managerName, records);
   modal.hidden = false;
 }
 function closeConsPaymentManager() { const modal = $("#consPaymentModal"); if (modal) modal.hidden = true; }
@@ -8319,14 +8353,14 @@ document.addEventListener("click", (event) => {
   const rawTarget = $("#consPaymentTarget")?.value || "0";
   const target = Math.max(0, Number(rawTarget));
   if (!Number.isFinite(target)) {
-    showToast("지급 예정 수량을 확인해 주세요.");
+    showToast("지급예정 건수를 확인해 주세요.");
     return;
   }
 
   const records = typeof getCurrentDashboardRecords === "function" ? getCurrentDashboardRecords() : filteredRecords();
   const actual = Math.max(0, toNumber(exactManagerSalesMetrics((records || []).filter((record) => record.manager === managerName), managerName).consCount));
   stat.consDue = target;
-  // 지급 완료/대기는 실제 컨스와 지급 예정에서 자동 계산합니다.
+  // 지급 완료/대기는 컨스 등록건과 지급예정 건수에서 자동 계산합니다.
   stat.consPaid = Math.min(actual, target);
   stat.consMemo = String($("#consPaymentMemo")?.value || "");
 
@@ -8358,8 +8392,8 @@ function renderManagerPerformanceTable(records, salesManagers) {
   }
   if (guide) {
     guide.textContent = actualMode
-      ? "실판매자 기준의 실제 판매실적입니다. 실판매자=팀장은 등록 사용자(마스터)에게, 실판매자=지국장은 별도 지국장 행에 집계합니다. 실판매자가 없으면 주매니저에게 귀속합니다. 컨스·지원은 제외하며 재약정·환수는 기존 수기값을 반영합니다."
-      : "신규·패키지·재렌탈·일시불·컨스·지원은 접수리스트에서 자동 집계되어 영업실적에 합산됩니다. 재약정·환수는 수기로 입력하고, 컨스 지급관리는 지급완료 수량과 메모로 관리합니다.";
+      ? "실판매자 기준의 실제 판매실적입니다. 실판매자=팀장은 등록 사용자(마스터)에게, 실판매자=지국장은 별도 지국장 행에 집계합니다. 실판매자가 없으면 주매니저에게 귀속합니다. 컨스는 별도 관리 건수로 확인하며 재약정·환수는 기존 수기값을 반영합니다."
+      : "신규·패키지·재렌탈·일시불·지원은 접수리스트에서 자동 집계됩니다. 컨스는 접수리스트 등록건을 자동 집계해 지급관리에서 확인할 수 있으며, 재약정·환수는 수기로 입력합니다.";
   }
 
   const assignedHeaders = ["매니저","신규","패키지","재렌탈","일시불","컨스","지원","영업실적","재약정","환수","최종실적","상시목표","상시부족","달성률"];
@@ -15697,7 +15731,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.15";
+const APP_VERSION = "v11.16";
 const STATE_SCHEMA_VERSION = 4;
 
 function normalizeVersionText(version = "") {

@@ -24198,3 +24198,17 @@ body[data-view="records"] .record-form-row.row-basic {
 #dashboardView .calendar-day.range-edge.is-holiday > span {
   color: #ffe0e0 !important;
 }
+
+/* V11.16 컨스 지급관리 접수목록 */
+.cons-payment-records{margin-top:16px;padding-top:14px;border-top:1px solid #e5ece8}
+.cons-payment-records-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+.cons-payment-records-head strong{font-size:13px;color:#355247}
+.cons-payment-records-head span{font-size:11px;font-weight:800;color:#39745c;background:#edf7f2;border:1px solid #d4e9dd;border-radius:999px;padding:4px 8px}
+.cons-payment-record-list{max-height:230px;overflow:auto;border:1px solid #e0e7e4;border-radius:12px;background:#fff}
+.cons-payment-record-empty{padding:18px;text-align:center;color:#8a9690;font-size:12px}
+.cons-payment-record-table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:11px}
+.cons-payment-record-table th{position:sticky;top:0;z-index:1;padding:8px 7px;background:#f2f7f4;color:#52665e;border-bottom:1px solid #dce7e2;text-align:center;white-space:nowrap}
+.cons-payment-record-table td{padding:8px 7px;border-bottom:1px solid #edf1ef;text-align:center;vertical-align:middle;overflow-wrap:anywhere}
+.cons-payment-record-table td:nth-child(3){text-align:left;line-height:1.35}
+.cons-payment-record-table th:nth-child(1){width:14%}.cons-payment-record-table th:nth-child(2){width:13%}.cons-payment-record-table th:nth-child(3){width:43%}.cons-payment-record-table th:nth-child(4){width:14%}.cons-payment-record-table th:nth-child(5){width:16%}
+@media(max-width:560px){.cons-payment-record-table{min-width:620px}.cons-payment-record-list{overflow:auto}.cons-payment-records-head{margin-top:2px}}
