@@ -848,12 +848,14 @@ async function loadPersistedState() {
   migrateDriveTokenFromState();
   const isStaticWeb = isGitHubPagesHost() || location.protocol === "file:";
 
-  // 웹은 먼저 브라우저 안전 데이터를 즉시 적용해 화면을 열고,
-  // Google Drive 동기화는 백그라운드에서 수행합니다. 외부 API 지연으로 시작 화면이 멈추지 않습니다.
+  // 웹 시작 단계에서는 절대로 Google Drive나 대용량 백업 저장을 기다리지 않습니다.
+  // 먼저 메모리 상태만 즉시 적용하고, 화면이 열린 뒤 Drive 동기화를 별도로 시작합니다.
+  // 초기화가 멈춰 메뉴 이벤트가 연결되지 않는 문제를 방지하기 위한 핵심 안전장치입니다.
   if (isStaticWeb) {
-    applyLoadedState(localState, "local-load");
-    void syncDriveStateInBackground(localState);
-    return;
+    state = localState;
+    invalidateManagerCaches();
+    touchStateRevision();
+    return localState;
   }
 
   // PC용은 로컬 서버 파일 저장소를 백그라운드에서 확인하되, API가 없으면 로컬 데이터로 즉시 사용합니다.
@@ -14742,7 +14744,19 @@ function printRenewalGuide() {
   iframe.contentWindow.onafterprint = cleanup;
 }
 
+function attachCriticalNavEvents() {
+  $$(".nav-item").forEach((item) => {
+    if (item.dataset.navEventsAttached === "1") return;
+    item.dataset.navEventsAttached = "1";
+    item.addEventListener("click", () => switchView(item.dataset.view));
+  });
+}
+
 function attachEvents() {
+  // 메뉴는 다른 부가 이벤트보다 먼저 연결합니다. 이후 어느 한 부분에서 오류가 나도
+  // 핵심 화면 전환 기능은 반드시 살아 있도록 합니다.
+  attachCriticalNavEvents();
+
   $$("#printManagerStats [data-manager-performance-tab]").forEach((button) => {
     button.addEventListener("click", () => {
       const nextMode = button.dataset.managerPerformanceTab === "actual" ? "actual" : "assigned";
@@ -14896,7 +14910,7 @@ function attachEvents() {
     syncEvaluationPolicySettingsVisibility();
   });
 
-  $$(".nav-item").forEach((item) => item.addEventListener("click", () => switchView(item.dataset.view)));
+  // 핵심 메뉴 이벤트는 함수 시작부에서 이미 연결했습니다.
   attachMobileAppEvents();
   attachMobileFullMenuEvents();
   setMobileRecordTab($("#recordsView")?.dataset.mobileRecordTab || "main");
@@ -16170,13 +16184,25 @@ async function init() {
   const dayFilter = $("#dayFilter");
   if (dayFilter) dayFilter.value = "";
   setDashboardRange(period.start, dashboardDefaultEnd(period));
-  attachEvents();
+  try {
+    attachEvents();
+  } catch (error) {
+    console.error("[ATTACH EVENTS] 일부 보조 이벤트 연결 실패", error);
+    // 어떤 보조 UI 초기화가 실패해도 핵심 메뉴는 다시 연결합니다.
+    attachCriticalNavEvents();
+  }
   document.body.dataset.view = currentView;
   const recordsView = $("#recordsView");
   if (recordsView && !recordsView.dataset.mobileRecordTab) recordsView.dataset.mobileRecordTab = "main";
   resetRecordForm();
   renderNow();
   window.__mjRemoveStartupIntro?.();
+
+  // 업무 화면을 먼저 띄운 뒤 Google Drive 최신 데이터를 백그라운드에서 확인합니다.
+  // Drive가 느리거나 일시적으로 실패해도 화면 전환/입력은 막히지 않습니다.
+  if (isGitHubPagesHost() || location.protocol === "file:") {
+    void syncDriveStateInBackground(state);
+  }
   setSettingsVersionStatus(SALES_MANAGER_LATEST_VERSION, compareVersionText(APP_VERSION, SALES_MANAGER_LATEST_VERSION) < 0
     ? "새 버전이 있습니다. 업데이트 버튼을 눌러 바로 다운로드하세요."
     : "현재 최신 버전을 사용 중입니다.");
