@@ -23973,3 +23973,100 @@ body[data-view="settings"] .settings-grid-main > .custom-dashboard-card-settings
 .payroll-unmatched-row{background:#fffaf0}
 .payroll-unmatched-table th{background:#fff4d7}
 @media (max-width:700px){.payroll-unmatched-guide{font-size:11px}}
+
+
+/* V11.03 급여 최종리스트 컴팩트 UI */
+#payrollView .payroll-table-wrap{
+  margin:0 12px 12px !important;
+  border:1px solid #dfe8e3 !important;
+  border-radius:14px !important;
+  overflow:auto !important;
+  background:#fff !important;
+}
+#payrollView .payroll-table{
+  width:100% !important;
+  min-width:980px !important;
+  table-layout:fixed !important;
+  border-collapse:collapse !important;
+}
+#payrollView .payroll-table th{
+  padding:9px 7px !important;
+  font-size:11px !important;
+  line-height:1.2 !important;
+  text-align:center !important;
+  vertical-align:middle !important;
+  white-space:nowrap !important;
+  background:#f4f8f6 !important;
+  border-bottom:1px solid #d8e3de !important;
+}
+#payrollView .payroll-table td{
+  padding:8px 7px !important;
+  font-size:11px !important;
+  line-height:1.25 !important;
+  vertical-align:middle !important;
+  white-space:nowrap !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+  border-bottom:1px solid #edf1ef !important;
+  background:#fff !important;
+}
+#payrollView .payroll-table tbody tr:nth-child(even) td{background:#fbfdfc !important;}
+#payrollView .payroll-table tbody tr:hover td{background:#f1f7f4 !important;}
+#payrollView .payroll-table th:nth-child(1),#payrollView .payroll-table td:nth-child(1){width:8% !important;}
+#payrollView .payroll-table th:nth-child(2),#payrollView .payroll-table td:nth-child(2){width:12% !important;}
+#payrollView .payroll-table th:nth-child(3),#payrollView .payroll-table td:nth-child(3){width:9% !important;}
+#payrollView .payroll-table th:nth-child(4),#payrollView .payroll-table td:nth-child(4){width:25% !important;}
+#payrollView .payroll-table th:nth-child(5),#payrollView .payroll-table td:nth-child(5),
+#payrollView .payroll-table th:nth-child(6),#payrollView .payroll-table td:nth-child(6),
+#payrollView .payroll-table th:nth-child(7),#payrollView .payroll-table td:nth-child(7){width:8% !important;}
+#payrollView .payroll-table th:nth-child(8),#payrollView .payroll-table td:nth-child(8){width:9% !important;}
+#payrollView .payroll-table th:nth-child(9),#payrollView .payroll-table td:nth-child(9){width:6% !important;}
+#payrollView .payroll-table th:nth-child(10),#payrollView .payroll-table td:nth-child(10){width:5% !important;}
+#payrollView .payroll-table th:nth-child(11),#payrollView .payroll-table td:nth-child(11){width:10% !important;}
+#payrollView .payroll-table th:nth-child(12),#payrollView .payroll-table td:nth-child(12){width:10% !important;}
+#payrollView .payroll-table td:nth-child(3),#payrollView .payroll-table td:nth-child(4){
+  white-space:normal !important;
+  overflow:hidden !important;
+  text-overflow:ellipsis !important;
+}
+#payrollView .payroll-table td:nth-child(4){
+  display:table-cell !important;
+  max-width:0 !important;
+  word-break:keep-all !important;
+}
+#payrollView .payroll-table td.money,#payrollView .payroll-table td.qty{
+  text-align:center !important;
+  font-variant-numeric:tabular-nums;
+}
+#payrollView .payroll-date-stack{
+  gap:1px !important;
+  align-items:center !important;
+  line-height:1.15 !important;
+  white-space:nowrap !important;
+}
+#payrollView .payroll-date-stack span:first-child{font-size:11px !important;font-weight:800 !important;}
+#payrollView .payroll-date-stack span:last-child{font-size:9px !important;color:#7c8b84 !important;}
+#payrollView .payroll-subtotal-row td{
+  padding:7px !important;
+  background:#edf6f1 !important;
+  border-top:2px solid #c9ddd4 !important;
+  border-bottom:1px solid #d8e8e0 !important;
+  font-weight:800 !important;
+}
+#payrollView .payroll-grand-total-row td{
+  padding:9px 7px !important;
+  background:#e3f1eb !important;
+  border-top:2px solid #5b907c !important;
+  font-weight:900 !important;
+}
+#payrollView .payroll-table .payroll-customer-mismatch{
+  color:#c62828 !important;
+  background:#fff1f1 !important;
+  font-weight:900 !important;
+}
+#payrollView .payroll-unmatched-table{min-width:900px !important;}
+#payrollView .payroll-unmatched-table th,#payrollView .payroll-unmatched-table td{padding:8px 7px !important;}
+@media (max-width:1100px){
+  #payrollView .payroll-table{min-width:920px !important;}
+  #payrollView .payroll-table th,#payrollView .payroll-table td{padding:7px 5px !important;font-size:10.5px !important;}
+}

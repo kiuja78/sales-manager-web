@@ -974,7 +974,7 @@ function normalizeState(loaded) {
     payrollArchives: Array.isArray(loaded.payrollArchives) ? loaded.payrollArchives.map(normalizePayrollArchive) : []
   };
   // 이전 버전에서는 미매칭 급여 행도 payrollRecords에 함께 보관했습니다.
-  // V11.02부터는 미매칭 행을 별도 목록으로 분리해 최종 급여 합산에서 제외합니다.
+  // V11.03부터는 미매칭 행을 별도 목록으로 분리해 최종 급여 합산에서 제외합니다.
   const legacyPayrollRows = Array.isArray(next.payrollRecords) ? next.payrollRecords : [];
   const savedUnmatchedRows = Array.isArray(next.payrollUnmatchedRecords) ? next.payrollUnmatchedRecords : [];
   next.payrollRecords = legacyPayrollRows.filter((row) => row.matched);
