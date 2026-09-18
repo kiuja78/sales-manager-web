@@ -23962,3 +23962,14 @@ body[data-view="settings"] .settings-grid-main > .custom-dashboard-card-settings
   body[data-view="settings"] .settings-grid-main { grid-template-columns: 1fr !important; }
   body[data-view="settings"] .settings-grid-main > .settings-card { grid-column: 1 !important; grid-row: auto !important; }
 }
+
+/* V11.02 급여 합산/미매칭 개선 */
+.payroll-summary-card .payroll-fee-summary-only{margin-top:2px;margin-bottom:0}
+.payroll-grand-total-row{background:#eaf4ef !important;border-top:2px solid #2d6b54}
+.payroll-grand-total-row td{font-weight:900}
+.payroll-unmatched-panel{border-color:#e2c98d}
+.payroll-unmatched-panel .panel-head{background:#fff9e9}
+.payroll-unmatched-guide{padding:11px 14px;color:#6b5a2d;background:#fffcf2;border-bottom:1px solid #eee2bf;font-size:12px;line-height:1.5}
+.payroll-unmatched-row{background:#fffaf0}
+.payroll-unmatched-table th{background:#fff4d7}
+@media (max-width:700px){.payroll-unmatched-guide{font-size:11px}}
