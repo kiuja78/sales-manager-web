@@ -24024,3 +24024,157 @@ body[data-view="records"] .record-form-row.row-basic {
   #payrollView .payroll-table td { padding: 5px 4px; }
   #payrollView .payroll-table tbody td { height: 34px; font-size: 11px; }
 }
+
+/* V11.11 manager condition/promotion desktop readability */
+@media (min-width:851px) {
+  #dashboardView .manager-condition-summary {
+    margin-top:18px !important;
+    padding-bottom:1px;
+    background:#fbfdfc;
+    border-top:1px solid #dfe9e4;
+  }
+  #dashboardView .manager-condition-summary-head {
+    min-height:70px !important;
+    padding:12px 18px !important;
+    background:linear-gradient(90deg,#f2f8f5 0%,#fbfdfc 58%,#ffffff 100%) !important;
+    border-top:0 !important;
+    border-bottom:1px solid #dce7e1 !important;
+  }
+  #dashboardView .manager-condition-table-wrap {
+    margin:14px 14px 16px !important;
+    border:1px solid #dbe6e0 !important;
+    border-radius:15px !important;
+    overflow:hidden !important;
+    background:#fff !important;
+    box-shadow:0 3px 12px rgba(28,72,55,.045);
+  }
+  #dashboardView .manager-condition-table {
+    width:100% !important;
+    border-collapse:separate !important;
+    border-spacing:0 !important;
+    table-layout:fixed !important;
+    background:#fff !important;
+  }
+  #dashboardView .manager-condition-table th,
+  #dashboardView .manager-condition-table td {
+    border:0 !important;
+    border-bottom:1px solid #e8efeb !important;
+    text-align:center !important;
+    vertical-align:middle !important;
+  }
+  #dashboardView .manager-condition-table thead th {
+    padding:11px 12px !important;
+    color:#456258 !important;
+    font-size:11px !important;
+    font-weight:850 !important;
+    line-height:1.25 !important;
+    background:#f4f8f6 !important;
+    white-space:normal !important;
+    word-break:keep-all !important;
+  }
+  #dashboardView .manager-condition-table .manager-head-cell {
+    width:170px !important;
+    padding-left:18px !important;
+    text-align:left !important;
+    color:#264d3f !important;
+    background:#edf5f1 !important;
+  }
+  #dashboardView .manager-condition-table .condition-group-head {
+    color:#285d49 !important;
+    background:#edf7f1 !important;
+    border-left:1px solid #dbe8e1 !important;
+  }
+  #dashboardView .manager-condition-table .promo-group-head {
+    color:#73571e !important;
+    background:#fff7e8 !important;
+    border-left:1px solid #eadfca !important;
+  }
+  #dashboardView .manager-condition-table .condition-group-head small,
+  #dashboardView .manager-condition-table .promo-group-head small {
+    margin-left:4px;
+    opacity:.7;
+    font-size:9px;
+    font-weight:750;
+  }
+  #dashboardView .manager-condition-table.has-groups .manager-condition-label-row .promo-col:first-of-type {
+    border-left:1px solid #eadfca !important;
+  }
+  #dashboardView .manager-condition-table.single-group .manager-condition-single-row .condition-col {
+    background:#f2f8f5 !important;
+  }
+  #dashboardView .manager-condition-table.single-group .manager-condition-single-row .promo-col {
+    background:#fff8eb !important;
+  }
+  #dashboardView .manager-condition-table tbody td {
+    min-height:48px !important;
+    height:48px !important;
+    padding:8px 12px !important;
+    color:#334c43 !important;
+    font-size:13px !important;
+    background:#fff !important;
+  }
+  #dashboardView .manager-condition-table tbody tr:nth-child(even) td {
+    background:#fcfdfc !important;
+  }
+  #dashboardView .manager-condition-table tbody tr:hover td {
+    background:#f6faf8 !important;
+  }
+  #dashboardView .manager-condition-table tbody tr:last-child td {
+    border-bottom:0 !important;
+  }
+  #dashboardView .manager-condition-table .manager-condition-name {
+    padding-left:18px !important;
+    text-align:left !important;
+    background:#fbfdfc !important;
+  }
+  #dashboardView .manager-condition-table .manager-condition-name span {
+    display:inline-flex;
+    align-items:center;
+    min-height:30px;
+    padding:0 10px;
+    border:1px solid #d8e6df;
+    border-radius:9px;
+    background:#f2f8f5;
+    color:#173f31;
+    font-size:13px;
+    font-weight:900;
+  }
+  #dashboardView .manager-condition-value-pill {
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:42px;
+    min-height:29px;
+    padding:0 9px;
+    border-radius:999px;
+    font-size:13px;
+    font-weight:900;
+    line-height:1;
+  }
+  #dashboardView .manager-condition-value-pill.condition {
+    border:1px solid #cfe5da;
+    background:#eaf6f0;
+    color:#166747;
+  }
+  #dashboardView .manager-condition-value-pill.promo {
+    border:1px solid #ead9aa;
+    background:#fff7df;
+    color:#85641d;
+  }
+  #dashboardView .manager-condition-value-pill.total {
+    border:1px solid #cfc6e9;
+    background:#f3effc;
+    color:#604a92;
+  }
+  #dashboardView .manager-condition-zero {
+    display:inline-block;
+    color:#b5c0bb;
+    font-size:16px;
+    font-weight:700;
+    line-height:1;
+  }
+  #dashboardView .manager-condition-table .promo-total-col,
+  #dashboardView .manager-condition-table .promo-total-value {
+    background:#faf8fd !important;
+  }
+}

@@ -8759,25 +8759,43 @@ function renderDashboardManagerConditionSummary(records, managers) {
   }
 
   const conditionHead = cards.length
-    ? `<th colspan="${cards.length}" class="condition-group-head">집중관리 제품 <small>(건)</small></th>`
+    ? `<th colspan="${cards.length}" class="condition-group-head">집중관리 제품 <small>건수</small></th>`
     : "";
   const promoHead = promoRules.length
-    ? `<th colspan="${promoRules.length + 1}" class="promo-group-head">100점을 잡아라 <small>(점수)</small></th>`
+    ? `<th colspan="${promoRules.length + 1}" class="promo-group-head">100점을 잡아라 <small>점수</small></th>`
     : "";
 
-  const secondHead = [
-    "<th>매니저</th>",
-    ...cards.map((card) => `<th class="condition-col">${escapeHtml(card.title || "조건")}</th>`),
-    ...promoRules.map((rule) => `<th class="promo-col">${escapeHtml(rule.title || rule.keyword || "항목")}</th>`),
-    promoRules.length ? '<th class="promo-col promo-total-col">합계</th>' : ""
-  ].join("");
+  const useGroupedDesktopHead = Boolean(cards.length && promoRules.length);
+  const desktopHead = useGroupedDesktopHead
+    ? `<tr class="manager-condition-group-row">
+        <th rowspan="2" class="manager-head-cell">매니저</th>
+        ${conditionHead}
+        ${promoHead}
+      </tr>
+      <tr class="manager-condition-label-row">
+        ${cards.map((card) => `<th class="condition-col">${escapeHtml(card.title || "조건")}</th>`).join("")}
+        ${promoRules.map((rule) => `<th class="promo-col">${escapeHtml(rule.title || rule.keyword || "항목")}</th>`).join("")}
+        ${promoRules.length ? '<th class="promo-col promo-total-col">총점</th>' : ""}
+      </tr>`
+    : `<tr class="manager-condition-single-row">
+        <th class="manager-head-cell">매니저</th>
+        ${cards.map((card) => `<th class="condition-col">${escapeHtml(card.title || "조건")}</th>`).join("")}
+        ${promoRules.map((rule) => `<th class="promo-col">${escapeHtml(rule.title || rule.keyword || "항목")}</th>`).join("")}
+        ${promoRules.length ? '<th class="promo-col promo-total-col">총점</th>' : ""}
+      </tr>`;
+
+  const valuePill = (value, kind = "condition", suffix = "") => {
+    const numeric = toNumber(value);
+    if (numeric <= 0) return `<span class="manager-condition-zero">—</span>`;
+    return `<span class="manager-condition-value-pill ${kind}">${formatNumber(numeric)}${suffix}</span>`;
+  };
 
   const bodyRows = rows.map((row) => `
     <tr>
-      <td class="manager-condition-name">${escapeHtml(row.manager)}</td>
-      ${row.conditionValues.map((value) => `<td class="condition-value">${toNumber(value) > 0 ? formatNumber(value) : ""}</td>`).join("")}
-      ${row.promoValues.map((value) => `<td class="promo-value">${toNumber(value) > 0 ? `${formatNumber(value)}점` : ""}</td>`).join("")}
-      ${promoRules.length ? `<td class="promo-value promo-total-value">${toNumber(row.promoTotal) > 0 ? `${formatNumber(row.promoTotal)}점` : ""}</td>` : ""}
+      <td class="manager-condition-name"><span>${escapeHtml(row.manager)}</span></td>
+      ${row.conditionValues.map((value) => `<td class="condition-value">${valuePill(value, "condition")}</td>`).join("")}
+      ${row.promoValues.map((value) => `<td class="promo-value">${valuePill(value, "promo", "점")}</td>`).join("")}
+      ${promoRules.length ? `<td class="promo-value promo-total-value">${valuePill(row.promoTotal, "total", "점")}</td>` : ""}
     </tr>
   `).join("");
 
@@ -8813,18 +8831,8 @@ function renderDashboardManagerConditionSummary(records, managers) {
     </div>
     <div class="manager-condition-mobile-list">${mobileHtml}</div>
     <div class="table-wrap manager-condition-table-wrap">
-      <table class="manager-condition-table">
-        <thead>
-          <tr>
-            <th rowspan="2">매니저</th>
-            ${conditionHead}
-            ${promoHead}
-          </tr>
-          <tr>
-            ${cards.length ? cards.map((card) => `<th class="condition-col">${escapeHtml(card.title || "조건")}</th>`).join("") : ""}
-            ${promoRules.length ? promoRules.map((rule) => `<th class="promo-col">${escapeHtml(rule.title || rule.keyword || "항목")}</th>`).join("") + `<th class="promo-col promo-total-col">합계</th>` : ""}
-          </tr>
-        </thead>
+      <table class="manager-condition-table ${useGroupedDesktopHead ? "has-groups" : "single-group"}">
+        <thead>${desktopHead}</thead>
         <tbody>${bodyRows}</tbody>
       </table>
     </div>
@@ -15579,7 +15587,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.10";
+const APP_VERSION = "v11.11";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
