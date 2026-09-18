@@ -820,27 +820,61 @@ function shouldPreferLocalState(localState, serverState) {
 }
 
 async function loadPersistedState() {
-  // 외부 서버/API에 의존하지 않고 브라우저 저장소를 우선합니다.
-  const localState = loadState();
-  state = localState;
+  // 시작 화면은 외부/비동기 저장소를 기다리지 않고 즉시 로컬 저장 데이터를 사용합니다.
+  // IndexedDB는 데이터 복구가 필요한 경우에만 백그라운드에서 확인합니다.
+  const primaryRaw = localStorage.getItem(STORAGE_KEY);
+  let primaryParsed = null;
+  let primaryValid = false;
+
+  if (primaryRaw) {
+    try {
+      primaryParsed = JSON.parse(primaryRaw);
+      if (primaryParsed && typeof primaryParsed === "object") {
+        state = normalizeState(primaryParsed);
+        primaryValid = true; // 의도적으로 비어 있는 초기화 데이터도 유효한 데이터로 취급합니다.
+      }
+    } catch (error) {
+      console.warn("[STARTUP] local storage parse failed", error);
+    }
+  }
+
+  if (!primaryValid) {
+    state = loadState();
+  }
   invalidateManagerCaches();
   touchStateRevision();
 
-  // 업데이트/캐시 교체 과정에서 Local Storage가 비어 있거나 손상된 경우
-  // IndexedDB의 마지막 정상 스냅샷을 자동 복원합니다.
-  const primaryRaw = localStorage.getItem(STORAGE_KEY);
-  const primaryValid = Boolean(primaryRaw) && stateDataCount(localState) > 0;
+  // Local Storage가 없거나 JSON이 깨진 경우에만 IndexedDB 복원을 비동기로 시도합니다.
+  // 복원 때문에 대시보드 초기화가 멈추지 않도록 절대 await하지 않습니다.
   if (!primaryValid) {
-    const durable = await readDurableBackupSnapshot();
-    if (durable?.data && stateDataCount(durable.data) > 0) {
+    window.setTimeout(() => {
+      restoreFromDurableBackupInBackground();
+    }, 0);
+  }
+}
+
+function restoreFromDurableBackupInBackground() {
+  const timeout = new Promise((resolve) => window.setTimeout(() => resolve(null), 1500));
+  Promise.race([readDurableBackupSnapshot(), timeout])
+    .then((durable) => {
+      if (!durable?.data || !stateDataCount(durable.data)) return;
+      // 복원 직전에 사용자가 이미 정상 데이터를 저장했다면 절대 덮어쓰지 않습니다.
+      const currentRaw = localStorage.getItem(STORAGE_KEY);
+      if (currentRaw) {
+        try {
+          const current = JSON.parse(currentRaw);
+          if (current && typeof current === "object") return;
+        } catch (_) {}
+      }
       state = normalizeState(durable.data);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
       safeLocalBackupSnapshot(state, "durable-restore");
       invalidateManagerCaches();
       touchStateRevision();
+      renderNow();
       showToast("브라우저 저장 데이터가 없어 최근 안전백업을 자동 복원했습니다.");
-    }
-  }
+    })
+    .catch((error) => console.warn("[DURABLE RESTORE] background restore failed", error));
 }
 
 function persistState(options = {}) {
@@ -15655,7 +15689,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.05";
+const APP_VERSION = "v11.06";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -15869,7 +15903,7 @@ function initStartupIntro() {
 async function init() {
   initStartupIntro();
   startSidebarClock();
-  await loadPersistedState();
+  try { await loadPersistedState(); } catch (error) { console.warn("[STARTUP] state load failed", error); state = loadState(); }
   // 프로그램을 새로 열 때는 저장된 과거 월이나 테스트용 고정 날짜가 아니라
   // 실제 PC의 현재 날짜 기준 월로 대시보드를 시작한다.
   const month = monthIso();
