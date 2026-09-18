@@ -3,6 +3,103 @@ const LOCAL_BACKUP_KEY = "myeongjang-sales-manager-backup-v1";
 const LOCAL_BACKUP_INDEX_KEY = "myeongjang-sales-manager-backup-index-v1";
 const LOCAL_BACKUP_LIMIT = 12;
 
+const DURABLE_DB_NAME = "mj-sales-manager-durable-v1";
+const DURABLE_STORE_NAME = "snapshots";
+const DURABLE_SNAPSHOT_KEY = "latest";
+let durableBackupWriteTimer = 0;
+
+function openDurableBackupDb() {
+  return new Promise((resolve, reject) => {
+    if (!window.indexedDB) return reject(new Error("IndexedDB unavailable"));
+    const request = indexedDB.open(DURABLE_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(DURABLE_STORE_NAME)) db.createObjectStore(DURABLE_STORE_NAME);
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+  });
+}
+
+async function writeDurableBackupSnapshot(sourceState = state, reason = "auto") {
+  try {
+    const snapshot = {
+      backupType: "MJ_Sales_Manager_DurableBackup",
+      schemaVersion: STATE_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      reason,
+      dataCount: stateDataCount(sourceState),
+      data: sourceState
+    };
+    if (!snapshot.dataCount) return false;
+    const db = await openDurableBackupDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(DURABLE_STORE_NAME, "readwrite");
+      tx.objectStore(DURABLE_STORE_NAME).put(snapshot, DURABLE_SNAPSHOT_KEY);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error("IndexedDB write failed"));
+      tx.onabort = () => reject(tx.error || new Error("IndexedDB write aborted"));
+    });
+    db.close();
+    return true;
+  } catch (error) {
+    console.warn("[DURABLE BACKUP] write failed", error);
+    return false;
+  }
+}
+
+async function readDurableBackupSnapshot() {
+  try {
+    const db = await openDurableBackupDb();
+    const snapshot = await new Promise((resolve, reject) => {
+      const tx = db.transaction(DURABLE_STORE_NAME, "readonly");
+      const request = tx.objectStore(DURABLE_STORE_NAME).get(DURABLE_SNAPSHOT_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error("IndexedDB read failed"));
+    });
+    db.close();
+    if (!snapshot?.data || typeof snapshot.data !== "object" || !snapshot.dataCount) return null;
+    return snapshot;
+  } catch (error) {
+    console.warn("[DURABLE BACKUP] read failed", error);
+    return null;
+  }
+}
+
+function queueDurableBackup(reason = "auto") {
+  window.clearTimeout(durableBackupWriteTimer);
+  durableBackupWriteTimer = window.setTimeout(() => {
+    writeDurableBackupSnapshot(state, reason);
+  }, 180);
+}
+
+function createPreUpdateBackup() {
+  try {
+    const snapshot = {
+      backupType: "MJ_Sales_Manager_PreUpdateBackup",
+      schemaVersion: STATE_SCHEMA_VERSION,
+      exportedAt: new Date().toISOString(),
+      reason: "before-program-update",
+      dataCount: stateDataCount(state),
+      data: state
+    };
+    if (!snapshot.dataCount) {
+      showToast("현재 저장 데이터가 없어 업데이트 백업을 만들지 않았습니다.");
+      return false;
+    }
+    safeLocalBackupSnapshot(state, "before-update");
+    localStorage.setItem("myeongjang-sales-manager-preupdate-v1", JSON.stringify(snapshot));
+    const stamp = snapshot.exportedAt.replace(/[:.]/g, "-").replace(/T/, "_").replace(/Z$/, "");
+    downloadFile(`MJ_Sales_Manager_PreUpdate_Backup_${stamp}.json`, "application/json;charset=utf-8", JSON.stringify(snapshot, null, 2));
+    queueDurableBackup("before-update");
+    return true;
+  } catch (error) {
+    console.warn("[PRE-UPDATE BACKUP] failed", error);
+    showToast("업데이트 전 백업 생성에 실패했습니다. 업데이트를 중단합니다.");
+    return false;
+  }
+}
+
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
 const activityTypes = ["", "컨스", "지원"];
@@ -723,10 +820,27 @@ function shouldPreferLocalState(localState, serverState) {
 }
 
 async function loadPersistedState() {
-  // 웹 정적 배포에서는 외부 서버/API를 조회하지 않고 브라우저 저장 데이터만 사용합니다.
-  state = loadState();
+  // 외부 서버/API에 의존하지 않고 브라우저 저장소를 우선합니다.
+  const localState = loadState();
+  state = localState;
   invalidateManagerCaches();
   touchStateRevision();
+
+  // 업데이트/캐시 교체 과정에서 Local Storage가 비어 있거나 손상된 경우
+  // IndexedDB의 마지막 정상 스냅샷을 자동 복원합니다.
+  const primaryRaw = localStorage.getItem(STORAGE_KEY);
+  const primaryValid = Boolean(primaryRaw) && stateDataCount(localState) > 0;
+  if (!primaryValid) {
+    const durable = await readDurableBackupSnapshot();
+    if (durable?.data && stateDataCount(durable.data) > 0) {
+      state = normalizeState(durable.data);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      safeLocalBackupSnapshot(state, "durable-restore");
+      invalidateManagerCaches();
+      touchStateRevision();
+      showToast("브라우저 저장 데이터가 없어 최근 안전백업을 자동 복원했습니다.");
+    }
+  }
 }
 
 function persistState(options = {}) {
@@ -750,6 +864,7 @@ function persistState(options = {}) {
 
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   touchStateRevision();
+  queueDurableBackup("before-save");
   return Promise.resolve({ ok: true, local: true });
 }
 
@@ -14381,9 +14496,15 @@ function attachEvents() {
     if (control) control.addEventListener("change", () => { renderMembershipRecords(); });
   });
 
-  $("#downloadUpdateBtn")?.addEventListener("click", downloadLatestUpdate);
+  $("#downloadUpdateBtn")?.addEventListener("click", () => {
+    if (!createPreUpdateBackup()) return;
+    window.setTimeout(downloadLatestUpdate, 350);
+  });
   $("#checkVersionBtn")?.addEventListener("click", manualCheckForProgramUpdate);
-  $("#openReleaseDownloadBtn")?.addEventListener("click", openReleaseDownloadPage);
+  $("#openReleaseDownloadBtn")?.addEventListener("click", () => {
+    if (!createPreUpdateBackup()) return;
+    window.setTimeout(openReleaseDownloadPage, 350);
+  });
   $("#updateLaterBtn")?.addEventListener("click", () => {
     const latest = $("#latestVersionLabel")?.textContent || "";
     if (latest && latest !== "확인 중") localStorage.setItem(UPDATE_DISMISS_KEY, latest);
@@ -15534,7 +15655,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.04";
+const APP_VERSION = "v11.05";
 const STATE_SCHEMA_VERSION = 4;
 const UPDATE_RELEASES_URL = "https://github.com/kiuja78/cuckoo-sales-system/releases/tag/sales-system";
 const UPDATE_RELEASE_API_URL = "https://api.github.com/repos/kiuja78/cuckoo-sales-system/releases/tags/sales-system";
@@ -15789,6 +15910,16 @@ window.kakaoShareCurrentManagerImage = kakaoShareCurrentManagerImage;
 window.copyCurrentManagerShareImage = copyCurrentManagerShareImage;
 window.saveCurrentManagerShareImage = saveCurrentManagerShareImage;
 
+
+window.addEventListener("pagehide", () => {
+  try {
+    safeLocalBackupSnapshot(state, "pagehide");
+    const raw = JSON.stringify(state);
+    localStorage.setItem(STORAGE_KEY, raw);
+  } catch (error) {
+    console.warn("[PAGEHIDE BACKUP] failed", error);
+  }
+});
 
 window.MJ_SALES_VERSION = APP_VERSION;
 window.MJ_SALES_SCHEMA_VERSION = STATE_SCHEMA_VERSION;
