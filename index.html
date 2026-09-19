@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta name="app-version" content="V11.17">
+  <meta name="app-version" content="V11.18">
   <meta charset="utf-8">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>영업관리 시스템</title>
-  <link rel="stylesheet" href="./styles.css?v=v1117">
+  <link rel="stylesheet" href="./styles.css?v=v1118">
   <link rel="icon" type="image/png" href="./assets/sales_manager_icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#174c3b">
@@ -48,6 +48,7 @@
         <button class="nav-item" data-view="renewalguide">월별도표</button>
         <button class="nav-item" data-view="payroll">급여계산</button>
         <button class="nav-item" data-view="settings">사용자설정</button>
+        <button class="nav-item" data-view="db">DB관리</button>
       </nav>
 
 
@@ -1454,21 +1455,113 @@
         </div>
       </section>
 
+
+<section class="view" id="dbView">
+  <div class="db-page-head">
+    <div>
+      <p class="eyebrow">DATABASE SAFETY CENTER</p>
+      <h2>DB관리</h2>
+      <p>현재 데이터의 저장 상태를 확인하고 자동백업·복구·전체 백업을 한곳에서 관리합니다.</p>
+    </div>
+    <div class="db-head-actions">
+      <button class="primary-button" id="dbBackupNowBtn" type="button">지금 백업하기</button>
+      <button class="ghost-button" id="dbRefreshBtn" type="button">상태 새로고침</button>
+    </div>
+  </div>
+
+  <div class="db-status-grid" aria-label="DB 백업 현황">
+    <article class="db-status-card"><span>현재 데이터</span><strong id="dbCurrentDataCount">-</strong><small id="dbCurrentDataDetail">확인 중</small></article>
+    <article class="db-status-card"><span>마지막 자동백업</span><strong id="dbLastAutoBackup">-</strong><small id="dbLastAutoBackupDetail">백업 이력을 확인합니다.</small></article>
+    <article class="db-status-card"><span>보관 백업</span><strong id="dbHistoryCount">-</strong><small id="dbHistoryCountDetail">복구 가능한 실제 백업</small></article>
+    <article class="db-status-card db-status-card-accent"><span>2차 안전백업</span><strong id="dbSecondaryStatus">확인 중</strong><small id="dbSecondaryDetail">환경별 안전백업 상태</small></article>
+  </div>
+
+  <section class="panel db-panel db-manual-panel">
+    <div class="db-section-head">
+      <div><span class="db-section-kicker">MANUAL BACKUP</span><h2>전체 백업 · 복원</h2><p>필요할 때 전체 JSON 백업을 직접 보관하거나 기존 전체 백업 파일을 불러옵니다.</p></div>
+    </div>
+    <div class="db-action-row">
+      <button class="ghost-button db-action-button" id="exportBackupBtn" type="button"><b>전체 백업 내보내기</b><span>현재 데이터를 JSON 파일로 저장</span></button>
+      <label class="file-button db-action-button" id="importBackupBtn" for="importBackupInput" role="button" tabindex="0"><b>전체 백업 불러오기</b><span>기존 JSON 전체 백업을 복원</span></label>
+      <input id="importBackupInput" type="file" accept=".json,application/json" hidden onchange="window.MJ_IMPORT_FULL_BACKUP_FROM_INPUT && window.MJ_IMPORT_FULL_BACKUP_FROM_INPUT(this)">
+    </div>
+  </section>
+
+  <section class="panel db-panel">
+    <div class="db-section-head db-section-head-with-state">
+      <div><span class="db-section-kicker">AUTO BACKUP</span><h2>자동백업 설정</h2><p>데이터 변경은 즉시 저장하고, 복구용 이력백업은 설정한 간격에 맞춰 별도로 보관합니다.</p></div>
+      <label class="db-switch"><input id="dbAutoEnabled" type="checkbox"><span></span><b>자동백업 사용</b></label>
+    </div>
+    <div class="db-setting-grid">
+      <label><span>자동백업 간격</span><select id="dbAutoInterval"><option value="30">30분</option><option value="60">1시간</option><option value="180">3시간</option><option value="360">6시간</option></select></label>
+      <label><span>보관 기간</span><select id="dbRetentionDays"><option value="7">7일</option><option value="30">30일</option><option value="60">60일</option><option value="90">90일</option></select></label>
+      <label><span>최대 보관 개수</span><select id="dbMaxBackups"><option value="30">30개</option><option value="60">60개</option><option value="100">100개</option><option value="200">200개</option></select></label>
+    </div>
+    <div class="db-setting-actions"><button class="primary-button" id="dbSaveSettingsBtn" type="button">자동백업 설정 저장</button></div>
+  </section>
+
+  <section class="panel db-panel" id="dbWebDriveSettings" hidden>
+    <div class="db-section-head db-section-head-with-state">
+      <div><span class="db-section-kicker">GOOGLE DRIVE</span><h2>Google Drive 2차 안전백업</h2><p>브라우저의 로컬 백업과 별도로 Google Drive에 전체 백업 파일을 보관합니다.</p></div>
+      <span class="db-state-pill" id="dbDriveStatePill">연결 필요</span>
+    </div>
+    <div class="db-setting-grid db-setting-grid-drive">
+      <label class="db-span-2"><span>Google OAuth Client ID</span><input id="dbDriveClientId" type="text" autocomplete="off" placeholder="xxxxxxxxxxxx-xxxxxxxx.apps.googleusercontent.com"></label>
+      <label><span>Drive 백업 폴더명</span><input id="dbDriveFolderName" type="text" placeholder="쿠쿠 영업관리 시스템 백업"></label>
+      <label><span>Drive 백업 주기</span><select id="dbDriveIntervalHours"><option value="6">6시간</option><option value="12">12시간</option><option value="24">24시간</option></select></label>
+    </div>
+    <label class="db-check-row"><input id="dbDriveEnabled" type="checkbox"><span>Google Drive 2차 안전백업 사용</span></label>
+    <div class="db-external-status"><b id="dbDriveConnectionLabel">Google 계정이 연결되지 않았습니다.</b><span id="dbDriveLastBackupLabel">최근 Drive 백업 없음</span></div>
+    <div class="db-setting-actions db-wrap-actions">
+      <button class="primary-button" id="dbDriveConnectBtn" type="button">Google 연결</button>
+      <button class="ghost-button" id="dbDriveBackupNowBtn" type="button">Drive 지금 백업</button>
+      <button class="ghost-button" id="dbDriveDisconnectBtn" type="button">연결 해제</button>
+    </div>
+    <p class="db-help-note">웹 보안정책상 Google 인증 토큰은 영구 저장하지 않습니다. 브라우저를 새로 열었거나 인증이 만료된 경우 <b>Google 연결</b>을 다시 눌러주세요. 연결 후에는 Google Drive에만 남아 있는 백업도 아래 백업 이력에서 확인·복구할 수 있습니다. 브라우저 내부 이력백업은 Google 연결 여부와 관계없이 계속 유지됩니다.</p>
+  </section>
+
+  <section class="panel db-panel" id="dbPcFolderSettings" hidden>
+    <div class="db-section-head db-section-head-with-state">
+      <div><span class="db-section-kicker">SECONDARY BACKUP</span><h2>PC 2차 안전백업</h2><p>기본 자동백업과 별도로 사용자가 지정한 다른 폴더에도 같은 백업을 한 번 더 저장합니다.</p></div>
+      <span class="db-state-pill" id="dbPcSecondaryStatePill">미설정</span>
+    </div>
+    <label class="db-check-row"><input id="dbPcSecondaryEnabled" type="checkbox"><span>2차 안전백업 사용</span></label>
+    <div class="db-folder-picker"><input id="dbPcSecondaryFolder" type="text" readonly placeholder="2차 안전백업 폴더를 선택하세요"><button class="primary-button" id="dbPcSelectFolderBtn" type="button">폴더 선택</button></div>
+    <div class="db-external-status"><b id="dbPcPrimaryFolderLabel">기본 자동백업 위치 확인 중</b><span id="dbPcSecondaryLastLabel">최근 2차 백업 없음</span></div>
+    <div class="db-setting-actions db-wrap-actions">
+      <button class="ghost-button" id="dbPcBackupNowBtn" type="button">2차 백업 지금 실행</button>
+      <button class="ghost-button" id="dbPcOpenFolderBtn" type="button">백업 폴더 열기</button>
+      <button class="ghost-button" id="dbPcClearFolderBtn" type="button">2차 폴더 해제</button>
+    </div>
+    <p class="db-help-note">외장드라이브·다른 드라이브·OneDrive/Google Drive 데스크톱 동기화 폴더 등을 지정할 수 있습니다. 지정 폴더를 찾지 못해도 현재 데이터 저장과 기본 자동백업은 중단되지 않습니다.</p>
+  </section>
+
+  <section class="panel db-panel db-history-panel">
+    <div class="db-section-head db-section-head-with-state">
+      <div><span class="db-section-kicker">BACKUP HISTORY</span><h2>백업 이력 · 복구</h2><p>실제로 복구 가능한 백업만 표시합니다. 복구를 시작하면 현재 데이터부터 안전백업한 뒤 선택한 시점으로 되돌립니다.</p></div>
+      <button class="ghost-button" id="dbHistoryRefreshBtn" type="button">이력 새로고침</button>
+    </div>
+    <div class="db-history-table-wrap">
+      <table class="db-history-table">
+        <thead><tr><th>백업시간</th><th>종류</th><th>접수</th><th>매니저</th><th>보관상태</th><th>관리</th></tr></thead>
+        <tbody id="dbHistoryTableBody"><tr><td colspan="6" class="empty-state">백업 이력을 불러오는 중입니다.</td></tr></tbody>
+      </table>
+    </div>
+    <div id="dbHistoryMobileList" class="db-history-mobile-list"></div>
+  </section>
+
+  <section class="panel db-panel db-danger-panel">
+    <div class="db-danger-copy"><span>위험 작업</span><strong>프로그램 완전 초기화</strong><p>모든 업무 데이터를 비웁니다. 실행 직전 현재 데이터는 복구용 안전백업으로 먼저 보관합니다.</p></div>
+    <button class="danger-button" id="completeResetBtn" type="button">프로그램 완전 초기화</button>
+  </section>
+</section>
+
+
 <section class="view" id="settingsView">
         <div class="settings-page-head">
           <div>
             <p class="eyebrow">USER SETTINGS</p>
             <h2>사용자설정</h2>
-          </div>
-          <div class="settings-backup-actions" aria-label="전체 데이터 백업 및 복원">
-            <button class="ghost-button" id="exportBackupBtn" type="button">전체 백업 내보내기</button>
-            <button class="danger-button" id="completeResetBtn" type="button">프로그램 완전 초기화</button>
-            <label class="file-button" id="importBackupBtn" for="importBackupInput" role="button" tabindex="0">전체 백업 불러오기</label>
-            <input id="importBackupInput"
-                   type="file"
-                   accept=".json,application/json"
-                   hidden
-                   onchange="window.MJ_IMPORT_FULL_BACKUP_FROM_INPUT && window.MJ_IMPORT_FULL_BACKUP_FROM_INPUT(this)">
           </div>
         </div>
         <div class="settings-grid settings-grid-main">
@@ -1741,9 +1834,9 @@
     <div class="reset-warning-icon">!</div>
     <h2 id="completeResetTitle">프로그램 완전 초기화</h2>
     <p>이 기능을 실행하면 <strong>접수내역, 맴버쉽, 영업실적, 목표, 매니저 설정, 프로모션, 업무기록 등 프로그램의 모든 저장 데이터가 삭제됩니다.</strong></p>
-    <p class="reset-warning-danger">삭제된 데이터는 복구할 수 없습니다.</p>
-    <div class="reset-warning-backup">먼저 <b>전체 백업 내보내기</b>를 진행하여 백업 파일을 안전한 곳에 보관하세요.</div>
-    <label class="reset-confirm-check"><input type="checkbox" id="completeResetBackupConfirm"> 백업을 완료했으며, 모든 데이터가 삭제된다는 내용을 확인했습니다.</label>
+    <p class="reset-warning-danger">초기화 직전 현재 데이터는 DB관리의 복구용 안전백업으로 먼저 보관됩니다.</p>
+    <div class="reset-warning-backup">중요한 데이터라면 <b>전체 백업 내보내기</b> 파일도 별도로 보관하는 것을 권장합니다.</div>
+    <label class="reset-confirm-check"><input type="checkbox" id="completeResetBackupConfirm"> 모든 현재 데이터가 초기화된다는 내용을 확인했습니다.</label>
     <div class="reset-warning-actions">
       <button class="ghost-button" type="button" id="completeResetCancelBtn">취소</button>
       <button class="ghost-button" type="button" id="completeResetBackupBtn">백업 먼저 내보내기</button>
@@ -1769,7 +1862,7 @@
     }
   })();
 </script>
-  <script src="./app.js?v=v1117"></script>
+  <script src="./app.js?v=v1118"></script>
 
     
   <nav class="mobile-app-nav" id="mobileAppNav" aria-label="모바일 주요 메뉴">
@@ -1810,6 +1903,7 @@
       <button type="button" data-mobile-more-view="renewalguide"><span>도표</span><strong>월별도표</strong></button>
       <button type="button" data-mobile-more-view="payroll"><span>급여</span><strong>급여계산</strong></button>
       <button type="button" data-mobile-more-view="settings"><span>설정</span><strong>사용자설정</strong></button>
+      <button type="button" data-mobile-more-view="db"><span>DB</span><strong>DB관리</strong></button>
     </div>
   </section>
 

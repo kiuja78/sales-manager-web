@@ -2,9 +2,13 @@ const STORAGE_KEY = "myeongjang-sales-manager-v1";
 const LOCAL_BACKUP_KEY = "myeongjang-sales-manager-backup-v1";
 const LOCAL_BACKUP_INDEX_KEY = "myeongjang-sales-manager-backup-index-v1";
 const LOCAL_BACKUP_LIMIT = 12;
+const DB_LAST_AUTO_BACKUP_KEY = "mj-sales-db-last-auto-v1";
+const DB_DRIVE_LAST_BACKUP_KEY = "mj-sales-db-drive-last-v1";
 
 const DURABLE_DB_NAME = "mj-sales-manager-durable-v1";
 const DURABLE_STORE_NAME = "snapshots";
+const DURABLE_HISTORY_STORE_NAME = "history";
+const DURABLE_HISTORY_META_STORE_NAME = "history-meta";
 const DURABLE_SNAPSHOT_KEY = "latest";
 let durableBackupWriteTimer = 0;
 let durableBackupWritePromise = Promise.resolve();
@@ -12,13 +16,31 @@ let durableBackupWritePromise = Promise.resolve();
 function openDurableBackupDb() {
   return new Promise((resolve, reject) => {
     if (!window.indexedDB) return reject(new Error("IndexedDB unavailable"));
-    const request = indexedDB.open(DURABLE_DB_NAME, 1);
+    let settled = false;
+    const finishReject = (error) => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timeoutId);
+      reject(error);
+    };
+    const timeoutId = window.setTimeout(() => finishReject(new Error("IndexedDB open timeout")), 2500);
+    const request = indexedDB.open(DURABLE_DB_NAME, 3);
     request.onupgradeneeded = () => {
       const db = request.result;
       if (!db.objectStoreNames.contains(DURABLE_STORE_NAME)) db.createObjectStore(DURABLE_STORE_NAME);
+      if (!db.objectStoreNames.contains(DURABLE_HISTORY_STORE_NAME)) db.createObjectStore(DURABLE_HISTORY_STORE_NAME);
+      if (!db.objectStoreNames.contains(DURABLE_HISTORY_META_STORE_NAME)) db.createObjectStore(DURABLE_HISTORY_META_STORE_NAME);
     };
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error || new Error("IndexedDB open failed"));
+    request.onblocked = () => console.warn("[INDEXEDDB] upgrade is blocked by another open tab");
+    request.onsuccess = () => {
+      const db = request.result;
+      db.onversionchange = () => { try { db.close(); } catch (_) {} };
+      if (settled) { try { db.close(); } catch (_) {} return; }
+      settled = true;
+      window.clearTimeout(timeoutId);
+      resolve(db);
+    };
+    request.onerror = () => finishReject(request.error || new Error("IndexedDB open failed"));
   });
 }
 
@@ -104,6 +126,792 @@ function queueDurableBackup(reason = "auto") {
   }, 180);
 }
 
+
+function dbReasonLabel(reason = "auto") {
+  const map = {
+    auto: "자동백업",
+    manual: "수동백업",
+    "before-restore": "복구 전 안전백업",
+    "before-import": "전체백업 복원 전",
+    "before-reset": "완전초기화 전",
+    "before-update": "프로그램 업데이트 전"
+  };
+  return map[reason] || String(reason || "백업");
+}
+
+function dbBackupCounts(sourceState = state) {
+  return {
+    records: Array.isArray(sourceState?.records) ? sourceState.records.length : 0,
+    managers: Array.isArray(sourceState?.managers) ? sourceState.managers.length : 0,
+    total: stateDataCount(sourceState)
+  };
+}
+
+function dbHistoryMetadata(snapshot = {}) {
+  return {
+    id: String(snapshot.id || ""),
+    backupType: String(snapshot.backupType || "MJ_Sales_Manager_HistoryBackup"),
+    schemaVersion: Number(snapshot.schemaVersion || STATE_SCHEMA_VERSION),
+    exportedAt: String(snapshot.exportedAt || ""),
+    reason: String(snapshot.reason || "manual"),
+    reasonLabel: String(snapshot.reasonLabel || dbReasonLabel(snapshot.reason)),
+    dataCount: Number(snapshot.dataCount || 0),
+    recordCount: Number(snapshot.recordCount || 0),
+    managerCount: Number(snapshot.managerCount || 0),
+    externalStatus: String(snapshot.externalStatus || "local")
+  };
+}
+
+async function putDbHistorySnapshot(snapshot) {
+  const db = await openDurableBackupDb();
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction([DURABLE_HISTORY_STORE_NAME, DURABLE_HISTORY_META_STORE_NAME], "readwrite");
+    tx.objectStore(DURABLE_HISTORY_STORE_NAME).put(snapshot, snapshot.id);
+    tx.objectStore(DURABLE_HISTORY_META_STORE_NAME).put(dbHistoryMetadata(snapshot), snapshot.id);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error || new Error("DB backup history write failed"));
+    tx.onabort = () => reject(tx.error || new Error("DB backup history write aborted"));
+  });
+  db.close();
+}
+
+async function listDbHistorySnapshots() {
+  if (IS_PC_APP) return [];
+  try {
+    const db = await openDurableBackupDb();
+    const rows = await new Promise((resolve, reject) => {
+      const tx = db.transaction(DURABLE_HISTORY_META_STORE_NAME, "readonly");
+      const request = tx.objectStore(DURABLE_HISTORY_META_STORE_NAME).getAll();
+      request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : []);
+      request.onerror = () => reject(request.error || new Error("DB backup history read failed"));
+    });
+    db.close();
+    return rows.sort((a, b) => String(b.exportedAt || "").localeCompare(String(a.exportedAt || "")));
+  } catch (error) {
+    console.warn("[DB HISTORY] list failed", error);
+    return [];
+  }
+}
+
+async function getDbHistorySnapshot(id) {
+  try {
+    const db = await openDurableBackupDb();
+    const snapshot = await new Promise((resolve, reject) => {
+      const tx = db.transaction(DURABLE_HISTORY_STORE_NAME, "readonly");
+      const request = tx.objectStore(DURABLE_HISTORY_STORE_NAME).get(String(id || ""));
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error("DB backup history item read failed"));
+    });
+    db.close();
+    return snapshot;
+  } catch (error) {
+    console.warn("[DB HISTORY] item read failed", error);
+    return null;
+  }
+}
+
+async function cleanupDbHistorySnapshots() {
+  if (IS_PC_APP) return;
+  try {
+    const settings = normalizeDbBackupSettings(state.dbBackupSettings);
+    const rows = await listDbHistorySnapshots();
+    const cutoff = Date.now() - settings.retentionDays * 86400000;
+    const removeIds = rows.filter((row, index) => {
+      const t = Date.parse(String(row.exportedAt || ""));
+      return index >= settings.maxBackups || (Number.isFinite(t) && t < cutoff);
+    }).map((row) => row.id).filter(Boolean);
+    if (!removeIds.length) return;
+    const db = await openDurableBackupDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction([DURABLE_HISTORY_STORE_NAME, DURABLE_HISTORY_META_STORE_NAME], "readwrite");
+      const store = tx.objectStore(DURABLE_HISTORY_STORE_NAME);
+      const metaStore = tx.objectStore(DURABLE_HISTORY_META_STORE_NAME);
+      removeIds.forEach((id) => { store.delete(id); metaStore.delete(id); });
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error || new Error("DB backup history cleanup failed"));
+    });
+    db.close();
+  } catch (error) {
+    console.warn("[DB HISTORY] cleanup failed", error);
+  }
+}
+
+async function writeDbHistorySnapshot(reason = "manual", sourceState = state, options = {}) {
+  if (IS_PC_APP) return null;
+  const count = stateDataCount(sourceState);
+  if (!count && options.allowEmpty !== true) return null;
+  let data = sourceState;
+  try { data = structuredClone(sourceState); } catch (_) {}
+  const counts = dbBackupCounts(data);
+  const snapshot = {
+    id: `db-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    backupType: "MJ_Sales_Manager_HistoryBackup",
+    schemaVersion: STATE_SCHEMA_VERSION,
+    exportedAt: new Date().toISOString(),
+    reason,
+    reasonLabel: dbReasonLabel(reason),
+    dataCount: counts.total,
+    recordCount: counts.records,
+    managerCount: counts.managers,
+    externalStatus: "local",
+    data
+  };
+  await putDbHistorySnapshot(snapshot);
+  localStorage.setItem(DB_LAST_AUTO_BACKUP_KEY, reason === "auto" ? snapshot.exportedAt : (localStorage.getItem(DB_LAST_AUTO_BACKUP_KEY) || ""));
+  await cleanupDbHistorySnapshots();
+  if (options.tryDrive !== false) {
+    if (options.forceDrive) await maybeBackupSnapshotToGoogleDrive(snapshot, true);
+    else void maybeBackupSnapshotToGoogleDrive(snapshot, false);
+  }
+  return snapshot;
+}
+
+function queueDbAutoBackup() {
+  if (IS_PC_APP) return;
+  const settings = normalizeDbBackupSettings(state.dbBackupSettings);
+  if (!settings.autoEnabled || stateDataCount(state) <= 0) return;
+  const lastAt = Date.parse(localStorage.getItem(DB_LAST_AUTO_BACKUP_KEY) || "");
+  if (Number.isFinite(lastAt) && Date.now() - lastAt < settings.intervalMinutes * 60000) return;
+  window.clearTimeout(dbHistoryWriteTimer);
+  dbHistoryWriteTimer = window.setTimeout(() => {
+    dbHistoryWriteTimer = 0;
+    let snapshotState = state;
+    try { snapshotState = structuredClone(state); } catch (_) {}
+    dbHistoryWritePromise = dbHistoryWritePromise.catch(() => null).then(async () => {
+      const recheckAt = Date.parse(localStorage.getItem(DB_LAST_AUTO_BACKUP_KEY) || "");
+      if (Number.isFinite(recheckAt) && Date.now() - recheckAt < settings.intervalMinutes * 60000) return null;
+      return writeDbHistorySnapshot("auto", snapshotState);
+    }).then((result) => {
+      if (result && currentView === "db") refreshDbManagement();
+      return result;
+    });
+  }, 900);
+}
+
+function formatDbDateTime(value, fallback = "-") {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return fallback;
+  return `${String(date.getFullYear())}.${String(date.getMonth()+1).padStart(2,"0")}.${String(date.getDate()).padStart(2,"0")} ${String(date.getHours()).padStart(2,"0")}:${String(date.getMinutes()).padStart(2,"0")}`;
+}
+
+function dbSafeFilePart(value = "backup") {
+  return String(value || "backup").replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "_").slice(0, 48);
+}
+
+async function createDbBackup(reason = "manual", options = {}) {
+  if (IS_PC_APP) {
+    try {
+      const saved = await persistState({ immediateServer: true, allowEmptyServer: options.allowEmpty === true, skipDbAutoBackup: true });
+      if (saved?.ok === false) throw new Error("현재 데이터 저장 실패");
+      const response = await fetch("/api/db/backup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason })
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result?.ok === false) throw new Error(result?.error || "백업 생성 실패");
+      if (!options.silent) showToast(`${dbReasonLabel(reason)}을 저장했습니다.`);
+      if (currentView === "db") refreshDbManagement();
+      return result;
+    } catch (error) {
+      console.error("[DB BACKUP] PC backup failed", error);
+      if (!options.silent) showToast("백업 저장에 실패했습니다.");
+      return null;
+    }
+  }
+  try {
+    const snapshot = await writeDbHistorySnapshot(reason, state, { allowEmpty: options.allowEmpty, forceDrive: options.forceExternal });
+    if (!options.silent) {
+      if (!snapshot) showToast("백업할 데이터가 없습니다.");
+      else {
+        const settings = normalizeDbBackupSettings(state.dbBackupSettings);
+        if (options.forceExternal && settings.driveEnabled) {
+          if (snapshot.externalStatus === "drive-ok") showToast(`${dbReasonLabel(reason)} · Google Drive까지 저장했습니다.`);
+          else if (!validDriveToken()) showToast(`${dbReasonLabel(reason)} 저장 완료 · Google Drive 연결이 필요합니다.`);
+          else showToast(`${dbReasonLabel(reason)} 저장 완료 · Google Drive 상태를 확인해 주세요.`);
+        } else showToast(`${dbReasonLabel(reason)}을 저장했습니다.`);
+      }
+    }
+    if (currentView === "db") refreshDbManagement();
+    return snapshot;
+  } catch (error) {
+    console.error("[DB BACKUP] web backup failed", error);
+    if (!options.silent) showToast("백업 저장에 실패했습니다.");
+    return null;
+  }
+}
+
+function ensureGoogleIdentityScript() {
+  if (window.google?.accounts?.oauth2) return Promise.resolve(true);
+  if (dbDriveScriptPromise) return dbDriveScriptPromise;
+  dbDriveScriptPromise = new Promise((resolve, reject) => {
+    const existing = document.querySelector('script[data-mj-google-identity="1"]');
+    if (existing) {
+      existing.addEventListener("load", () => resolve(true), { once: true });
+      existing.addEventListener("error", () => reject(new Error("Google Identity Services 로드 실패")), { once: true });
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.defer = true;
+    script.dataset.mjGoogleIdentity = "1";
+    script.onload = () => resolve(true);
+    script.onerror = () => { dbDriveScriptPromise = null; reject(new Error("Google Identity Services 로드 실패")); };
+    document.head.appendChild(script);
+  });
+  return dbDriveScriptPromise;
+}
+
+function validDriveToken() {
+  return Boolean(dbDriveAccessToken && Date.now() < dbDriveTokenExpiresAt - 30000);
+}
+
+async function connectGoogleDrive() {
+  if (IS_PC_APP) return false;
+  const clientId = String($("#dbDriveClientId")?.value || state.dbBackupSettings?.driveClientId || "").trim();
+  if (!clientId) { showToast("Google OAuth Client ID를 먼저 입력해 주세요."); return false; }
+  state.dbBackupSettings = normalizeDbBackupSettings({
+    ...state.dbBackupSettings,
+    driveClientId: clientId,
+    driveFolderName: String($("#dbDriveFolderName")?.value || "").trim() || "쿠쿠 영업관리 시스템 백업",
+    driveEnabled: Boolean($("#dbDriveEnabled")?.checked),
+    driveIntervalHours: Number($("#dbDriveIntervalHours")?.value || 24)
+  });
+  await persistState({ skipDbAutoBackup: true });
+  try {
+    await ensureGoogleIdentityScript();
+    const token = await new Promise((resolve, reject) => {
+      dbDriveTokenClient = window.google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: "https://www.googleapis.com/auth/drive.file",
+        callback: (response) => response?.access_token ? resolve(response) : reject(new Error(response?.error || "Google 인증 실패")),
+        error_callback: (error) => reject(new Error(error?.type || "Google 인증창 오류"))
+      });
+      dbDriveTokenClient.requestAccessToken({ prompt: "consent" });
+    });
+    dbDriveAccessToken = String(token.access_token || "");
+    dbDriveTokenExpiresAt = Date.now() + Math.max(60, Number(token.expires_in || 3600)) * 1000;
+    try {
+      const about = await fetch("https://www.googleapis.com/drive/v3/about?fields=user(displayName,emailAddress)", { headers: { Authorization: `Bearer ${dbDriveAccessToken}` } });
+      if (about.ok) {
+        const info = await about.json();
+        dbDriveAccountLabel = [info?.user?.displayName, info?.user?.emailAddress].filter(Boolean).join(" · ");
+      }
+    } catch (_) {}
+    showToast("Google Drive 연결이 완료되었습니다.");
+    renderDbDriveStatus();
+    if (currentView === "db") await refreshDbManagement();
+    return true;
+  } catch (error) {
+    console.error("[GOOGLE DRIVE] connect failed", error);
+    showToast("Google Drive 연결에 실패했습니다. Client ID와 승인된 웹 원본을 확인해 주세요.");
+    renderDbDriveStatus();
+    return false;
+  }
+}
+
+function driveQueryEscape(value = "") {
+  return String(value || "").replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+async function ensureDriveBackupFolder() {
+  if (!validDriveToken()) throw new Error("Google Drive 연결이 필요합니다.");
+  const settings = normalizeDbBackupSettings(state.dbBackupSettings);
+  if (settings.driveFolderId) {
+    const check = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(settings.driveFolderId)}?fields=id,name,mimeType,trashed`, { headers: { Authorization: `Bearer ${dbDriveAccessToken}` } });
+    if (check.ok) {
+      const item = await check.json();
+      if (!item.trashed && item.mimeType === "application/vnd.google-apps.folder" && String(item.name || "") === String(settings.driveFolderName || "")) return item.id;
+    }
+  }
+
+  // 브라우저 저장소를 삭제하거나 다른 PC에서 접속해 folderId가 없어져도
+  // 같은 OAuth Client가 예전에 만든 동일 폴더를 다시 찾아 기존 백업을 복구할 수 있게 합니다.
+  const folderName = settings.driveFolderName || "쿠쿠 영업관리 시스템 백업";
+  const q = `mimeType='application/vnd.google-apps.folder' and name='${driveQueryEscape(folderName)}' and trashed=false`;
+  try {
+    const found = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=files(id,name,createdTime)&orderBy=createdTime%20desc&pageSize=10`, {
+      headers: { Authorization: `Bearer ${dbDriveAccessToken}` }
+    });
+    if (found.ok) {
+      const result = await found.json();
+      const folder = Array.isArray(result?.files) ? result.files[0] : null;
+      if (folder?.id) {
+        state.dbBackupSettings = normalizeDbBackupSettings({ ...settings, driveFolderId: String(folder.id) });
+        await persistState({ skipDbAutoBackup: true });
+        return String(folder.id);
+      }
+    }
+  } catch (_) {}
+
+  const created = await fetch("https://www.googleapis.com/drive/v3/files?fields=id,name", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${dbDriveAccessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name: folderName, mimeType: "application/vnd.google-apps.folder" })
+  });
+  if (!created.ok) throw new Error(`Drive 폴더 생성 실패 (${created.status})`);
+  const folder = await created.json();
+  state.dbBackupSettings = normalizeDbBackupSettings({ ...settings, driveFolderId: String(folder.id || "") });
+  await persistState({ skipDbAutoBackup: true });
+  return state.dbBackupSettings.driveFolderId;
+}
+
+async function uploadBlobToDrive(fileName, blob, folderId, appProperties = {}) {
+  const metadata = { name: fileName, parents: [folderId], appProperties };
+  if (blob.size <= 4.5 * 1024 * 1024) {
+    const boundary = `mj_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    const body = new Blob([
+      `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`, JSON.stringify(metadata),
+      `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n`, blob,
+      `\r\n--${boundary}--`
+    ]);
+    const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,createdTime", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${dbDriveAccessToken}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+      body
+    });
+    if (!response.ok) throw new Error(`Drive 업로드 실패 (${response.status})`);
+    return response.json();
+  }
+  const init = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id,name,createdTime", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${dbDriveAccessToken}`, "Content-Type": "application/json; charset=UTF-8", "X-Upload-Content-Type": "application/json" },
+    body: JSON.stringify(metadata)
+  });
+  if (!init.ok) throw new Error(`Drive 대용량 업로드 준비 실패 (${init.status})`);
+  const location = init.headers.get("Location");
+  if (!location) throw new Error("Drive 업로드 주소를 받지 못했습니다.");
+  const upload = await fetch(location, { method: "PUT", headers: { "Content-Type": "application/json" }, body: blob });
+  if (!upload.ok) throw new Error(`Drive 업로드 실패 (${upload.status})`);
+  return upload.json();
+}
+
+async function maybeBackupSnapshotToGoogleDrive(snapshot, force = false) {
+  if (IS_PC_APP || !snapshot?.data) return false;
+  const settings = normalizeDbBackupSettings(state.dbBackupSettings);
+  if ((!settings.driveEnabled && !force) || !settings.driveClientId) return false;
+  if (!validDriveToken()) { renderDbDriveStatus(); return false; }
+  const last = Date.parse(localStorage.getItem(DB_DRIVE_LAST_BACKUP_KEY) || "");
+  if (!force && Number.isFinite(last) && Date.now() - last < settings.driveIntervalHours * 3600000) return false;
+  try {
+    const folderId = await ensureDriveBackupFolder();
+    const stamp = String(snapshot.exportedAt || new Date().toISOString()).replace(/[-:]/g, "").replace(/\.\d+Z$/, "").replace("T", "_");
+    const payload = { backupType: "MJ_Sales_Manager_FullBackup", schemaVersion: snapshot.schemaVersion || STATE_SCHEMA_VERSION, exportedAt: snapshot.exportedAt, reason: snapshot.reasonLabel || dbReasonLabel(snapshot.reason), version: versionLabelForDisplay(APP_VERSION), data: snapshot.data };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    await uploadBlobToDrive(
+      `MJ_Sales_Backup_${stamp}_${dbSafeFilePart(snapshot.reasonLabel || snapshot.reason)}.json`,
+      blob,
+      folderId,
+      {
+        mjBackup: "1",
+        backupId: String(snapshot.id || ""),
+        exportedAt: String(snapshot.exportedAt || ""),
+        reason: String(snapshot.reason || "manual"),
+        reasonLabel: String(snapshot.reasonLabel || dbReasonLabel(snapshot.reason)),
+        recordCount: String(Number(snapshot.recordCount || 0)),
+        managerCount: String(Number(snapshot.managerCount || 0)),
+        schemaVersion: String(Number(snapshot.schemaVersion || STATE_SCHEMA_VERSION))
+      }
+    );
+    localStorage.setItem(DB_DRIVE_LAST_BACKUP_KEY, new Date().toISOString());
+    snapshot.externalStatus = "drive-ok";
+    try { await putDbHistorySnapshot(snapshot); } catch (_) {}
+    renderDbDriveStatus();
+    if (currentView === "db") refreshDbManagement();
+    return true;
+  } catch (error) {
+    console.error("[GOOGLE DRIVE] backup failed", error);
+    snapshot.externalStatus = "drive-failed";
+    try { await putDbHistorySnapshot(snapshot); } catch (_) {}
+    if (/401|403/.test(String(error?.message || ""))) { dbDriveAccessToken = ""; dbDriveTokenExpiresAt = 0; }
+    renderDbDriveStatus();
+    return false;
+  }
+}
+
+
+async function listGoogleDriveBackups() {
+  if (IS_PC_APP || !validDriveToken()) return [];
+  try {
+    const folderId = await ensureDriveBackupFolder();
+    const q = `'${driveQueryEscape(folderId)}' in parents and trashed=false`;
+    const fields = "files(id,name,createdTime,modifiedTime,size,appProperties)";
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files?q=${encodeURIComponent(q)}&fields=${encodeURIComponent(fields)}&orderBy=createdTime%20desc&pageSize=1000`, {
+      headers: { Authorization: `Bearer ${dbDriveAccessToken}` }
+    });
+    if (!response.ok) throw new Error(`Drive 백업 목록 확인 실패 (${response.status})`);
+    const result = await response.json();
+    return (Array.isArray(result?.files) ? result.files : [])
+      .filter((file) => /^MJ_Sales_Backup_.*\.json$/i.test(String(file?.name || "")))
+      .map((file) => {
+        const props = file?.appProperties && typeof file.appProperties === "object" ? file.appProperties : {};
+        return {
+          id: `drive:${String(file.id || "")}`,
+          driveFileId: String(file.id || ""),
+          localBackupId: String(props.backupId || ""),
+          exportedAt: String(props.exportedAt || file.createdTime || file.modifiedTime || ""),
+          reason: String(props.reason || "manual"),
+          reasonLabel: String(props.reasonLabel || "Google Drive 백업"),
+          recordCount: Number(props.recordCount || 0),
+          managerCount: Number(props.managerCount || 0),
+          schemaVersion: Number(props.schemaVersion || STATE_SCHEMA_VERSION),
+          source: "drive",
+          externalStatus: "drive-only",
+          fileName: String(file.name || "")
+        };
+      });
+  } catch (error) {
+    console.warn("[GOOGLE DRIVE] history list failed", error);
+    return [];
+  }
+}
+
+async function downloadGoogleDriveBackup(fileId) {
+  if (!validDriveToken()) throw new Error("Google Drive 연결이 필요합니다.");
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(fileId)}?alt=media`, {
+    headers: { Authorization: `Bearer ${dbDriveAccessToken}` }
+  });
+  if (!response.ok) throw new Error(`Drive 백업 다운로드 실패 (${response.status})`);
+  const payload = await response.json();
+  const data = extractBackupData(payload);
+  if (!looksLikeBackupData(data)) throw new Error("Drive 백업 데이터 형식이 올바르지 않습니다.");
+  return { payload, data };
+}
+
+function mergeDbHistoryWithDrive(localRows = [], driveRows = []) {
+  const merged = localRows.map((row) => ({ ...row }));
+  const byId = new Map(merged.map((row, index) => [String(row.id || ""), index]).filter(([id]) => id));
+  const bySignature = new Map(merged.map((row, index) => [`${String(row.exportedAt || "")}|${String(row.reason || "")}`, index]));
+  driveRows.forEach((row) => {
+    let index = row.localBackupId ? byId.get(String(row.localBackupId)) : undefined;
+    if (index === undefined) index = bySignature.get(`${String(row.exportedAt || "")}|${String(row.reason || "")}`);
+    if (index !== undefined) {
+      merged[index] = { ...merged[index], externalStatus: "drive-ok", driveFileId: row.driveFileId || merged[index].driveFileId || "" };
+      return;
+    }
+    merged.push({ ...row });
+  });
+  return merged.sort((a, b) => String(b.exportedAt || "").localeCompare(String(a.exportedAt || "")));
+}
+
+function disconnectGoogleDrive() {
+  if (dbDriveAccessToken && window.google?.accounts?.oauth2?.revoke) {
+    try { window.google.accounts.oauth2.revoke(dbDriveAccessToken, () => {}); } catch (_) {}
+  }
+  dbDriveAccessToken = "";
+  dbDriveTokenExpiresAt = 0;
+  dbDriveAccountLabel = "";
+  dbDriveTokenClient = null;
+  renderDbDriveStatus();
+  if (currentView === "db") void refreshDbManagement();
+  showToast("Google Drive 연결을 해제했습니다.");
+}
+
+function renderDbDriveStatus() {
+  const settings = normalizeDbBackupSettings(state.dbBackupSettings);
+  const pill = $("#dbDriveStatePill");
+  const label = $("#dbDriveConnectionLabel");
+  const lastLabel = $("#dbDriveLastBackupLabel");
+  if (pill) {
+    pill.className = `db-state-pill ${validDriveToken() ? "is-ok" : (settings.driveEnabled ? "is-warn" : "")}`;
+    pill.textContent = validDriveToken() ? "연결됨" : (settings.driveEnabled ? "연결 필요" : "사용 안 함");
+  }
+  if (label) label.textContent = validDriveToken() ? `Google 연결됨${dbDriveAccountLabel ? ` · ${dbDriveAccountLabel}` : ""}` : "Google 계정이 연결되지 않았습니다.";
+  const last = localStorage.getItem(DB_DRIVE_LAST_BACKUP_KEY) || "";
+  if (lastLabel) lastLabel.textContent = last ? `최근 Drive 백업 ${formatDbDateTime(last)}` : "최근 Drive 백업 없음";
+}
+
+async function backupGoogleDriveNow() {
+  if (IS_PC_APP) return;
+  if (!validDriveToken()) {
+    const ok = await connectGoogleDrive();
+    if (!ok) return;
+  }
+  const snapshot = await writeDbHistorySnapshot("manual", state, { tryDrive: false });
+  if (!snapshot) { showToast("백업할 데이터가 없습니다."); return; }
+  showToast("Google Drive 백업을 진행하고 있습니다...");
+  const ok = await maybeBackupSnapshotToGoogleDrive(snapshot, true);
+  showToast(ok ? "Google Drive 안전백업을 완료했습니다." : "Google Drive 백업에 실패했습니다.");
+}
+
+async function fetchPcDbStatus() {
+  const response = await fetch("/api/db/status", { cache: "no-store" });
+  const result = await response.json().catch(() => ({}));
+  if (!response.ok || result?.ok === false) throw new Error(result?.error || "DB 상태 확인 실패");
+  return result;
+}
+
+function dbHistoryStatusLabel(row) {
+  if (IS_PC_APP) {
+    if (row.secondaryAttempted && row.secondaryOk) return { text: "기본 + 2차", cls: "is-ok" };
+    if (row.secondaryAttempted && !row.secondaryOk) return { text: "기본 저장 · 2차 실패", cls: "is-warn" };
+    return { text: "기본 저장", cls: "is-ok" };
+  }
+  if (row.source === "drive" || row.externalStatus === "drive-only") return { text: "Google Drive", cls: "is-ok" };
+  if (row.externalStatus === "drive-ok") return { text: "로컬 + Drive", cls: "is-ok" };
+  if (row.externalStatus === "drive-failed") return { text: "로컬 저장 · Drive 실패", cls: "is-warn" };
+  return { text: "브라우저 로컬", cls: "is-ok" };
+}
+
+function renderDbHistoryRows(rows = []) {
+  const body = $("#dbHistoryTableBody");
+  const mobile = $("#dbHistoryMobileList");
+  if (!body || !mobile) return;
+  if (!rows.length) {
+    body.innerHTML = '<tr><td colspan="6" class="empty-state">아직 생성된 백업 이력이 없습니다.</td></tr>';
+    mobile.innerHTML = '<div class="empty-state">아직 생성된 백업 이력이 없습니다.</div>';
+    return;
+  }
+  body.innerHTML = rows.map((row) => {
+    const status = dbHistoryStatusLabel(row);
+    const id = escapeHtml(String(row.id || row.fileName || ""));
+    return `<tr><td><b>${escapeHtml(formatDbDateTime(row.exportedAt))}</b></td><td><span class="db-history-type">${escapeHtml(row.reasonLabel || dbReasonLabel(row.reason))}</span></td><td>${Number(row.recordCount || 0).toLocaleString()}건</td><td>${Number(row.managerCount || 0).toLocaleString()}명</td><td><span class="db-history-status ${status.cls}">${escapeHtml(status.text)}</span></td><td><div class="db-history-actions"><button class="db-restore" type="button" data-db-restore="${id}">복구</button><button type="button" data-db-export-history="${id}">내보내기</button></div></td></tr>`;
+  }).join("");
+  mobile.innerHTML = rows.map((row) => {
+    const status = dbHistoryStatusLabel(row);
+    const id = escapeHtml(String(row.id || row.fileName || ""));
+    return `<article class="db-history-mobile-card"><div class="db-history-mobile-card-head"><strong>${escapeHtml(formatDbDateTime(row.exportedAt))}</strong><span class="db-history-type">${escapeHtml(row.reasonLabel || dbReasonLabel(row.reason))}</span></div><div class="db-history-mobile-card-meta"><span>접수 ${Number(row.recordCount || 0).toLocaleString()}건</span><span>매니저 ${Number(row.managerCount || 0).toLocaleString()}명</span><span class="db-history-status ${status.cls}">${escapeHtml(status.text)}</span></div><div class="db-history-mobile-card-actions"><button class="db-restore" type="button" data-db-restore="${id}">복구</button><button type="button" data-db-export-history="${id}">내보내기</button></div></article>`;
+  }).join("");
+}
+
+function populateDbSettingsControls(pcStatus = null) {
+  const settings = normalizeDbBackupSettings(state.dbBackupSettings);
+  if ($("#dbAutoEnabled")) $("#dbAutoEnabled").checked = pcStatus ? pcStatus.settings.autoEnabled !== false : settings.autoEnabled;
+  if ($("#dbAutoInterval")) $("#dbAutoInterval").value = String(pcStatus ? pcStatus.settings.intervalMinutes : settings.intervalMinutes);
+  if ($("#dbRetentionDays")) $("#dbRetentionDays").value = String(pcStatus ? pcStatus.settings.retentionDays : settings.retentionDays);
+  if ($("#dbMaxBackups")) $("#dbMaxBackups").value = String(pcStatus ? pcStatus.settings.maxBackups : settings.maxBackups);
+  if (!IS_PC_APP) {
+    if ($("#dbDriveClientId")) $("#dbDriveClientId").value = settings.driveClientId;
+    if ($("#dbDriveFolderName")) $("#dbDriveFolderName").value = settings.driveFolderName;
+    if ($("#dbDriveEnabled")) $("#dbDriveEnabled").checked = settings.driveEnabled;
+    if ($("#dbDriveIntervalHours")) $("#dbDriveIntervalHours").value = String(settings.driveIntervalHours);
+    renderDbDriveStatus();
+  }
+}
+
+async function refreshDbManagement() {
+  if (!$("#dbView")) return;
+  const seq = ++dbRefreshSequence;
+  const counts = dbBackupCounts(state);
+  if ($("#dbCurrentDataCount")) $("#dbCurrentDataCount").textContent = `${counts.records.toLocaleString()}건`;
+  if ($("#dbCurrentDataDetail")) $("#dbCurrentDataDetail").textContent = `매니저 ${counts.managers.toLocaleString()}명 · 저장항목 ${counts.total.toLocaleString()}개`;
+  $("#dbWebDriveSettings")?.toggleAttribute("hidden", IS_PC_APP);
+  $("#dbPcFolderSettings")?.toggleAttribute("hidden", !IS_PC_APP);
+  try {
+    if (IS_PC_APP) {
+      const status = await fetchPcDbStatus();
+      if (seq !== dbRefreshSequence) return;
+      const rows = Array.isArray(status.history) ? status.history : [];
+      const auto = rows.find((row) => row.reason === "auto") || null;
+      if ($("#dbLastAutoBackup")) $("#dbLastAutoBackup").textContent = auto ? formatDbDateTime(auto.exportedAt) : "없음";
+      if ($("#dbLastAutoBackupDetail")) $("#dbLastAutoBackupDetail").textContent = status.settings?.autoEnabled === false ? "자동백업 사용 안 함" : `설정 간격 ${status.settings?.intervalMinutes || 60}분`;
+      if ($("#dbHistoryCount")) $("#dbHistoryCount").textContent = `${rows.length.toLocaleString()}개`;
+      if ($("#dbHistoryCountDetail")) $("#dbHistoryCountDetail").textContent = `기본 위치 · ${status.settings?.retentionDays || 30}일 보관`;
+      const secondaryEnabled = Boolean(status.settings?.secondaryEnabled && status.settings?.secondaryFolder);
+      const secondaryError = String(status.settings?.lastSecondaryError || "").trim();
+      const secondaryWarning = secondaryEnabled && (status.secondaryAvailable === false || Boolean(secondaryError));
+      if ($("#dbSecondaryStatus")) $("#dbSecondaryStatus").textContent = secondaryEnabled ? (secondaryWarning ? "확인 필요" : "사용 중") : "미설정";
+      if ($("#dbSecondaryDetail")) $("#dbSecondaryDetail").textContent = secondaryEnabled ? (secondaryError || status.settings.secondaryFolder || "") : "2차 백업 폴더를 선택할 수 있습니다.";
+      if ($("#dbPcSecondaryFolder")) $("#dbPcSecondaryFolder").value = status.settings?.secondaryFolder || "";
+      if ($("#dbPcSecondaryEnabled")) $("#dbPcSecondaryEnabled").checked = Boolean(status.settings?.secondaryEnabled);
+      if ($("#dbPcPrimaryFolderLabel")) $("#dbPcPrimaryFolderLabel").textContent = `기본 자동백업 · ${status.primaryBackupDir || ""}`;
+      if ($("#dbPcSecondaryLastLabel")) $("#dbPcSecondaryLastLabel").textContent = secondaryError ? `최근 2차 백업 확인 필요 · ${secondaryError}` : (status.settings?.lastSecondaryBackupAt ? `최근 2차 백업 ${formatDbDateTime(status.settings.lastSecondaryBackupAt)}` : "최근 2차 백업 없음");
+      const pill = $("#dbPcSecondaryStatePill");
+      if (pill) { pill.className = `db-state-pill ${secondaryEnabled ? (secondaryWarning ? "is-warn" : "is-ok") : ""}`; pill.textContent = secondaryEnabled ? (secondaryWarning ? "확인 필요" : "사용 중") : "미설정"; }
+      populateDbSettingsControls(status);
+      renderDbHistoryRows(rows);
+    } else {
+      const localRows = await listDbHistorySnapshots();
+      if (seq !== dbRefreshSequence) return;
+      const settings = normalizeDbBackupSettings(state.dbBackupSettings);
+      let rows = localRows;
+      // 로컬 브라우저 데이터가 삭제된 재해복구 상황에서는 driveEnabled 설정 자체도
+      // 함께 사라질 수 있습니다. Google 계정만 다시 연결하면 자동백업 사용 여부와
+      // 관계없이 Drive에 남은 백업 이력을 조회하여 복구할 수 있게 합니다.
+      if (validDriveToken()) {
+        const driveRows = await listGoogleDriveBackups();
+        if (seq !== dbRefreshSequence) return;
+        rows = mergeDbHistoryWithDrive(localRows, driveRows);
+      }
+      const auto = localRows.find((row) => row.reason === "auto") || null;
+      if ($("#dbLastAutoBackup")) $("#dbLastAutoBackup").textContent = auto ? formatDbDateTime(auto.exportedAt) : "없음";
+      if ($("#dbLastAutoBackupDetail")) $("#dbLastAutoBackupDetail").textContent = settings.autoEnabled ? `설정 간격 ${settings.intervalMinutes}분` : "자동백업 사용 안 함";
+      if ($("#dbHistoryCount")) $("#dbHistoryCount").textContent = `${rows.length.toLocaleString()}개`;
+      if ($("#dbHistoryCountDetail")) $("#dbHistoryCountDetail").textContent = `브라우저 내부 · ${settings.retentionDays}일 보관`;
+      if ($("#dbSecondaryStatus")) $("#dbSecondaryStatus").textContent = validDriveToken() ? "Drive 연결됨" : (settings.driveEnabled ? "연결 필요" : "사용 안 함");
+      if ($("#dbSecondaryDetail")) {
+        $("#dbSecondaryDetail").textContent = validDriveToken()
+          ? (settings.driveEnabled ? (dbDriveAccountLabel || "Google Drive 안전백업 사용 중") : "Google Drive 연결됨 · 자동 Drive 백업은 사용 안 함")
+          : (settings.driveEnabled ? "Google 연결 버튼을 눌러주세요." : "Google Drive 안전백업을 설정할 수 있습니다.");
+      }
+      populateDbSettingsControls();
+      renderDbHistoryRows(rows);
+    }
+  } catch (error) {
+    console.error("[DB MANAGEMENT] refresh failed", error);
+    if ($("#dbSecondaryStatus")) $("#dbSecondaryStatus").textContent = "확인 실패";
+    renderDbHistoryRows([]);
+  }
+}
+
+function renderDbManagement() {
+  if (!IS_PC_APP) populateDbSettingsControls();
+  void refreshDbManagement();
+}
+
+async function saveDbBackupSettings() {
+  const common = {
+    autoEnabled: Boolean($("#dbAutoEnabled")?.checked),
+    intervalMinutes: Number($("#dbAutoInterval")?.value || 60),
+    retentionDays: Number($("#dbRetentionDays")?.value || 30),
+    maxBackups: Number($("#dbMaxBackups")?.value || 100)
+  };
+  if (IS_PC_APP) {
+    try {
+      const response = await fetch("/api/db/settings", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ...common, secondaryEnabled: Boolean($("#dbPcSecondaryEnabled")?.checked), secondaryFolder: String($("#dbPcSecondaryFolder")?.value || "").trim() }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result?.ok === false) throw new Error(result?.error || "설정 저장 실패");
+      showToast("DB 자동백업 설정을 저장했습니다.");
+      refreshDbManagement();
+    } catch (error) { console.error("[DB SETTINGS] PC save failed", error); showToast("DB 백업 설정 저장에 실패했습니다."); }
+    return;
+  }
+  state.dbBackupSettings = normalizeDbBackupSettings({
+    ...state.dbBackupSettings,
+    ...common,
+    driveEnabled: Boolean($("#dbDriveEnabled")?.checked),
+    driveClientId: String($("#dbDriveClientId")?.value || "").trim(),
+    driveFolderName: String($("#dbDriveFolderName")?.value || "").trim() || "쿠쿠 영업관리 시스템 백업",
+    driveIntervalHours: Number($("#dbDriveIntervalHours")?.value || 24)
+  });
+  await persistState({ skipDbAutoBackup: true });
+  await cleanupDbHistorySnapshots();
+  showToast("DB 자동백업 설정을 저장했습니다.");
+  refreshDbManagement();
+}
+
+async function selectPcSecondaryBackupFolder() {
+  try {
+    const response = await fetch("/api/db/select-folder", { method: "POST" });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.ok === false) throw new Error(result?.error || "폴더 선택 실패");
+    if (result.cancelled) return;
+    if ($("#dbPcSecondaryFolder")) $("#dbPcSecondaryFolder").value = result.folder || "";
+    if ($("#dbPcSecondaryEnabled")) $("#dbPcSecondaryEnabled").checked = Boolean(result.folder);
+    await saveDbBackupSettings();
+  } catch (error) { console.error("[DB FOLDER] select failed", error); showToast("2차 백업 폴더를 선택하지 못했습니다."); }
+}
+
+async function clearPcSecondaryBackupFolder() {
+  if (!window.confirm("2차 안전백업 폴더 설정을 해제할까요? 기본 자동백업은 계속 유지됩니다.")) return;
+  if ($("#dbPcSecondaryFolder")) $("#dbPcSecondaryFolder").value = "";
+  if ($("#dbPcSecondaryEnabled")) $("#dbPcSecondaryEnabled").checked = false;
+  await saveDbBackupSettings();
+}
+
+async function openPcBackupFolder() {
+  try {
+    const response = await fetch("/api/db/open-folder", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ preferSecondary: Boolean($("#dbPcSecondaryEnabled")?.checked) }) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result?.ok === false) throw new Error(result?.error || "폴더 열기 실패");
+  } catch (error) { console.error("[DB FOLDER] open failed", error); showToast("백업 폴더를 열지 못했습니다."); }
+}
+
+async function restoreDbHistory(id) {
+  if (!id) return;
+  try {
+    let target = null;
+    let driveData = null;
+    if (IS_PC_APP) {
+      const status = await fetchPcDbStatus();
+      target = (status.history || []).find((row) => String(row.id || row.fileName) === String(id));
+    } else if (String(id).startsWith("drive:")) {
+      const fileId = String(id).slice(6);
+      const downloaded = await downloadGoogleDriveBackup(fileId);
+      driveData = downloaded.data;
+      target = {
+        id,
+        recordCount: Array.isArray(driveData.records) ? driveData.records.length : 0,
+        managerCount: Array.isArray(driveData.managers) ? driveData.managers.length : 0,
+        data: driveData,
+        source: "drive"
+      };
+    } else target = await getDbHistorySnapshot(id);
+    if (!target) { showToast("선택한 백업을 찾지 못했습니다."); return; }
+    const ok = await confirmBackupRestoreInApp(Number(target.recordCount || 0), Number(target.managerCount || 0));
+    if (!ok) return;
+    showToast("현재 데이터를 안전백업한 뒤 복구를 진행합니다...");
+    if (IS_PC_APP) {
+      const response = await fetch("/api/db/restore", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id }) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok || result?.ok === false || !result.data) throw new Error(result?.error || "백업 복구 실패");
+      state = normalizeState(result.data);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      await persistState({ immediateServer: true, allowEmptyServer: true, skipDbAutoBackup: true });
+    } else {
+      await writeDbHistorySnapshot("before-restore", state, { tryDrive: false });
+      const currentRevision = Number(state?.appMeta?.persistRevision || 0);
+      state = normalizeState(target.data);
+      state.appMeta = state.appMeta || {};
+      state.appMeta.persistRevision = Math.max(currentRevision, Number(state.appMeta.persistRevision || 0));
+      await persistState({ allowEmptyServer: true, skipDbAutoBackup: true });
+    }
+    invalidateManagerCaches();
+    selectedRecordId = "";
+    renderNow();
+    showToast("선택한 백업으로 복구를 완료했습니다.");
+    await refreshDbManagement();
+  } catch (error) { console.error("[DB RESTORE] failed", error); showToast("백업 복구 중 오류가 발생했습니다."); }
+}
+
+async function exportDbHistory(id) {
+  if (!id) return;
+  if (IS_PC_APP) {
+    const link = document.createElement("a");
+    link.href = `/api/db/export?id=${encodeURIComponent(id)}`;
+    link.style.display = "none";
+    document.body.appendChild(link); link.click(); link.remove();
+    return;
+  }
+  let snapshot = null;
+  if (String(id).startsWith("drive:")) {
+    const downloaded = await downloadGoogleDriveBackup(String(id).slice(6));
+    const payload = downloaded.payload && typeof downloaded.payload === "object" ? downloaded.payload : {};
+    snapshot = {
+      schemaVersion: payload.schemaVersion || STATE_SCHEMA_VERSION,
+      exportedAt: payload.exportedAt || new Date().toISOString(),
+      reason: payload.reason || "Google Drive 백업",
+      reasonLabel: payload.reason || "Google Drive 백업",
+      data: downloaded.data
+    };
+  } else snapshot = await getDbHistorySnapshot(id);
+  if (!snapshot?.data) { showToast("선택한 백업을 찾지 못했습니다."); return; }
+  const payload = { backupType: "MJ_Sales_Manager_FullBackup", schemaVersion: snapshot.schemaVersion || STATE_SCHEMA_VERSION, exportedAt: snapshot.exportedAt, reason: snapshot.reasonLabel || dbReasonLabel(snapshot.reason), version: versionLabelForDisplay(APP_VERSION), data: snapshot.data };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json;charset=utf-8" });
+  downloadBlob(`MJ_DB_Backup_${String(snapshot.exportedAt || "").slice(0,19).replace(/[:T-]/g, "")}.json`, "application/json;charset=utf-8", blob);
+}
+
+function attachDbManagementEvents() {
+  $("#dbBackupNowBtn")?.addEventListener("click", () => createDbBackup("manual", { forceExternal: true }));
+  $("#dbRefreshBtn")?.addEventListener("click", refreshDbManagement);
+  $("#dbHistoryRefreshBtn")?.addEventListener("click", refreshDbManagement);
+  $("#dbSaveSettingsBtn")?.addEventListener("click", saveDbBackupSettings);
+  $("#dbDriveConnectBtn")?.addEventListener("click", connectGoogleDrive);
+  $("#dbDriveBackupNowBtn")?.addEventListener("click", backupGoogleDriveNow);
+  $("#dbDriveDisconnectBtn")?.addEventListener("click", disconnectGoogleDrive);
+  $("#dbPcSelectFolderBtn")?.addEventListener("click", selectPcSecondaryBackupFolder);
+  $("#dbPcClearFolderBtn")?.addEventListener("click", clearPcSecondaryBackupFolder);
+  $("#dbPcOpenFolderBtn")?.addEventListener("click", openPcBackupFolder);
+  $("#dbPcBackupNowBtn")?.addEventListener("click", () => createDbBackup("manual", { forceExternal: true }));
+  $("#dbView")?.addEventListener("click", (event) => {
+    const restore = event.target.closest?.("[data-db-restore]");
+    if (restore) { restoreDbHistory(restore.dataset.dbRestore); return; }
+    const exp = event.target.closest?.("[data-db-export-history]");
+    if (exp) exportDbHistory(exp.dataset.dbExportHistory);
+  });
+}
+
 const categories = ["신규", "패키지", "재렌탈", "일시불", "맴버쉽"];
 const mainCategories = ["신규", "패키지", "재렌탈", "일시불"];
 const activityTypes = ["", "컨스", "지원"];
@@ -121,6 +929,52 @@ function normalizeMenuVisibility(value = {}) {
     typeof source[key] === "boolean" ? source[key] : defaultValue
   ]));
 }
+
+
+function defaultDbBackupSettings() {
+  return {
+    autoEnabled: true,
+    intervalMinutes: 60,
+    retentionDays: 30,
+    maxBackups: 100,
+    driveEnabled: false,
+    driveClientId: "",
+    driveFolderName: "쿠쿠 영업관리 시스템 백업",
+    driveFolderId: "",
+    driveIntervalHours: 24
+  };
+}
+
+function normalizeDbBackupSettings(value = {}) {
+  const source = value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  const interval = [30, 60, 180, 360].includes(Number(source.intervalMinutes)) ? Number(source.intervalMinutes) : 60;
+  const retention = [7, 30, 60, 90].includes(Number(source.retentionDays)) ? Number(source.retentionDays) : 30;
+  const maxBackups = [30, 60, 100, 200].includes(Number(source.maxBackups)) ? Number(source.maxBackups) : 100;
+  const driveIntervalHours = [6, 12, 24].includes(Number(source.driveIntervalHours)) ? Number(source.driveIntervalHours) : 24;
+  return {
+    ...defaultDbBackupSettings(),
+    ...source,
+    autoEnabled: source.autoEnabled !== false,
+    intervalMinutes: interval,
+    retentionDays: retention,
+    maxBackups,
+    driveEnabled: Boolean(source.driveEnabled),
+    driveClientId: String(source.driveClientId || "").trim(),
+    driveFolderName: String(source.driveFolderName || "쿠쿠 영업관리 시스템 백업").trim() || "쿠쿠 영업관리 시스템 백업",
+    driveFolderId: String(source.driveFolderId || "").trim(),
+    driveIntervalHours
+  };
+}
+
+const IS_PC_APP = typeof STATE_API_URL !== "undefined";
+let dbHistoryWriteTimer = 0;
+let dbHistoryWritePromise = Promise.resolve();
+let dbRefreshSequence = 0;
+let dbDriveAccessToken = "";
+let dbDriveTokenExpiresAt = 0;
+let dbDriveAccountLabel = "";
+let dbDriveTokenClient = null;
+let dbDriveScriptPromise = null;
 
 function optionalMenuVisibility() {
   state.menuVisibility = normalizeMenuVisibility(state.menuVisibility);
@@ -574,6 +1428,7 @@ const sampleState = {
     teamOperationMode: "1"
   },
   menuVisibility: normalizeMenuVisibility(),
+  dbBackupSettings: defaultDbBackupSettings(),
   teamNames: ["원팀"],
   managers: [],
   monthSettings: {},
@@ -892,6 +1747,7 @@ function persistState(options = {}) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   touchStateRevision();
   queueDurableBackup("persist-current");
+  if (options.skipDbAutoBackup !== true) queueDbAutoBackup();
   return Promise.resolve({ ok: true, local: true });
 }
 
@@ -913,6 +1769,7 @@ function normalizeState(loaded) {
     teamNames: configuredTeams,
     appMeta: { ...sampleState.appMeta, ...(loaded.appMeta || {}) },
     menuVisibility: normalizeMenuVisibility(loaded.menuVisibility),
+    dbBackupSettings: normalizeDbBackupSettings(loaded.dbBackupSettings),
     managers: loadedManagers.map((manager) => normalizeManager(manager, configuredTeams)),
     records: Array.isArray(loaded.records) ? loaded.records : sampleState.records,
     promotions: Array.isArray(loaded.promotions) ? loaded.promotions.map(normalizePromotion) : sampleState.promotions.map(normalizePromotion),
@@ -8021,6 +8878,9 @@ function renderView(view = currentView) {
     case "settings":
       renderSettings();
       break;
+    case "db":
+      renderDbManagement();
+      break;
     default:
       renderDashboard();
   }
@@ -8074,7 +8934,8 @@ function renderTopbar() {
     contactnote: "만기컨텍리스트",
     contactrequest: "컨텍노트",
     promotions: "프로모션",
-    settings: "사용자설정"
+    settings: "사용자설정",
+    db: "DB관리"
   };
   $("#viewTitle").textContent = titles[currentView] || "영업현황";
 }
@@ -11701,6 +12562,15 @@ async function importFullBackupFile(file) {
   }
 
   try {
+    showToast("현재 데이터를 복원 전 안전백업으로 저장하고 있습니다...");
+    const importSafetyBackup = await createDbBackup("before-import", { silent: true });
+    if (stateDataCount(state) > 0 && !importSafetyBackup) {
+      const continueWithoutSafety = window.confirm("복원 전 안전백업 생성에 실패했습니다. 그래도 전체 백업 복원을 계속할까요?\n\n가능하면 취소한 뒤 '전체 백업 내보내기'로 현재 데이터를 먼저 보관해 주세요.");
+      if (!continueWithoutSafety) {
+        showToast("현재 데이터 보호를 위해 전체 백업 복원을 취소했습니다.");
+        return false;
+      }
+    }
     showToast("백업 데이터 적용 중...");
     const currentPersistRevision = Number(state?.appMeta?.persistRevision || 0);
     state = normalizeState(data);
@@ -15081,6 +15951,7 @@ function attachEvents() {
   $("#completeResetExecuteBtn")?.addEventListener("click", executeCompleteReset);
   $("#completeResetModal")?.addEventListener("click", (event) => { if (event.target.id === "completeResetModal") closeCompleteResetModal(); });
   // 전체 백업 불러오기는 native label/input 방식으로 처리합니다.
+  attachDbManagementEvents();
 
   ["startDateFilter", "endDateFilter", "managerFilter"].forEach((id) => {
     const control = $(`#${id}`);
@@ -15791,7 +16662,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.17";
+const APP_VERSION = "v11.18";
 const STATE_SCHEMA_VERSION = 4;
 
 function normalizeVersionText(version = "") {
@@ -15829,7 +16700,11 @@ function closeCompleteResetModal() {
 async function executeCompleteReset() {
   const check = $("#completeResetBackupConfirm");
   if (!check?.checked) return;
-  if (!window.confirm("정말 모든 데이터를 삭제할까요? 삭제 후에는 복구할 수 없습니다.")) return;
+  if (!window.confirm("정말 현재 프로그램 데이터를 초기화할까요? 초기화 직전 안전백업을 먼저 생성합니다.")) return;
+  const safetyBackup = await createDbBackup("before-reset", { silent: true });
+  if (stateDataCount(state) > 0 && !safetyBackup) {
+    if (!window.confirm("초기화 전 안전백업 생성에 실패했습니다. 그래도 초기화를 계속할까요?")) return;
+  }
   const previousPersistRevision = Number(state?.appMeta?.persistRevision || 0);
   const fresh = normalizeState({ ...sampleState, records: [], managers: [], promotions: [], checklistItems: [], contactNotes: [], contactRequests: [], todos: [], todosByDate: {}, managerManualStats: {}, managerManualOrder: {}, managerMonthlyGoals: {}, operatingGoals: {}, managementEvaluationInputs: {}, managementEvaluationPolicies: {}, payrollRecords: [], payrollUnmatchedRecords: [], payrollArchives: [], appMeta: { ...sampleState.appMeta, branchName: "명장지국", masterName: "김건일", masterRole: "마스터" } });
   state = fresh;
@@ -15895,6 +16770,8 @@ async function init() {
   if (recordsView && !recordsView.dataset.mobileRecordTab) recordsView.dataset.mobileRecordTab = "main";
   resetRecordForm();
   renderNow();
+  queueDbAutoBackup();
+  window.setInterval(() => { if (currentView === "db") refreshDbManagement(); }, 15000);
   window.setTimeout(openInstallTodayModalIfNeeded, 400);
   window.setTimeout(startChecklistAlarmWatcher, 550);
 }
