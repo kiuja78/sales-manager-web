@@ -1462,7 +1462,8 @@ let currentView = "dashboard";
 let managerPerformanceMode = "assigned";
 let selectedRecordId = "";
 const selectedRecordIds = new Set();
-let recordSequenceSort = "desc";
+let recordSequenceSort = "asc";
+let membershipRecordDateSort = "asc";
 let promoListFilter = "all";
 let calendarDragStart = "";
 let calendarDragEnd = "";
@@ -10616,28 +10617,63 @@ function ensureRecordListManualOrder(isMembership = false) {
   return result;
 }
 
-function sortRecordsForList(records) {
-  // 기본은 접수일 최신순. 사용자가 ▲▼로 위치를 바꾸면 그 순서만 별도로 보존합니다.
-  const order = ensureRecordListManualOrder(false);
-  const orderMap = new Map(order.map((id, index) => [id, index]));
+// 접수일은 항상 첫 번째 정렬 기준입니다. 오래된 __records__/__membership__
+// 수동 배치 정보는 같은 날짜의 접수끼리만 순서를 결정합니다.
+function compareReceiptDates(a, b, direction = "asc") {
+  const aTime = recordDateToTime(a?.receivedDate);
+  const bTime = recordDateToTime(b?.receivedDate);
+  // 비어 있거나 잘못된 날짜는 방향과 관계없이 맨 뒤에 둡니다.
+  if (!aTime && !bTime) return 0;
+  if (!aTime) return 1;
+  if (!bTime) return -1;
+  return (aTime - bTime) * (direction === "desc" ? -1 : 1);
+}
+
+function sortReceiptListByDate(records, direction = "asc", membership = false) {
+  const manualOrder = ensureRecordListManualOrder(membership);
+  const manualIndex = new Map(manualOrder.map((id, index) => [id, index]));
   return [...records].sort((a, b) => {
-    const ai = orderMap.get(recordIdentity(a));
-    const bi = orderMap.get(recordIdentity(b));
-    if (ai !== undefined && bi !== undefined && ai !== bi) return ai - bi;
-    return dateSortRecords([a, b], "desc")[0] === a ? -1 : 1;
+    const dateCompare = compareReceiptDates(a, b, direction);
+    if (dateCompare) return dateCompare;
+    const aOrder = manualIndex.get(recordIdentity(a)) ?? Number.MAX_SAFE_INTEGER;
+    const bOrder = manualIndex.get(recordIdentity(b)) ?? Number.MAX_SAFE_INTEGER;
+    if (aOrder !== bOrder) return aOrder - bOrder;
+    return String(recordIdentity(a) || "").localeCompare(String(recordIdentity(b) || ""));
   });
 }
 
+function sortRecordsForList(records) {
+  return sortReceiptListByDate(records, recordSequenceSort, false);
+}
+
 function sortMembershipRecordsForList(records = []) {
-  const order = ensureRecordListManualOrder(true);
-  const orderMap = new Map(order.map((id, index) => [id, index]));
-  const ordered = [...records].sort((a, b) => {
-    const ai = orderMap.get(recordIdentity(a));
-    const bi = orderMap.get(recordIdentity(b));
-    if (ai !== undefined && bi !== undefined && ai !== bi) return ai - bi;
-    return dateSortRecords([a, b], "desc")[0] === a ? -1 : 1;
+  const ordered = sortReceiptListByDate(records, membershipRecordDateSort, true);
+  return ordered.map((record, index) => ({
+    ...record,
+    displaySequence: membershipRecordDateSort === "asc" ? index + 1 : ordered.length - index
+  }));
+}
+
+function syncReceiptDateSortButtons() {
+  const configs = [
+    ["recordDateSortBtn", "recordDateSortHeader", recordSequenceSort],
+    ["mobileRecordDateSortBtn", "", recordSequenceSort],
+    ["membershipDateSortBtn", "membershipDateSortHeader", membershipRecordDateSort]
+  ];
+  configs.forEach(([buttonId, headerId, direction]) => {
+    const button = document.getElementById(buttonId);
+    if (button) {
+      const ascending = direction === "asc";
+      button.textContent = buttonId.startsWith("mobile")
+        ? `접수일 ${ascending ? "↑" : "↓"}`
+        : `접수일 ${ascending ? "▲" : "▼"}`;
+      button.title = `접수일 ${ascending ? "오름차순(과거→최근)" : "내림차순(최근→과거)"} · 클릭하여 반대 순서로 보기`;
+      button.setAttribute("aria-label", button.title);
+      button.setAttribute("aria-pressed", String(!ascending));
+    }
+    const header = headerId ? document.getElementById(headerId) : null;
+    if (header) header.setAttribute("aria-sort", direction === "asc" ? "ascending" : "descending");
   });
-  return ordered.map((record, index) => ({ ...record, displaySequence: ordered.length - index }));
 }
 
 function resetRecordListToLatestOrder(isMembership = false) {
@@ -10687,6 +10723,10 @@ function moveRecordInCurrentView(recordId, direction) {
     showToast("더 이상 이동할 수 없습니다.");
     return;
   }
+  if (compareReceiptDates(visibleRecords[currentIndex], visibleRecords[targetIndex]) !== 0) {
+    showToast("접수일이 같은 내역끼리만 순서를 조정할 수 있습니다.");
+    return;
+  }
 
   const fullOrder = ensureRecordListManualOrder(false).slice();
   const currentId = recordIdentity(visibleRecords[currentIndex]);
@@ -10708,6 +10748,10 @@ function moveMembershipRecordInCurrentView(recordId, direction) {
   const targetIndex = currentIndex + direction;
   if (currentIndex < 0 || targetIndex < 0 || targetIndex >= visibleRecords.length) {
     showToast("더 이상 이동할 수 없습니다.");
+    return;
+  }
+  if (compareReceiptDates(visibleRecords[currentIndex], visibleRecords[targetIndex]) !== 0) {
+    showToast("접수일이 같은 내역끼리만 순서를 조정할 수 있습니다.");
     return;
   }
 
@@ -10737,7 +10781,7 @@ function recordPrintHtml(records) {
     const phone = typeof formatPhoneNumber === "function" ? formatPhoneNumber(record.phone) : compactValue(record.phone, "");
     return `
       <tr>
-        <td class="seq">${records.length - index}</td>
+        <td class="seq">${recordSequenceSort === "asc" ? index + 1 : records.length - index}</td>
         <td class="date"><strong>${escapeHtml(compactValue(record.receivedDate))}</strong>${record.installDate ? `<br><span>${escapeHtml(record.installDate)}</span>` : ""}</td>
         <td class="status">${escapeHtml(compactValue(record.status))}</td>
         <td class="manager">${escapeHtml(compactValue(record.manager))}</td>
@@ -10837,7 +10881,7 @@ function recordPrintHtml(records) {
     <div class="print-head">
       <div>
         <h1>${escapeHtml(meta.branchName || "명장지국")} ${escapeHtml(meta.masterName || "김건일")} ${escapeHtml(meta.masterRole || "마스터")} 접수내역</h1>
-        <div class="meta">기간 ${escapeHtml(periodText)} · 최근 접수일 우선 · 순번은 누적순번</div>
+        <div class="meta">기간 ${escapeHtml(periodText)} · ${recordSequenceSort === "asc" ? "접수일 오름차순" : "접수일 내림차순"} · 순번은 표시순서</div>
       </div>
       <div class="meta">${escapeHtml(formatKoreanLongDate())}</div>
     </div>
@@ -10846,7 +10890,7 @@ function recordPrintHtml(records) {
       <thead>
         <tr class="repeat-title-row">
           <th colspan="12">
-            ${escapeHtml(meta.branchName || "명장지국")} ${escapeHtml(meta.masterName || "김건일")} ${escapeHtml(meta.masterRole || "마스터")} 접수내역 · 기간 ${escapeHtml(periodText)} · 최근 접수일 우선 · 순번은 누적순번
+            ${escapeHtml(meta.branchName || "명장지국")} ${escapeHtml(meta.masterName || "김건일")} ${escapeHtml(meta.masterRole || "마스터")} 접수내역 · 기간 ${escapeHtml(periodText)} · ${recordSequenceSort === "asc" ? "접수일 오름차순" : "접수일 내림차순"} · 순번은 표시순서
           </th>
         </tr>
         <tr>
@@ -11297,7 +11341,7 @@ function mobileRecordCardHtml(record, index, total, membership = false) {
   const newNo = compactValue(record.customerNo, "");
   const sellerLabel = membership ? "컨텍자" : "실판매자";
   const sellerValue = compactValue(record.seller, "-");
-  const sequence = membership ? (record.displaySequence || total - index) : total - index;
+  const sequence = membership ? (record.displaySequence || (membershipRecordDateSort === "asc" ? index + 1 : total - index)) : (recordSequenceSort === "asc" ? index + 1 : total - index);
   const selectedClass = selectedRecordId === recordId ? " selected" : "";
 
   return `
@@ -11483,7 +11527,6 @@ function attachMobileAppEvents() {
       const target = $("#recordSimpleSearch");
       if (!target) return;
       target.value = event.target.value;
-      recordSequenceSort = "desc";
       renderRecords();
     }, 120);
   });
@@ -11557,6 +11600,7 @@ function deleteSelectedRecords() {
 }
 
 function renderRecords() {
+  syncReceiptDateSortButtons();
   const records = visibleRecordsForCurrentFilters();
 
   $("#recordListCount").textContent = statusCountSummary(records, { received: "진행", includeHold: true });
@@ -11567,7 +11611,7 @@ function renderRecords() {
       const phone = typeof formatPhoneNumber === "function" ? formatPhoneNumber(record.phone) : compactValue(record.phone, "");
       const statusKey = compactValue(record.status, "접수");
       const selectedClass = selectedRecordId === record.id ? " selected-record-row" : "";
-      const sequence = records.length - index;
+      const sequence = recordSequenceSort === "asc" ? index + 1 : records.length - index;
       const recordKey = recordSelectionKey(record);
       return `
       <tr class="clickable-row clean-record-row status-${escapeHtml(statusKey)}${record.seller ? " seller-selected-row" : ""}${selectedClass}" data-record-id="${escapeHtml(recordKey)}" title="순번을 클릭하면 상하 이동 버튼이 보입니다.">
@@ -11610,6 +11654,7 @@ function renderRecords() {
 
 
 function renderMembershipRecords() {
+  syncReceiptDateSortButtons();
   const tbody = $("#membershipTableBody");
   const countLabel = $("#membershipListCount");
   if (!tbody || !countLabel) return;
@@ -12623,7 +12668,7 @@ async function importFullBackupFile(file) {
     selectedChecklistId = "";
     selectedContactNoteId = "";
     selectedContactRequestId = "";
-    recordSequenceSort = "desc";
+    recordSequenceSort = "asc";
 
     renderNow();
     window.alert(`전체 백업 복원이 완료되었습니다.\n\n접수내역 ${restoredRecordCount}건이 현재 브라우저에 저장되었습니다.`);
@@ -13168,7 +13213,7 @@ function updateRecordState(recordId, patch, message = "접수내역을 수정했
   if (patch.phone !== undefined) patch.phone = formatPhoneNumber(patch.phone);
   Object.assign(record, patch);
   ensureRecordManagerReference(record);
-  // 수정 시에는 updatedAt만 기록하고, 접수일 정렬 순서는 변경하지 않습니다.
+  // 접수일 변경 후 renderRecords()가 표시 목록을 새 날짜 기준으로 정렬합니다.
   record.updatedAt = new Date().toISOString();
   if (patch.category) record.category = normalizeCategory(record.category);
   if (patch.activityType !== undefined) record.activityType = normalizeActivityType(record.activityType);
@@ -16576,11 +16621,18 @@ function attachEvents() {
   });
 
 
-  $("#recordSeqSortBtn")?.addEventListener("click", () => {
-    resetRecordListToLatestOrder(false);
-    persistState();
+  // 표시 정렬만 전환합니다. state.records 및 백업 데이터 순서는 변경하지 않습니다.
+  $("#recordDateSortBtn")?.addEventListener("click", () => {
+    recordSequenceSort = recordSequenceSort === "asc" ? "desc" : "asc";
     renderRecords();
-    showToast("접수일 최신순으로 다시 정렬했습니다. 이후 ▲▼로 위치를 조정할 수 있습니다.");
+  });
+  $("#mobileRecordDateSortBtn")?.addEventListener("click", () => {
+    recordSequenceSort = recordSequenceSort === "asc" ? "desc" : "asc";
+    renderRecords();
+  });
+  $("#membershipDateSortBtn")?.addEventListener("click", () => {
+    membershipRecordDateSort = membershipRecordDateSort === "asc" ? "desc" : "asc";
+    renderMembershipRecords();
   });
 
   ["#recordSimpleSearch", "#recordDateBasisFilter", "#recordMonthFilter", "#recordStartDateFilter", "#recordEndDateFilter", "#recordStatusFilter", "#recordManagerFilter", "#recordCategoryFilter", "#recordSellerFilter"].forEach((selector) => {
@@ -16592,7 +16644,6 @@ function attachEvents() {
         if (basis) basis.value = "receivedDate";
         showToast(`접수리스트 조회월을 ${formatMonthLabel(node.value)}로 변경했습니다.`);
       }
-      recordSequenceSort = "desc";
       renderRecords();
       renderMembershipFilterOptions();
       renderMembershipRecords();
@@ -16607,7 +16658,6 @@ function attachEvents() {
     const endInput = $("#recordEndDateFilter");
     if (startInput) startInput.value = today;
     if (endInput) endInput.value = today;
-    recordSequenceSort = "desc";
     renderRecords();
     showToast("오늘 접수내역만 표시합니다.");
   });
@@ -16619,7 +16669,6 @@ function attachEvents() {
     applyRecordMonthPeriod(month);
     const basis = $("#recordDateBasisFilter");
     if (basis) basis.value = "receivedDate";
-    recordSequenceSort = "desc";
     renderRecords();
     showToast(`목표월 기준으로 조회합니다. ${monthPeriod(month).start} ~ ${monthPeriod(month).end}`);
   });
@@ -16629,9 +16678,8 @@ function attachEvents() {
       const node = $(selector);
       if (node) node.value = "";
     });
-    recordSequenceSort = "desc";
     renderRecords();
-    showToast("전체 접수내역을 최신순으로 표시합니다.");
+    showToast("전체 접수내역을 접수일 기준으로 표시합니다.");
   });
 
   $("#clearRecordFiltersBtn").addEventListener("click", () => {
@@ -16639,7 +16687,6 @@ function attachEvents() {
       const node = $(selector);
       if (node) node.value = "";
     });
-    recordSequenceSort = "desc";
     renderRecords();
   });
 
@@ -16693,7 +16740,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.19";
+const APP_VERSION = "v11.20";
 const STATE_SCHEMA_VERSION = 4;
 
 function normalizeVersionText(version = "") {

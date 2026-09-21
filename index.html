@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta name="app-version" content="V11.19">
+  <meta name="app-version" content="V11.20">
   <meta charset="utf-8">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>영업관리 시스템</title>
-  <link rel="stylesheet" href="./styles.css?v=v1119">
+  <link rel="stylesheet" href="./styles.css?v=v1120">
   <link rel="icon" type="image/png" href="./assets/sales_manager_icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#174c3b">
@@ -628,7 +628,7 @@
             <div class="mobile-record-controls" id="mobileRecordControls">
               <div class="mobile-record-search-row">
                 <input id="mobileRecordSearch" type="search" placeholder="고객명 · 제품명 · 매니저 검색" aria-label="모바일 접수 검색">
-                <button class="mobile-filter-toggle" id="mobileRecordFilterToggle" type="button" aria-expanded="false">필터</button>
+                <button class="mobile-filter-toggle" id="mobileRecordFilterToggle" type="button" aria-expanded="false">필터</button><button class="mobile-record-date-sort" id="mobileRecordDateSortBtn" type="button" title="접수일 정렬 순서 바꾸기">접수일 ↑</button>
               </div>
               <div class="mobile-record-filter-panel" id="mobileRecordFilterPanel" hidden>
                 <div class="mobile-filter-grid">
@@ -654,7 +654,7 @@
                 <thead>
                   <tr>
                     <th class="record-select-col"><input type="checkbox" id="selectAllRecords" aria-label="현재 목록 전체 선택"></th><th class="seq-col">순번</th>
-                    <th class="date-col">접수일<br><span>설치요청일</span></th>
+                    <th class="date-col receipt-date-sort-header" id="recordDateSortHeader" aria-sort="ascending"><button type="button" class="receipt-date-sort-button" id="recordDateSortBtn" title="접수일 오름차순 · 클릭하여 내림차순으로 보기">접수일 ▲</button><br><span>설치요청일</span></th>
                     <th class="status-col"><select id="recordStatusFilter" class="header-filter header-title-filter" aria-label="상태 필터"></select></th>
                     <th class="manager-col"><select id="recordManagerFilter" class="header-filter header-title-filter" aria-label="매니저 필터"></select></th>
                     <th class="category-col"><select id="recordCategoryFilter" class="header-filter header-title-filter" aria-label="판매종류 필터"></select></th>
@@ -694,7 +694,7 @@
                 <thead>
                   <tr>
                     <th class="seq-col">순번</th>
-                    <th class="date-col">접수일<br><span>설치요청일</span></th>
+                    <th class="date-col receipt-date-sort-header" id="membershipDateSortHeader" aria-sort="ascending"><button type="button" class="receipt-date-sort-button" id="membershipDateSortBtn" title="접수일 오름차순 · 클릭하여 내림차순으로 보기">접수일 ▲</button><br><span>설치요청일</span></th>
                     <th class="status-col"><select id="membershipStatusFilter" class="header-filter header-title-filter" aria-label="맴버쉽 상태 필터"><option value="">전체 상태</option></select></th>
                     <th class="manager-col"><select id="membershipManagerFilter" class="header-filter header-title-filter" aria-label="맴버쉽 매니저 필터"><option value="">전체 매니저</option></select></th>
                     <th class="count-col">건수</th>
@@ -1862,7 +1862,7 @@
     }
   })();
 </script>
-  <script src="./app.js?v=v1119"></script>
+  <script src="./app.js?v=v1120"></script>
 
     
   <nav class="mobile-app-nav" id="mobileAppNav" aria-label="모바일 주요 메뉴">
