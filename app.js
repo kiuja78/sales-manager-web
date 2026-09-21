@@ -10167,16 +10167,24 @@ function promoRecordScore(record, promo) {
 }
 
 function promoCreditManagerName(record, month = "") {
-  const seller = compactValue(record?.seller, "");
-  const teamNames = teamManagerNames(month || recordGoalMonth(record, currentDashboardMonth()));
-  if (seller && teamNames.includes(seller)) return seller;
-  if (seller) return "";
-  return compactValue(record?.manager, "");
+  // 프로모션도 실제실적 표와 같은 실판매자 귀속 기준을 사용합니다.
+  // 실판매자가 '팀장'이나 '고객센터' 등 역할명인 경우 빈 이름으로 버리던
+  // 과거 코드는 정상 접수건이 프로모션에서 0건으로 나오는 원인이었습니다.
+  const targetMonth = normalizeManagerMonth(month)
+    || recordGoalMonth(record, currentPromotionMonth());
+  const managerNames = new Set(teamManagerNames(targetMonth));
+  const credited = actualPerformanceCreditManagerName(record, managerNames);
+  return managerNames.has(credited) ? credited : "";
 }
 
 function promotionReferenceMonth(promo) {
-  const value = promo?.startDate || promo?.endDate || currentDashboardMonth();
-  return normalizeManagerMonth(String(value).slice(0, 7)) || currentDashboardMonth();
+  // 시작일의 달력월이 아니라, 그 날짜를 포함하는 '목표 산정월'을 사용합니다.
+  // 예: 8/28~9/28 프로모션은 9월 목표월의 매니저·소속 이력으로 집계.
+  const date = String(promo?.startDate || promo?.endDate || "").slice(0, 10);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    return goalMonthForDate(date, date.slice(0, 7));
+  }
+  return normalizeManagerMonth(currentPromotionMonth()) || currentDashboardMonth();
 }
 
 function promoRecords(promo, managerName = "") {
@@ -11646,8 +11654,10 @@ function renderMembershipRecords() {
 
 
 function promotionMonthlyReportRows(month = monthIso()) {
-  const start = `${month}-01`;
-  const end = lastDayOfMonth(month);
+  // 조회월은 월초~월말이 아닌 월별 목표 산정기간을 기준으로 합니다.
+  const period = monthPeriod(month);
+  const start = period.start;
+  const end = period.end;
   const rows = [];
 
   (state.promotions || []).map(normalizePromotion).forEach((promo) => {
@@ -11912,6 +11922,26 @@ function renderPromotions() {
   renderPromotionDetail();
 }
 
+function promotionEmptyResultReason(promo) {
+  if (!promo?.name) return "조회할 프로모션을 선택해 주세요.";
+  const records = (state.records || []).filter((record) => record?.status !== "취소"
+    && inDateRange(record?.receivedDate || "", promo.startDate, promo.endDate));
+  if (!records.length) return "프로모션 기간에 등록된 접수내역이 없습니다. 기간과 접수일을 확인해 주세요.";
+  const matched = records.filter((record) => promoBaseRecordMatches(record, promo));
+  if (!matched.length) return "프로모션 기간 내 접수는 있으나 제품 키워드 조건에 맞는 건이 없습니다.";
+  const belonging = matched.filter((record) => recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, promotionReferenceMonth(promo))));
+  if (!belonging.length) return "대상 접수는 있으나 현재 지국의 매니저·소속 조건과 일치하지 않습니다.";
+  const managerMonth = promotionReferenceMonth(promo);
+  const managerNames = new Set(teamManagerNames(managerMonth));
+  if (!belonging.some((record) => managerNames.has(promoCreditManagerName(record, managerMonth)))) {
+    return "대상 접수는 있으나 해당 목표월의 매니저와 연결되지 않았습니다. 실판매자·담당매니저 및 적용월을 확인해 주세요.";
+  }
+  if (promo.type === "score" && !(promo.scoreRules || []).length) {
+    return "점수형 프로모션의 제품 키워드·점수 조건을 확인해 주세요.";
+  }
+  return "대상 접수의 인정 상태·매니저 적용월을 확인해 주세요.";
+}
+
 function renderPromotionDetail() {
   const promo = activePromotion();
 
@@ -11937,7 +11967,8 @@ function renderPromotionDetail() {
   const resultSummary = $("#promoResultSummary");
   const stats = promo.id ? promoManagerStats(promo) : [];
   const visible = stats.filter((item) => item.count > 0 || item.score > 0 || item.pendingCount > 0 || item.reward);
-  if (resultSummary) resultSummary.textContent = `${visible.length}명 집계`;
+  const emptyReason = visible.length ? "" : promotionEmptyResultReason(promo);
+  if (resultSummary) resultSummary.textContent = visible.length ? `${visible.length}명 집계` : "0명 · 조건 확인";
 
   const resultHeadRow = document.querySelector(".promo-result-table thead tr");
   if (resultHeadRow) {
@@ -11971,7 +12002,7 @@ function renderPromotionDetail() {
           <td><strong>${escapeHtml(item.reward?.reward || "-")}</strong></td>
           <td>${item.reward ? formatNumber(item.reward.quantity || 1) : "-"}</td>
         </tr>`).join("")
-      : `<tr><td colspan="${promo.type === "count" ? 7 : 8}" class="empty">아직 매칭된 접수내역이 없습니다.</td></tr>`;
+      : `<tr><td colspan="${promo.type === "count" ? 7 : 8}" class="empty">${escapeHtml(emptyReason)}</td></tr>`;
   }
 
   const detailSelect = $("#promoDetailManagerSelect");
@@ -16662,7 +16693,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.18";
+const APP_VERSION = "v11.19";
 const STATE_SCHEMA_VERSION = 4;
 
 function normalizeVersionText(version = "") {
