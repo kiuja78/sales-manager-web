@@ -54,11 +54,16 @@ async function writeDurableBackupSnapshot(sourceState = state, reason = "auto") 
       dataCount: stateDataCount(sourceState),
       data: sourceState
     };
-    if (!snapshot.dataCount) return false;
     const db = await openDurableBackupDb();
     await new Promise((resolve, reject) => {
       const tx = db.transaction(DURABLE_STORE_NAME, "readwrite");
-      tx.objectStore(DURABLE_STORE_NAME).put(snapshot, DURABLE_SNAPSHOT_KEY);
+      const store = tx.objectStore(DURABLE_STORE_NAME);
+      const existing = store.get(DURABLE_SNAPSHOT_KEY);
+      existing.onsuccess = () => {
+        const latest = existing.result?.data;
+        if (!isCorePersistedState(latest) || comparePersistenceVersion(sourceState, latest) > 0
+          || persistenceStamp(sourceState) === persistenceStamp(latest)) store.put(snapshot, DURABLE_SNAPSHOT_KEY);
+      };
       tx.oncomplete = resolve;
       tx.onerror = () => reject(tx.error || new Error("IndexedDB write failed"));
       tx.onabort = () => reject(tx.error || new Error("IndexedDB write aborted"));
@@ -81,7 +86,7 @@ async function readDurableBackupSnapshot() {
       request.onerror = () => reject(request.error || new Error("IndexedDB read failed"));
     });
     db.close();
-    if (!snapshot?.data || typeof snapshot.data !== "object" || !snapshot.dataCount) return null;
+    if (!isCorePersistedState(snapshot?.data)) return null;
     return snapshot;
   } catch (error) {
     console.warn("[DURABLE BACKUP] read failed", error);
@@ -855,7 +860,8 @@ async function restoreDbHistory(id) {
       state = normalizeState(target.data);
       state.appMeta = state.appMeta || {};
       state.appMeta.persistRevision = Math.max(currentRevision, Number(state.appMeta.persistRevision || 0));
-      await persistState({ allowEmptyServer: true, skipDbAutoBackup: true });
+      const saved = await persistState({ allowEmptyServer: true, skipDbAutoBackup: true });
+      if (!saved.ok) throw new Error("복구 데이터 저장 실패");
     }
     invalidateManagerCaches();
     selectedRecordId = "";
@@ -1629,71 +1635,23 @@ function loadState() {
 
 
 async function loadPersistedState() {
-  // 시작 화면은 외부/비동기 저장소를 기다리지 않고 즉시 로컬 저장 데이터를 사용합니다.
-  // IndexedDB는 데이터 복구가 필요한 경우에만 백그라운드에서 확인합니다.
-  const primaryRaw = localStorage.getItem(STORAGE_KEY);
-  let primaryParsed = null;
-  let primaryValid = false;
-
-  if (primaryRaw) {
-    try {
-      primaryParsed = JSON.parse(primaryRaw);
-      if (isCorePersistedState(primaryParsed)) {
-        // 현재 스키마로 이미 저장된 데이터는 시작 시 전체 정규화를 다시 수행하지 않습니다.
-        // 대량 접수/급여 데이터에서 normalizeState()가 동기적으로 오래 걸려
-        // 시작 화면에서 멈춘 것처럼 보이던 문제를 방지합니다.
-        const savedSchema = Number(primaryParsed?.appMeta?.stateSchemaVersion || primaryParsed?.schemaVersion || 0);
-        const hasCoreArrays = Array.isArray(primaryParsed.managers) && Array.isArray(primaryParsed.records);
-        if (savedSchema === STATE_SCHEMA_VERSION && hasCoreArrays) {
-          state = primaryParsed;
-        } else {
-          // Legacy data is normalized exactly once, then stamped with the current schema
-          // so the next startup can take the fast path. Keep a recovery snapshot first.
-          safeLocalBackupSnapshot(primaryParsed, "before-schema-migration");
-          state = normalizeState(primaryParsed);
-          state.appMeta = state.appMeta && typeof state.appMeta === "object" ? state.appMeta : {};
-          state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
-          try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
-            // Keep the pre-migration local snapshot intact; write the migrated copy to IndexedDB.
-            queueDurableBackup("after-schema-migration");
-          } catch (error) {
-            console.warn("[STARTUP] migrated state persist failed", error);
-          }
-        }
-        primaryValid = true; // records/managers가 빈 배열이어도 구조가 정상이라면 유효한 초기화 데이터입니다.
-      } else {
-        console.warn("[STARTUP] local storage state is incomplete; attempting recovery backup");
-      }
-    } catch (error) {
-      console.warn("[STARTUP] local storage parse failed", error);
-    }
-  }
-
-  if (!primaryValid) {
-    const backup = readAutoLocalBackup();
-    if (isCorePersistedState(backup?.data)) {
-      state = normalizeState(backup.data);
-      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) {}
-      primaryValid = true;
-    } else {
-      state = structuredClone(sampleState);
-    }
-  }
-  // 현재 스키마의 저장 데이터는 그대로 사용하되, 화면에서 요구하는 최소 메타만 보정합니다.
+  const local = readBrowserState();
+  const backup = local ? null : readAutoLocalBackup()?.data;
+  const durable = await readDurableBackupSnapshot();
+  let candidate = local || (isCorePersistedState(backup) ? backup : null);
+  if (isCorePersistedState(durable?.data) && (!candidate || comparePersistenceVersion(durable.data, candidate) > 0)) candidate = durable.data;
+  persistenceBaseState = candidate ? structuredClone(candidate) : null;
+  if (candidate) {
+    const schema = Number(candidate?.appMeta?.stateSchemaVersion || candidate?.schemaVersion || 0);
+    state = schema === STATE_SCHEMA_VERSION ? candidate : normalizeState(candidate);
+  } else state = structuredClone(sampleState);
   state.appMeta = state.appMeta && typeof state.appMeta === "object" ? state.appMeta : {};
   state.menuVisibility = normalizeMenuVisibility(state.menuVisibility);
   state.teamNames = Array.isArray(state.teamNames) && state.teamNames.length ? state.teamNames : ["A팀"];
   invalidateManagerCaches();
   touchStateRevision();
-
-  // Local Storage가 없거나 JSON이 깨진 경우에만 IndexedDB 복원을 비동기로 시도합니다.
-  // 복원 때문에 대시보드 초기화가 멈추지 않도록 절대 await하지 않습니다.
-  if (!primaryValid) {
-    window.setTimeout(() => {
-      restoreFromDurableBackupInBackground();
-    }, 0);
-  }
+  // Do not write an old startup candidate over a concurrent tab's newer save.
+  // The next explicit save performs the guarded commit and mirrors both stores.
 }
 
 function restoreFromDurableBackupInBackground() {
@@ -1720,36 +1678,129 @@ function restoreFromDurableBackupInBackground() {
     .catch((error) => console.warn("[DURABLE RESTORE] background restore failed", error));
 }
 
-function persistState(options = {}) {
-  // 완전 초기화처럼 의도적으로 빈 조직 상태를 저장할 때는 무결성 보정을 건너뜁니다.
-  if (options.ensureManagers !== false) ensureManagerDataIntegrity(state);
-  const currentCount = stateDataCount(state);
-  const existingRaw = localStorage.getItem(STORAGE_KEY);
-  let existingState = null;
-  try {
-    const parsedExisting = existingRaw ? JSON.parse(existingRaw) : null;
-    existingState = isCorePersistedState(parsedExisting) ? parsedExisting : null;
-  } catch { existingState = null; }
+// V11.23: compare the state that this window actually loaded/committed.
+let persistenceBaseState = null;
+let persistenceQueue = Promise.resolve({ ok: true });
+let persistenceBlocked = false;
+let persistenceErrorMessage = "";
+let desktopBaseStamp = "none";
 
-  // 비어 있는 상태가 기존의 실제 데이터를 실수로 덮어쓰는 것을 방지합니다.
-  // 기존 상태의 건수 확인만을 위해 전체 normalizeState()를 매 저장마다 다시 돌리지 않습니다.
-  if (currentCount === 0 && stateDataCount(existingState) > 0 && options.allowEmptyServer !== true) {
-    state = normalizeState(existingState);
-    showToast("빈 데이터 저장을 차단했습니다. 기존 데이터를 유지합니다.");
+function persistenceStamp(value) {
+  if (!isCorePersistedState(value)) return "none";
+  const meta = value.appMeta || {};
+  if (meta.persistCommitId || meta.persistRevision || meta.lastStateUpdatedAt) {
+    return JSON.stringify([Number(meta.persistRevision || 0), String(meta.lastStateUpdatedAt || ""), String(meta.persistCommitId || "")]);
   }
+  // Legacy data has no revision. A deterministic fingerprint avoids putting
+  // customer data in request headers while still detecting a changed baseline.
+  const raw = JSON.stringify(value);
+  let hash = 2166136261;
+  for (let i = 0; i < raw.length; i += 1) hash = Math.imul(hash ^ raw.charCodeAt(i), 16777619);
+  return `legacy-${raw.length}-${hash >>> 0}`;
+}
 
-  safeLocalBackupSnapshot(state, "pre-persist-current");
+function comparePersistenceVersion(a, b) {
+  const revision = Number(a?.appMeta?.persistRevision || 0) - Number(b?.appMeta?.persistRevision || 0);
+  if (revision) return revision;
+  return (Date.parse(a?.appMeta?.lastStateUpdatedAt || "") || 0) - (Date.parse(b?.appMeta?.lastStateUpdatedAt || "") || 0);
+}
+
+function persistenceConflicts(latest, baseline) {
+  return isCorePersistedState(latest) && persistenceStamp(latest) !== persistenceStamp(baseline)
+    && (!baseline || comparePersistenceVersion(latest, baseline) >= 0);
+}
+
+function readBrowserState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(STORAGE_KEY) || "null");
+    return isCorePersistedState(parsed) ? parsed : null;
+  } catch (_) { return null; }
+}
+
+function cacheCommittedState(snapshot) {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot)); return true; }
+  catch (error) { console.warn("[LOCAL CACHE] write failed; independent storage is used", error); return false; }
+}
+
+function persistenceFailure(conflict = false, message = "") {
+  if (conflict) persistenceBlocked = true;
+  persistenceErrorMessage = message || (conflict
+    ? "다른 창의 최신 저장과 충돌하여 저장하지 않았습니다. 필요한 변경은 전체백업으로 내보낸 뒤 새로고침해 주세요."
+    : "변경 내용을 저장하지 못했습니다. 창을 닫지 말고 전체백업을 내보낸 뒤 다시 저장해 주세요.");
+  showToast(persistenceErrorMessage);
+  return { ok: false, conflict, error: persistenceErrorMessage };
+}
+
+async function commitDurableState(snapshot, baseline) {
+  const db = await openDurableBackupDb();
+  try {
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(DURABLE_STORE_NAME, "readwrite");
+      const store = tx.objectStore(DURABLE_STORE_NAME);
+      let conflict = false;
+      const read = store.get(DURABLE_SNAPSHOT_KEY);
+      read.onsuccess = () => {
+        const latest = read.result?.data;
+        conflict = persistenceConflicts(latest, baseline);
+        if (!conflict) store.put({ backupType: "MJ_Sales_Manager_DurableBackup", schemaVersion: STATE_SCHEMA_VERSION,
+          exportedAt: new Date().toISOString(), reason: "persist-current", dataCount: stateDataCount(snapshot), data: snapshot }, DURABLE_SNAPSHOT_KEY);
+      };
+      tx.oncomplete = () => resolve({ ok: !conflict, conflict });
+      tx.onerror = () => reject(tx.error || new Error("IndexedDB write failed"));
+      tx.onabort = () => reject(tx.error || new Error("IndexedDB write aborted"));
+    });
+  } finally { db.close(); }
+}
+
+async function commitWebState(snapshot) {
+  const commit = async () => {
+    const local = readBrowserState();
+    if (persistenceConflicts(local, persistenceBaseState)) return persistenceFailure(true);
+    let durable = null;
+    try { durable = await commitDurableState(snapshot, persistenceBaseState); }
+    catch (error) { console.warn("[STATE] durable save unavailable", error); }
+    if (durable?.conflict) return persistenceFailure(true);
+    const localOk = cacheCommittedState(snapshot);
+    if (!durable?.ok && !localOk) return persistenceFailure();
+    persistenceBaseState = snapshot;
+    persistenceErrorMessage = "";
+    if (localOk) safeLocalBackupSnapshot(snapshot, "persist-current");
+    return { ok: true, local: localOk, durable: Boolean(durable?.ok) };
+  };
+  // Serializes both the IndexedDB commit and its localStorage mirror across tabs.
+  if (navigator.locks?.request) return navigator.locks.request(`${STORAGE_KEY}-persist`, commit);
+  // IndexedDB's read/write transaction still performs the conflict check atomically.
+  return commit();
+}
+
+function persistState(options = {}) {
+  if (persistenceBlocked) return Promise.resolve(persistenceFailure(true));
+  if (options.ensureManagers !== false) ensureManagerDataIntegrity(state);
+  const existing = persistenceBaseState;
+  if (stateDataCount(state) === 0 && stateDataCount(existing) > 0 && options.allowEmptyServer !== true) {
+    return Promise.resolve(persistenceFailure(false, "빈 데이터 저장을 차단했습니다. 기존 저장 데이터는 유지됩니다."));
+  }
   state.appMeta = state.appMeta || {};
   state.appMeta.lastStateUpdatedAt = new Date().toISOString();
   state.appMeta.stateSchemaVersion = STATE_SCHEMA_VERSION;
-  const previousRevision = Number(state.appMeta.persistRevision || 0);
-  state.appMeta.persistRevision = (Number.isFinite(previousRevision) && previousRevision > 0 ? previousRevision : 0) + 1;
-
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  const currentRevision = Number(state.appMeta.persistRevision || 0);
+  const baseRevision = Number(existing?.appMeta?.persistRevision || 0);
+  state.appMeta.persistRevision = Math.max(Number.isFinite(currentRevision) ? currentRevision : 0, Number.isFinite(baseRevision) ? baseRevision : 0, 0) + 1;
+  state.appMeta.persistCommitId = uid("save");
+  const snapshot = structuredClone(state);
   touchStateRevision();
-  queueDurableBackup("persist-current");
-  if (options.skipDbAutoBackup !== true) queueDbAutoBackup();
-  return Promise.resolve({ ok: true, local: true });
+  persistenceQueue = persistenceQueue.catch(() => ({ ok: false })).then(async () => {
+    if (persistenceBlocked) return persistenceFailure(true);
+    try {
+      const result = IS_PC_APP ? await commitDesktopState(snapshot) : await commitWebState(snapshot);
+      if (result.ok && options.skipDbAutoBackup !== true) queueDbAutoBackup();
+      return result;
+    } catch (error) {
+      console.error("[STATE SAVE] failed", error);
+      return persistenceFailure();
+    }
+  });
+  return persistenceQueue;
 }
 
 function ensureAllRecordManualOrder(records) {
@@ -1822,10 +1873,11 @@ function normalizeState(loaded) {
   return next;
 }
 
-function saveState(message, options = {}) {
-  persistState(options);
+async function saveState(message, options = {}) {
+  const result = await persistState(options);
   render();
-  if (message) showToast(message);
+  if (result.ok && message) showToast(message);
+  return result;
 }
 
 let currentManagerShareBlob = null;
@@ -2002,13 +2054,14 @@ function recordGoalMonth(record = {}, fallbackMonth = "") {
   return goalMonthForDate(record.receivedDate || record.installDate || "", fallbackMonth);
 }
 
-// 매니저의 '적용월'은 화면상 달력월(예: 2026-09)으로 저장하지만,
-// 영업 데이터에서는 그 목표월의 산정기간 시작일부터 적용됩니다.
-// 따라서 2026-09 적용은 9/1이 아니라 9월 목표산정기간 시작일(예: 8/28)부터
-// 해당 팀/재직 상태가 적용됩니다. 실제 날짜를 직접 비교하지 않고 목표월을
-// 먼저 계산한 뒤 이력의 월을 조회하면 모든 영업 메뉴가 같은 기준을 사용합니다.
+// 조직 변경은 목표월과 무관한 달력월의 1일에 적용됩니다.
+// 10월 퇴사자는 9/30까지 재직이며, 9/28~10/28 목표기간에서
+// 9월 말 접수는 10월 실적으로 보이되 9월 조직 이력을 사용합니다.
 function organizationMonthForDate(dateText, fallbackMonth = "") {
-  return goalMonthForDate(dateText, fallbackMonth);
+  const date = String(dateText || "").trim().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? date.slice(0, 7)
+    : (normalizeManagerMonth(fallbackMonth) || monthIso());
 }
 
 function managerTeamForDate(managerOrName, dateText, fallbackMonth = "") {
@@ -2865,6 +2918,10 @@ function normalizeManager(manager = {}, teamNamesOverride = null) {
     inactiveMonth,
     statusHistory,
     teamHistory,
+    changeHistory: Array.isArray(manager.changeHistory)
+      ? manager.changeHistory.filter((entry) => entry && normalizeManagerMonth(entry.month))
+        .map((entry) => ({ month: normalizeManagerMonth(entry.month), type: String(entry.type || ""), team: String(entry.team || ""), status: entry.status === "inactive" ? "inactive" : "active" }))
+      : [],
     createdAt: String(manager.createdAt || ""),
     updatedAt: String(manager.updatedAt || "")
   };
@@ -2914,9 +2971,9 @@ function applyManagerStatusChange(manager, nextStatus, effectiveMonth) {
   // 적용월을 현재 이력보다 과거로 옮기는 것은 '새 이력 추가'가 아니라
   // 현재 행의 상태 시작월을 앞당기는 수정입니다. 기존 현재 이력을 미래로 남기면
   // 비활성/재직이 다음 달에 다시 원래 상태로 돌아가는 문제가 발생합니다.
-  if (currentEntry && month <= (currentEntry.startMonth || currentMonth)) {
+  if (currentEntry?.startMonth && month <= currentEntry.startMonth) {
     const others = history.filter((item) => item !== currentEntry);
-    const prior = others.filter((item) => item.startMonth && item.startMonth < month)
+    const prior = others.filter((item) => (!item.startMonth || item.startMonth < month))
       .sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")));
     const future = others.filter((item) => item.startMonth && item.startMonth > month)
       .sort((a,b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")));
@@ -2926,7 +2983,7 @@ function applyManagerStatusChange(manager, nextStatus, effectiveMonth) {
     return normalizeStatusHistory([...prior, moved, ...future], status, normalized.joinedMonth);
   }
 
-  const prior = history.filter((item) => item.startMonth && item.startMonth < month);
+  const prior = history.filter((item) => (!item.startMonth || item.startMonth < month));
   const future = history.filter((item) => item.startMonth && item.startMonth > month);
   const exact = history.find((item) => item.startMonth === month);
   const previous = prior.slice().sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
@@ -2978,9 +3035,9 @@ function applyManagerTeamChange(manager, nextTeam, effectiveMonth) {
 
   // 현재 행이 나타내는 기존 이력의 시작월을 직접 이동하는 경우
   // (특히 적용월을 현재/과거 월로 변경하는 경우) 해당 이력을 수정합니다.
-  if (currentEntry && month <= currentStart) {
+  if (currentEntry?.startMonth && month <= currentStart) {
     const others = history.filter((item) => item !== currentEntry);
-    const prior = others.filter((item) => item.startMonth && item.startMonth < month)
+    const prior = others.filter((item) => (!item.startMonth || item.startMonth < month))
       .sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")));
     const future = others.filter((item) => item.startMonth && item.startMonth > month)
       .sort((a, b) => String(a.startMonth || "").localeCompare(String(b.startMonth || "")));
@@ -2998,7 +3055,7 @@ function applyManagerTeamChange(manager, nextTeam, effectiveMonth) {
   }
 
   // 미래월로 새 팀 이동을 예약하는 경우에는 현재 이력을 유지하고 새 경계를 추가합니다.
-  const prior = history.filter((item) => item.startMonth && item.startMonth < month);
+  const prior = history.filter((item) => (!item.startMonth || item.startMonth < month));
   const future = history.filter((item) => item.startMonth && item.startMonth > month);
   const exact = history.find((item) => item.startMonth === month);
   const previous = prior.slice().sort((a, b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0];
@@ -3055,13 +3112,53 @@ function sortManagerNamesByDisplayOrder(names = []) {
 }
 
 
+// 목표월의 조회 범위와 매니저의 재직/소속 적용월은 서로 다릅니다.
+// 조회기간이 두 달에 걸치면, 두 달 중 실제 재직한 기간이 있는 매니저를 보존합니다.
+function calendarMonthsForGoalPeriod(month) {
+  const goalMonth = normalizeManagerMonth(month) || monthIso();
+  const period = monthPeriod(goalMonth);
+  const start = organizationMonthForDate(period.start, goalMonth);
+  const end = organizationMonthForDate(period.end, goalMonth);
+  if (start > end) return [goalMonth];
+  const months = [];
+  for (let current = start; current <= end && months.length < 24; current = shiftMonth(current, 1)) {
+    months.push(current);
+  }
+  return months.length ? months : [goalMonth];
+}
+
+function activeManagerForCalendarMonth(manager, calendarMonth) {
+  const enabled = managerIsActiveForMonth(manager, calendarMonth);
+  if (!enabled) return false;
+  return teamOperationMode(calendarMonth) === "1"
+    || managerTeamForMonth(manager, calendarMonth) === currentUserTeamName(calendarMonth);
+}
+
 function teamManagers(month = currentDashboardMonth()) {
   const targetMonth = normalizeManagerMonth(month) || monthIso();
-  const operationMode = teamOperationMode(targetMonth);
-  const currentTeam = currentUserTeamName(targetMonth);
+  const calendarMonths = calendarMonthsForGoalPeriod(targetMonth);
+  const { start, end } = monthPeriod(targetMonth);
+  // 매니저마다 전체 접수를 다시 검색하면 데이터가 많을 때 화면이 느려집니다.
+  // 접수는 한 번만 순회하여 해당 목표기간의 담당 매니저를 찾습니다.
+  const recordManagerIds = new Set();
+  const recordManagerNames = new Set();
+  (state.records || []).forEach((record) => {
+    if (!record || isMembershipRecord(record) || !inDateRange(record.receivedDate || "", start, end)) return;
+    if (!recordBelongsToCurrentUserTeam(record, targetMonth)) return;
+    if (record.managerId) recordManagerIds.add(record.managerId);
+    if (record.manager) recordManagerNames.add(String(record.manager).trim());
+  });
   return managerIndex().normalized
-    .filter((manager) => managerIsActiveForMonth(manager, targetMonth))
-    .filter((manager) => operationMode === "1" || managerTeamForMonth(manager, targetMonth) === currentTeam)
+    .filter((manager) => {
+      // 새 목표월 전체에 퇴사자를 무조건 나열하지 않습니다. 현재월 재직자이거나
+      // 목표산정기간에 실제 과거 접수/조정내역이 있는 매니저만 표시합니다.
+      const currentMember = activeManagerForCalendarMonth(manager, targetMonth);
+      const historicalMember = calendarMonths.some((calendarMonth) => activeManagerForCalendarMonth(manager, calendarMonth));
+      const hasPeriodRecords = recordManagerIds.has(manager.id) || recordManagerNames.has(manager.name);
+      const adjustment = state.managerManualStats?.[targetMonth]?.[manager.name];
+      const hasAdjustment = adjustment && (Number(adjustment.renewal || 0) !== 0 || Number(adjustment.refund || 0) !== 0);
+      return currentMember || hasPeriodRecords || (historicalMember && hasAdjustment);
+    })
     .slice()
     .sort((a, b) => {
       const orderDiff = managerDisplayOrderValue(a) - managerDisplayOrderValue(b);
@@ -3070,8 +3167,12 @@ function teamManagers(month = currentDashboardMonth()) {
     });
 }
 
+// 신규 접수는 목표기간의 다른 달이 아닌 실제 접수일의 달력월을 기준으로 선택합니다.
 function activeTeamManagerNames(month = monthIso()) {
-  return teamManagers(month).map((manager) => manager.name);
+  const calendarMonth = normalizeManagerMonth(month) || monthIso();
+  return sortManagersByDisplayOrder(managerIndex().normalized
+    .filter((manager) => activeManagerForCalendarMonth(manager, calendarMonth)))
+    .map((manager) => manager.name);
 }
 
 function allManagerNames() {
@@ -3101,7 +3202,7 @@ function teamManagerNames(month = currentDashboardMonth()) {
 function recordEntryMonth(explicitMonth = "") {
   const receivedDate = String($("#receivedDateInput")?.value || "");
   const explicit = normalizeManagerMonth(explicitMonth);
-  if (receivedDate) return goalMonthForDate(receivedDate, explicit || normalizeManagerMonth($("#monthFilter")?.value));
+  if (receivedDate) return organizationMonthForDate(receivedDate, explicit || normalizeManagerMonth($("#monthFilter")?.value));
   return explicit
     || normalizeManagerMonth($("#recordMonthFilter")?.value)
     || normalizeManagerMonth($("#monthFilter")?.value)
@@ -3129,7 +3230,7 @@ function refreshRecordManagerOptions(month = "", preferredValue = "", preserveSe
 
 function ensureRecordManagerReference(record, managers = state.managers || []) {
   if (!record || typeof record !== "object") return record;
-  const recordMonth = recordGoalMonth(record, monthIso());
+  const recordMonth = organizationMonthForDate(record.receivedDate || record.installDate, monthIso());
 
   const registeredManager = managerById(record.managerId, managers) || managerByName(record.manager, managers);
   if (registeredManager) {
@@ -3179,7 +3280,7 @@ function ensureManagerDataIntegrity(targetState = state) {
   targetState.records = (Array.isArray(targetState.records) ? targetState.records : [])
     .map((record) => {
       if (!record || typeof record !== "object") return record;
-      const recordMonth = recordGoalMonth(record, monthIso());
+      const recordMonth = organizationMonthForDate(record.receivedDate || record.installDate, monthIso());
 
       const registeredManager = byId.get(String(record.managerId || ""))
         || byName.get(String(record.manager || "").trim());
@@ -10413,14 +10514,12 @@ function currentTeamForManager(managerOrName, month = currentDashboardMonth()) {
   return normalizeTeamName(managerTeamForMonth(manager, month));
 }
 
-// 영업 관련 팀 판정의 기준은 '달력월'이 아니라 '목표월'입니다.
-// 예: 2026년 9월 목표산정기간이 8/28~9/28이고 매니저 적용월이 9월이면
-// 8/28부터 발생한 접수도 9월 목표월에 속하므로 9월의 팀/재직 이력을 사용합니다.
-// 따라서 접수에 저장된 managerTeamAtRecord는 보조/레거시 정보로만 사용하고,
-// 정상 데이터는 항상 접수일 -> 목표월 -> 해당 목표월의 조직이력 순으로 계산합니다.
+// 실적의 목표월과 조직 이력은 분리합니다. 조회는 목표산정기간으로 하고,
+// 각 접수의 소속팀과 재직 상태는 실제 접수일의 달력월 이력으로 확인합니다.
+// 기존 managerTeamAtRecord는 등록 매니저 이력이 없을 때의 보조정보로 보존합니다.
 function recordTeamForGoalMonth(record, targetMonth = "") {
   const manager = managerById(record?.managerId) || managerByName(record?.managerNameAtRecord || record?.manager);
-  const month = normalizeManagerMonth(targetMonth) || recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
+  const month = organizationMonthForDate(record?.receivedDate || record?.installDate, targetMonth || currentDashboardMonth());
   if (!manager?.name) return normalizeTeamName(record?.managerTeamAtRecord || "");
   const history = normalizeManagerTeamHistory(manager.teamHistory, manager.team, manager.joinedMonth);
   const matching = history
@@ -10433,7 +10532,7 @@ function recordTeamForGoalMonth(record, targetMonth = "") {
 
 function recordStatusForGoalMonth(record, targetMonth = "") {
   const manager = managerById(record?.managerId) || managerByName(record?.managerNameAtRecord || record?.manager);
-  const month = normalizeManagerMonth(targetMonth) || recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
+  const month = organizationMonthForDate(record?.receivedDate || record?.installDate, targetMonth || currentDashboardMonth());
   if (!manager?.name) return record?.managerStatusAtRecord === "inactive" ? "inactive" : "active";
   const history = normalizeStatusHistory(manager.statusHistory, manager.status === "inactive" ? "inactive" : "active", manager.joinedMonth);
   const matching = history
@@ -10445,14 +10544,13 @@ function recordStatusForGoalMonth(record, targetMonth = "") {
 }
 
 function recordBelongsToCurrentUserTeam(record, month = "") {
-  const manager = managerById(record?.managerId) || managerByName(record?.managerNameAtRecord || record?.manager);
-  if (!manager) return false;
-  const targetMonth = normalizeManagerMonth(month) || recordGoalMonth(record, currentDashboardMonth()) || currentDashboardMonth();
-  if (recordStatusForGoalMonth(record, targetMonth) !== "active") return false;
-  if (teamOperationMode(targetMonth) === "1") return true;
-  const managerTeam = recordTeamForGoalMonth(record, targetMonth);
-  if (!managerTeam) return false;
-  return managerTeam === currentUserTeamName(targetMonth);
+  if (!record) return false;
+  const manager = managerById(record.managerId) || managerByName(record.managerNameAtRecord || record.manager);
+  const calendarMonth = organizationMonthForDate(record.receivedDate || record.installDate, month || currentDashboardMonth());
+  // 과거 접수는 퇴사 후에도 유지하며, 이미 저장된 접수를 비활성 상태로 숨기지 않습니다.
+  if (teamOperationMode(calendarMonth) === "1") return Boolean(manager || record.manager);
+  const managerTeam = recordTeamForGoalMonth(record, month);
+  return Boolean(managerTeam) && managerTeam === currentUserTeamName(calendarMonth);
 }
 
 function filteredRecordSetForList() {
@@ -10465,11 +10563,7 @@ function filteredRecordSetForList() {
 
   const teamScoped = state?.appMeta?.teamScopedRecords !== false;
 
-  // 접수리스트에서 선택한 조회월은 곧 "목표월"입니다.
-  // 따라서 해당 월의 목표산정기간 안에 들어온 모든 접수는 선택한 목표월의
-  // 마스터/팀/재직 이력 기준으로 필터링해야 합니다.
-  // 개별 접수의 달력월(recordGoalMonth(record))을 다시 기준으로 삼으면
-  // 산정기간 경계에서 이전 월 접수가 누락될 수 있으므로 사용하지 않습니다.
+  // 조회기간은 목표월 산정기간을 따르되, 접수별 조직이력은 실제 접수일의 달력월을 사용합니다.
   const selectedGoalMonth = normalizeManagerMonth($("#recordMonthFilter")?.value) || currentDashboardMonth();
   return recordsByRecordPeriod()
     .filter((record) => !isMembershipRecord(record))
@@ -12165,8 +12259,11 @@ function managerSettingsRowMarkup(rawManager, targetMonth, isNew = false) {
   const targetTeamAssignment = historyEntryForMonth(manager.teamHistory, targetMonth, "team");
   const targetStatusAssignment = historyEntryForMonth(manager.statusHistory, targetMonth, "status");
   const displayTeam = targetTeamAssignment?.team || manager.team;
-  const displayEffectiveMonth = targetTeamAssignment?.startMonth || manager.joinedMonth || targetMonth;
-  const displayStatus = targetStatusAssignment?.status || manager.status;
+  // 팀 이력 시작월과 상태 이력 시작월은 다를 수 있습니다.
+  // 팀 시작월을 기본 적용월로 보여주면 10월 퇴사 상태를 저장할 때 8월로
+  // 역적용될 수 있으므로, 현재 선택한 조회월(달력월)을 기본 적용월로 사용합니다.
+  const displayEffectiveMonth = normalizeManagerMonth(targetMonth) || manager.joinedMonth || monthIso();
+  const displayStatus = managerStatusForMonth(manager, targetMonth);
   const statusLabel = displayStatus === "inactive" ? "비활성" : "재직";
   const historyText = managerHistoryLabel(manager) || "소속이력 없음";
   const teamSelect = configuredTeamNames().map((team) =>
@@ -12189,7 +12286,11 @@ function managerSettingsRowMarkup(rawManager, targetMonth, isNew = false) {
         <label>상시목표<input class="manager-goal" type="number" min="0" step="0.5" value="${escapeHtml(managerGoalFor(manager.name, targetMonth))}"></label>
         <div class="manager-safe-action">${protection}</div>
       </div>
-      <details class="manager-history-details"><summary>${escapeHtml(statusLabel)} · 소속이력보기</summary><p>${escapeHtml(historyText)}</p><small>팀 또는 상태를 바꿀 때 입력한 적용월부터 반영되며, 이전 월의 정보와 실적은 그대로 유지됩니다.</small></details>
+      <div class="manager-change-line">
+        <label>변경유형<select class="manager-change-type"><option value="none">변경없음</option><option value="leave">퇴사</option><option value="move">팀 이동</option><option value="pause">휴직·비활성</option><option value="return">복귀·재직</option></select></label>
+        <small>변경할 매니저만 유형과 적용월을 선택하세요. 변경월 1일부터 적용하며, 이전 월 접수와 실적은 유지됩니다.</small>
+      </div>
+      <details class="manager-history-details"><summary>${escapeHtml(statusLabel)} · 변경이력보기</summary><p>${escapeHtml(historyText)}${manager.changeHistory?.length ? ` · ${escapeHtml(manager.changeHistory.map((entry) => `${formatMonthLabel(entry.month)} ${({leave:"퇴사",move:"팀 이동",pause:"휴직·비활성",return:"복귀·재직"})[entry.type] || "상태 변경"}`).join(" · "))}` : ""}</p><small>재직·소속팀은 달력월 기준, 영업실적 조회는 목표산정기간 기준으로 적용됩니다.</small></details>
     </div>`;
 }
 
@@ -13087,7 +13188,10 @@ function collectManagerSettings() {
     const effectiveMonth = normalizeManagerMonth(row.querySelector(".manager-effective-month")?.value) || targetMonth;
     const selectedTeam = String(row.querySelector(".manager-team")?.value || "").trim();
     const nextTeam = configuredTeamNames().includes(selectedTeam) ? selectedTeam : defaultTeamName();
-    const nextStatus = row.querySelector(".manager-status")?.value === "inactive" ? "inactive" : "active";
+    const changeType = String(row.querySelector(".manager-change-type")?.value || "none");
+    let nextStatus = row.querySelector(".manager-status")?.value === "inactive" ? "inactive" : "active";
+    if (changeType === "leave" || changeType === "pause") nextStatus = "inactive";
+    if (changeType === "return") nextStatus = "active";
     const goal = toNumber(row.querySelector(".manager-goal")?.value);
     const areas = String(row.querySelector(".manager-areas")?.value || "")
       .split(",").map((item) => item.trim()).filter(Boolean);
@@ -13095,8 +13199,25 @@ function collectManagerSettings() {
 
     let manager;
     if (existing) {
-      const teamHistory = applyManagerTeamChange(existing, nextTeam, effectiveMonth);
-      const statusHistory = applyManagerStatusChange(existing, nextStatus, effectiveMonth);
+      const previousTeam = managerTeamForMonth(existing, effectiveMonth);
+      const previousStatus = managerStatusForMonth(existing, effectiveMonth);
+      if (changeType === "move" && nextTeam === previousTeam) {
+        invalidMessage = `${name}: 이동할 팀을 변경해 주세요.`;
+        return;
+      }
+      const shouldChangeTeam = nextTeam !== previousTeam;
+      const shouldChangeStatus = nextStatus !== previousStatus;
+      const teamHistory = shouldChangeTeam ? applyManagerTeamChange(existing, nextTeam, effectiveMonth) : existing.teamHistory;
+      const statusHistory = shouldChangeStatus ? applyManagerStatusChange(existing, nextStatus, effectiveMonth) : existing.statusHistory;
+      const changeHistory = Array.isArray(existing.changeHistory) ? existing.changeHistory.slice() : [];
+      // 이미 비활성 상태인 과거 기록에 '퇴사/휴직' 사유만 추가하는 경우도 보존합니다.
+      // 사유 입력은 재직/소속 변경 이력 자체를 덮어쓰지 않습니다.
+      if (changeType !== "none") {
+        const reason = { type: changeType, month: effectiveMonth, team: nextTeam, status: nextStatus };
+        const index = changeHistory.findIndex((entry) => entry.month === effectiveMonth && entry.type === changeType);
+        if (index >= 0) changeHistory[index] = reason;
+        else changeHistory.push(reason);
+      }
       const latestTeam = managerTeamForMonth({ ...existing, team: existing.team, teamHistory }, monthIso()) || nextTeam;
       const latestStatus = managerStatusForMonth({ ...existing, status: existing.status, statusHistory }, monthIso()) || nextStatus;
       const latestInactive = latestStatus === "inactive"
@@ -13114,6 +13235,7 @@ function collectManagerSettings() {
         inactiveMonth: latestInactive,
         statusHistory,
         teamHistory,
+        changeHistory,
         updatedAt: nowIso
       });
       if (existing.name !== name) renamedManagers.push({ id, previousName: existing.name, nextName: name });
@@ -13207,18 +13329,44 @@ function fillRecordForm(record) {
 }
 
 
-function updateRecordState(recordId, patch, message = "접수내역을 수정했습니다.") {
+function refreshEditedRecordReferences(record, previous = null) {
+  const dateChanged = Boolean(previous && (previous.receivedDate !== record.receivedDate || previous.installDate !== record.installDate));
+  if (!previous || previous.manager !== record.manager) {
+    const manager = managerByName(record.manager);
+    record.managerId = manager?.id || "";
+    record.managerNameAtRecord = String(record.manager || "");
+    record.managerTeamAtRecord = "";
+    record.managerStatusAtRecord = "";
+  }
+  if (dateChanged || !previous || previous.manager !== record.manager) {
+    const manager = managerById(record.managerId) || managerByName(record.manager);
+    if (manager) {
+      const month = organizationMonthForDate(record.receivedDate || record.installDate);
+      record.managerTeamAtRecord = managerTeamForMonth(manager, month);
+      record.managerStatusAtRecord = managerStatusForMonth(manager, month);
+    }
+  }
+  if (!previous || previous.seller !== record.seller) {
+    record.sellerId = managerByName(record.seller)?.id || "";
+    record.sellerNameAtRecord = String(record.seller || "");
+  }
+  return ensureRecordManagerReference(record);
+}
+
+async function updateRecordState(recordId, patch, message = "접수내역을 수정했습니다.") {
   const record = state.records.find((item) => item.id === recordId);
   if (!record) return;
   if (patch.phone !== undefined) patch.phone = formatPhoneNumber(patch.phone);
+  const previous = { ...record };
   Object.assign(record, patch);
-  ensureRecordManagerReference(record);
+  refreshEditedRecordReferences(record, previous);
   // 접수일 변경 후 renderRecords()가 표시 목록을 새 날짜 기준으로 정렬합니다.
   record.updatedAt = new Date().toISOString();
   if (patch.category) record.category = normalizeCategory(record.category);
   if (patch.activityType !== undefined) record.activityType = normalizeActivityType(record.activityType);
   selectedRecordId = recordId;
-  persistState();
+  const saved = await persistState();
+  if (!saved.ok) return;
   renderRecords();
   renderMembershipRecords();
   fillRecordForm(record);
@@ -13226,8 +13374,8 @@ function updateRecordState(recordId, patch, message = "접수내역을 수정했
 }
 
 function buildInlineEditor(type, record) {
-  const recordMonth = recordGoalMonth(record);
-  const managers = managerInputNames(record.manager, recordMonth, true);
+  const recordMonth = organizationMonthForDate(record.receivedDate || record.installDate);
+  const managers = sortManagerNamesByDisplayOrder([...new Set([...activeTeamManagerNames(recordMonth), record.manager].filter(Boolean))]);
   const selectMarkup = (field, current, values, emptyLabel = "") => `<select class="cell-input" data-field="${field}">${values.map((value) => `<option value="${escapeHtml(value)}"${value === current ? " selected" : ""}>${escapeHtml(value || emptyLabel)}</option>`).join("")}</select>`;
   if (type === "date-pair") return `
     <div class="cell-editor-stack">
@@ -13340,7 +13488,7 @@ function showToast(message) {
   const toast = $("#toast");
   if (!toast) return;
 
-  toast.textContent = message;
+  toast.textContent = persistenceErrorMessage || message;
 
   // WEB: 오른쪽 하단 대신 화면 중앙에 표시
   toast.style.position = "fixed";
@@ -16273,7 +16421,7 @@ function attachEvents() {
       createdAt: existingRecord?.createdAt || nowIso,
       updatedAt: nowIso
     };
-    ensureRecordManagerReference(record, state.managers);
+    refreshEditedRecordReferences(record, existingRecord);
     const index = state.records.findIndex((item) => item.id === id);
     if (index >= 0) state.records[index] = record;
     else state.records.unshift(record);
@@ -16581,6 +16729,22 @@ function attachEvents() {
     saveState("매니저 정보와 소속이력을 안전하게 저장했습니다.");
   });
 
+  $("#managerSettings").addEventListener("change", (event) => {
+    const row = event.target.closest(".manager-row");
+    if (!row || !settingsEditMode.manager) return;
+    const type = row.querySelector(".manager-change-type");
+    const status = row.querySelector(".manager-status");
+    if (!type || !status) return;
+    if (event.target === type) {
+      if (type.value === "leave" || type.value === "pause") status.value = "inactive";
+      if (type.value === "return") status.value = "active";
+    } else if (event.target.classList.contains("manager-team") && type.value === "none" && row.dataset.isNew !== "true") {
+      type.value = "move";
+    } else if (event.target === status && type.value === "none" && row.dataset.isNew !== "true") {
+      type.value = status.value === "active" ? "return" : "pause";
+    }
+  });
+
   $("#managerSettings").addEventListener("click", (event) => {
     const editButton = event.target.closest(".edit-manager-row");
     if (editButton) {
@@ -16740,7 +16904,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.20";
+const APP_VERSION = "v11.23";
 const STATE_SCHEMA_VERSION = 4;
 
 function normalizeVersionText(version = "") {
@@ -16794,7 +16958,7 @@ async function executeCompleteReset() {
     if (resetSaveResult?.ok === false) throw new Error("초기화 데이터 저장에 실패했습니다.");
     localStorage.removeItem(LOCAL_BACKUP_KEY);
     localStorage.removeItem(LOCAL_BACKUP_INDEX_KEY);
-    await clearDurableBackupSnapshots();
+    // Keep the committed empty snapshot as the newest reset state.
   } catch (error) {
     console.error("[COMPLETE RESET] save failed", error);
     showToast("초기화 데이터를 저장하지 못했습니다. 다시 시도해 주세요.");
@@ -16862,15 +17026,7 @@ window.copyCurrentManagerShareImage = copyCurrentManagerShareImage;
 window.saveCurrentManagerShareImage = saveCurrentManagerShareImage;
 
 
-window.addEventListener("pagehide", () => {
-  try {
-    safeLocalBackupSnapshot(state, "pagehide");
-    const raw = JSON.stringify(state);
-    localStorage.setItem(STORAGE_KEY, raw);
-  } catch (error) {
-    console.warn("[PAGEHIDE BACKUP] failed", error);
-  }
-});
+// Saved changes are committed by persistState(); pagehide must not overwrite another window.
 
 window.MJ_SALES_VERSION = APP_VERSION;
 window.MJ_SALES_SCHEMA_VERSION = STATE_SCHEMA_VERSION;
