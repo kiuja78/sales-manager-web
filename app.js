@@ -16904,7 +16904,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.23";
+const APP_VERSION = "v11.24";
 const STATE_SCHEMA_VERSION = 4;
 
 function normalizeVersionText(version = "") {
