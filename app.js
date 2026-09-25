@@ -2922,6 +2922,7 @@ function normalizeManager(manager = {}, teamNamesOverride = null) {
       ? manager.changeHistory.filter((entry) => entry && normalizeManagerMonth(entry.month))
         .map((entry) => ({ month: normalizeManagerMonth(entry.month), type: String(entry.type || ""), team: String(entry.team || ""), status: entry.status === "inactive" ? "inactive" : "active" }))
       : [],
+    historyEdits: Array.isArray(manager.historyEdits) ? manager.historyEdits.filter((entry) => entry && typeof entry.at === "string" && entry.before && entry.after).map((entry) => ({at: entry.at, before: entry.before, after: entry.after})) : [],
     createdAt: String(manager.createdAt || ""),
     updatedAt: String(manager.updatedAt || "")
   };
@@ -10321,8 +10322,17 @@ function promoAllManagerRecords(promo, managerName) {
 function promoManagerStats(promo) {
   promo = normalizePromotion(promo);
   const month = promotionReferenceMonth(promo);
-  return teamManagers(month).map((manager) => {
-    const allRecords = promoAllManagerRecords(promo, manager.name);
+  const managers = teamManagers(month);
+  const names = new Set(managers.map((manager) => manager.name));
+  const grouped = new Map(managers.map((manager) => [manager.name, []]));
+  for (const record of state.records || []) {
+    if (!promoBaseRecordMatches(record, promo)) continue;
+    if (!recordBelongsToCurrentUserTeam(record, recordGoalMonth(record, month))) continue;
+    const credited = actualPerformanceCreditManagerName(record, names);
+    if (names.has(credited)) grouped.get(credited).push(record);
+  }
+  return managers.map((manager) => {
+    const allRecords = grouped.get(manager.name);
     const managerRecords = allRecords.filter((record) => isPromoRecordAccepted(record, promo));
     const pendingRecords = allRecords.filter((record) => !isInstalledRecord(record) && !isPromoRecordAccepted(record, promo));
     const count = managerRecords.reduce((sum, record) => sum + toNumber(record.count), 0);
@@ -12252,46 +12262,22 @@ function historyEntryForMonth(history, targetMonth, valueKey) {
 
 function managerSettingsRowMarkup(rawManager, targetMonth, isNew = false) {
   const manager = normalizeManager(rawManager);
-  const areasText = (manager.areas || []).join(", ");
-  // 화면에는 '가장 최근 이력'이 아니라 현재 설정에서 선택한 조회월에 실제 적용되는
-  // 팀/상태 이력을 표시합니다. 이전 구현은 최신(미래 포함) 이력을 무조건 표시하여
-  // 2026-09에서 2026-08로 적용월을 변경해도 다시 09로 돌아가는 것처럼 보였습니다.
-  const targetTeamAssignment = historyEntryForMonth(manager.teamHistory, targetMonth, "team");
-  const targetStatusAssignment = historyEntryForMonth(manager.statusHistory, targetMonth, "status");
-  const displayTeam = targetTeamAssignment?.team || manager.team;
-  // 팀 이력 시작월과 상태 이력 시작월은 다를 수 있습니다.
-  // 팀 시작월을 기본 적용월로 보여주면 10월 퇴사 상태를 저장할 때 8월로
-  // 역적용될 수 있으므로, 현재 선택한 조회월(달력월)을 기본 적용월로 사용합니다.
-  const displayEffectiveMonth = normalizeManagerMonth(targetMonth) || manager.joinedMonth || monthIso();
-  const displayStatus = managerStatusForMonth(manager, targetMonth);
-  const statusLabel = displayStatus === "inactive" ? "비활성" : "재직";
-  const historyText = managerHistoryLabel(manager) || "소속이력 없음";
-  const teamSelect = configuredTeamNames().map((team) =>
-    `<option value="${escapeHtml(team)}"${displayTeam === team ? " selected" : ""}>${escapeHtml(team)}</option>`
-  ).join("");
-  const protection = isNew
-    ? `<button class="ghost-button small cancel-new-manager" type="button">등록취소</button>`
-    : `<div class="manager-row-actions"><button class="ghost-button small edit-manager-row" type="button">수정</button><button class="ghost-button small remove-manager" type="button">삭제</button></div>`;
-  return `
-    <div class="manager-row manager-team-row ${displayStatus === "inactive" ? "inactive-manager-row" : ""}" data-manager-id="${escapeHtml(manager.id)}" data-is-new="${isNew ? "true" : "false"}" data-display-order="${manager.displayOrder || 0}">
-      <div class="manager-line manager-line-primary">
-        <div class="manager-order-control"><span class="manager-order-number">${manager.displayOrder || "-"}</span><div><button class="ghost-button small manager-order-button manager-order-up" type="button" title="위로 이동">▲</button><button class="ghost-button small manager-order-button manager-order-down" type="button" title="아래로 이동">▼</button></div></div>
-        <label>매니저<input class="manager-name" value="${escapeHtml(manager.name)}" placeholder="매니저 이름"></label>
-        <label>해당팀<select class="manager-team">${teamSelect}</select></label>
-        <label>적용월<input class="manager-effective-month" type="month" value="${escapeHtml(displayEffectiveMonth)}"></label>
-        <label>상태<select class="manager-status"><option value="active"${displayStatus === "active" ? " selected" : ""}>재직</option><option value="inactive"${displayStatus === "inactive" ? " selected" : ""}>비활성</option></select></label>
-      </div>
-      <div class="manager-line manager-line-secondary">
-        <label>담당지역<input class="manager-areas" value="${escapeHtml(areasText)}" placeholder="예: 온천1동, 명륜동"></label>
-        <label>상시목표<input class="manager-goal" type="number" min="0" step="0.5" value="${escapeHtml(managerGoalFor(manager.name, targetMonth))}"></label>
-        <div class="manager-safe-action">${protection}</div>
-      </div>
-      <div class="manager-change-line">
-        <label>변경유형<select class="manager-change-type"><option value="none">변경없음</option><option value="leave">퇴사</option><option value="move">팀 이동</option><option value="pause">휴직·비활성</option><option value="return">복귀·재직</option></select></label>
-        <small>변경할 매니저만 유형과 적용월을 선택하세요. 변경월 1일부터 적용하며, 이전 월 접수와 실적은 유지됩니다.</small>
-      </div>
-      <details class="manager-history-details"><summary>${escapeHtml(statusLabel)} · 변경이력보기</summary><p>${escapeHtml(historyText)}${manager.changeHistory?.length ? ` · ${escapeHtml(manager.changeHistory.map((entry) => `${formatMonthLabel(entry.month)} ${({leave:"퇴사",move:"팀 이동",pause:"휴직·비활성",return:"복귀·재직"})[entry.type] || "상태 변경"}`).join(" · "))}` : ""}</p><small>재직·소속팀은 달력월 기준, 영업실적 조회는 목표산정기간 기준으로 적용됩니다.</small></details>
-    </div>`;
+  const status = managerStatusForMonth(manager, targetMonth);
+  const team = managerTeamForMonth(manager, targetMonth);
+  const teamOptions = [...new Set([...configuredTeamNames(), team])].map((name) => `<option value="${escapeHtml(name)}"${team === name ? " selected" : ""}>${escapeHtml(name)}</option>`).join("");
+  return `<div class="manager-row manager-team-row ${status === "inactive" ? "inactive-manager-row" : ""}" data-manager-id="${escapeHtml(manager.id)}" data-is-new="${isNew ? "true" : "false"}" data-display-order="${manager.displayOrder || 0}">
+    <div class="manager-line manager-line-primary">
+      <div class="manager-order-control"><span class="manager-order-number">${manager.displayOrder || "-"}</span><div><button class="ghost-button small manager-order-button manager-order-up" type="button" title="위로 이동">▲</button><button class="ghost-button small manager-order-button manager-order-down" type="button" title="아래로 이동">▼</button></div></div>
+      <label>매니저 이름<input class="manager-name" value="${escapeHtml(manager.name)}" placeholder="매니저 이름"></label>
+      ${isNew ? `<label>입사 소속팀<select class="manager-team">${teamOptions}</select></label><label>입사월 (달력월)<input class="manager-effective-month" type="month" value="${escapeHtml(targetMonth)}" required></label><label>입사 상태<select class="manager-status"><option value="active">재직</option><option value="inactive">비활성</option></select></label>` : `<div class="manager-current-assignment"><strong>${escapeHtml(formatMonthLabel(targetMonth))} 기준</strong><span>${escapeHtml(team)} · ${status === "inactive" ? "비활성" : "재직"}</span><small>팀 이동·퇴사·복귀는 아래 이력에서 수정</small></div>`}
+    </div>
+    <div class="manager-line manager-line-secondary">
+      <label>담당지역<input class="manager-areas" value="${escapeHtml((manager.areas || []).join(", "))}" placeholder="예: 온천1동, 명륜동"></label>
+      <label>${escapeHtml(formatMonthLabel(targetMonth))} 목표<input class="manager-goal" type="number" min="0" step="0.5" value="${escapeHtml(managerGoalFor(manager.name, targetMonth))}"></label>
+      <div class="manager-safe-action">${isNew ? `<button class="ghost-button small cancel-new-manager" type="button">등록취소</button>` : `<div class="manager-row-actions"><button class="ghost-button small edit-manager-row" type="button">수정</button><button class="ghost-button small remove-manager" type="button">등록 삭제</button></div>`}</div>
+    </div>
+    ${isNew ? `<p class="manager-new-hint">입사월 1일부터 적용됩니다. 이름·입사월·소속팀을 확인한 뒤 ‘매니저 설정 저장’을 누르세요.</p>` : managerTimelineMarkup(manager)}
+  </div>`;
 }
 
 function normalizeMonthHistory(history, fallbackValue, defaultStartMonth = monthIso()) {
@@ -12492,7 +12478,7 @@ function renderSettings() {
 function setSettingsSectionEditable(section, editable) {
   const selectorMap = {
     user: "#branchNameInput, #masterNameInput, #masterRoleInput, #masterTeamInput, #masterTeamEffectiveMonth",
-    manager: "#managerSettings input, #managerSettings select, #managerSettings button.cancel-new-manager, #managerSettings button.manager-order-button, #managerSettings button.remove-manager, #addManagerBtn",
+    manager: "#managerSettings input, #managerSettings select, #managerSettings button.cancel-new-manager, #managerSettings button.manager-order-button, #managerSettings button.remove-manager, #managerSettings button.history-add, #managerSettings button.history-remove, #cancelManagerSettingsBtn, #addManagerBtn",
     team: "#teamSettingsList input, #teamSettingsList button.remove-team-setting, #addTeamBtn",
     goal: "#goalMonthInput, #accountCountInput, #packageRateInput, #newWeightInput, #newIndexInput, #rentalWeightInput, #rentalIndexInput, #renewalWeightInput, #renewalIndexInput, #periodStartInput, #periodEndInput"
   };
@@ -13199,47 +13185,20 @@ function collectManagerSettings() {
 
     let manager;
     if (existing) {
-      const previousTeam = managerTeamForMonth(existing, effectiveMonth);
-      const previousStatus = managerStatusForMonth(existing, effectiveMonth);
-      if (changeType === "move" && nextTeam === previousTeam) {
-        invalidMessage = `${name}: 이동할 팀을 변경해 주세요.`;
-        return;
-      }
-      const shouldChangeTeam = nextTeam !== previousTeam;
-      const shouldChangeStatus = nextStatus !== previousStatus;
-      const teamHistory = shouldChangeTeam ? applyManagerTeamChange(existing, nextTeam, effectiveMonth) : existing.teamHistory;
-      const statusHistory = shouldChangeStatus ? applyManagerStatusChange(existing, nextStatus, effectiveMonth) : existing.statusHistory;
-      const changeHistory = Array.isArray(existing.changeHistory) ? existing.changeHistory.slice() : [];
-      // 이미 비활성 상태인 과거 기록에 '퇴사/휴직' 사유만 추가하는 경우도 보존합니다.
-      // 사유 입력은 재직/소속 변경 이력 자체를 덮어쓰지 않습니다.
-      if (changeType !== "none") {
-        const reason = { type: changeType, month: effectiveMonth, team: nextTeam, status: nextStatus };
-        const index = changeHistory.findIndex((entry) => entry.month === effectiveMonth && entry.type === changeType);
-        if (index >= 0) changeHistory[index] = reason;
-        else changeHistory.push(reason);
-      }
-      const latestTeam = managerTeamForMonth({ ...existing, team: existing.team, teamHistory }, monthIso()) || nextTeam;
-      const latestStatus = managerStatusForMonth({ ...existing, status: existing.status, statusHistory }, monthIso()) || nextStatus;
-      const latestInactive = latestStatus === "inactive"
-        ? (statusHistory.slice().filter((item) => item.status === "inactive").sort((a,b) => String(b.startMonth || "").localeCompare(String(a.startMonth || "")))[0]?.startMonth || "")
-        : "";
-
-      manager = normalizeManager({
-        ...existing,
-        name,
-        team: latestTeam,
-        areas,
-        goal: existing.goal,
-        displayOrder: rowIndex + 1,
-        status: latestStatus,
-        inactiveMonth: latestInactive,
-        statusHistory,
-        teamHistory,
-        changeHistory,
-        updatedAt: nowIso
-      });
+      let timeline;
+      try { timeline = readManagerTimelineDraft(row, existing); }
+      catch (error) { invalidMessage = `${name}: ${error.message}`; return; }
+      const before = managerHistoryFields(existing);
+      const after = managerHistoryFields(timeline);
+      const historyEdits = (existing.historyEdits || []).slice();
+      if (JSON.stringify(before) !== JSON.stringify(after)) historyEdits.push({at: nowIso, before: structuredClone(before), after: structuredClone(after)});
+      manager = normalizeManager({ ...timeline, name, areas, goal: existing.goal,
+        displayOrder: rowIndex + 1, historyEdits, updatedAt: nowIso });
       if (existing.name !== name) renamedManagers.push({ id, previousName: existing.name, nextName: name });
     } else {
+      if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(row.querySelector(".manager-effective-month")?.value || "")) {
+        invalidMessage = `${name}: 입사월을 입력해 주세요.`; return;
+      }
       manager = normalizeManager({
         id,
         name,
@@ -16696,6 +16655,8 @@ function attachEvents() {
     if (promo) fillPromoForm(promo);
   });
 
+  attachManagerTimelineEvents();
+
   $("#editManagerSettingsBtn").addEventListener("click", () => {
     unlockSettingsSection("manager");
     refreshManagerOrderNumbers();
@@ -16726,7 +16687,7 @@ function attachEvents() {
     if (!collectManagerSettings()) return;
     lockSettingsSection("manager");
     invalidateManagerCaches();
-    saveState("매니저 정보와 소속이력을 안전하게 저장했습니다.");
+    saveState("매니저 기본정보와 재직·소속 이력을 저장했습니다.");
   });
 
   $("#managerSettings").addEventListener("change", (event) => {
@@ -16768,6 +16729,10 @@ function attachEvents() {
       if (!settingsEditMode.manager) return;
       const row = removeButton.closest("[data-manager-id]");
       const name = String(row?.querySelector(".manager-name")?.value || "매니저").trim();
+      const registered = managerById(row?.dataset.managerId);
+      if (registered && managerHasStoredReferences(registered)) {
+        showToast("접수·목표·수기실적이 연결된 매니저는 등록 삭제할 수 없습니다. 재직상태 이력에 퇴사·휴직을 추가하세요."); return;
+      }
       if (!row || !window.confirm(`${name} 매니저를 등록 목록에서 삭제할까요?\n기존 접수·목표·수기실적은 보존됩니다.`)) return;
       managerSettingsDeletedIds.add(row.dataset.managerId);
       row.remove();
@@ -16904,7 +16869,7 @@ document.addEventListener("click", (event) => {
 
 
 
-const APP_VERSION = "v11.24";
+const APP_VERSION = "v11.25";
 const STATE_SCHEMA_VERSION = 4;
 
 function normalizeVersionText(version = "") {
@@ -17033,5 +16998,214 @@ window.MJ_SALES_SCHEMA_VERSION = STATE_SCHEMA_VERSION;
 window.reportImageBlob = reportImageBlob;
 window.shareKakaoImage = shareKakaoImage;
 
+// 한 번의 동기 화면 계산 안에서만 재사용합니다. 저장/조회월 변경 뒤에는 항상 새로 계산합니다.
+let calculationScope = null;
+function withCalculationScope(callback) {
+  if (calculationScope) return callback();
+  calculationScope = new Map();
+  try { return callback(); } finally { calculationScope = null; }
+}
+function memoizeCalculation(fn, objectArgument = false) {
+  return function (...args) {
+    if (!calculationScope) return fn.apply(this, args);
+    let cache = calculationScope.get(fn);
+    if (!cache) { cache = objectArgument ? new WeakMap() : new Map(); calculationScope.set(fn, cache); }
+    const key = objectArgument ? args[0] : JSON.stringify(args);
+    if (objectArgument && (!key || typeof key !== "object")) return fn.apply(this, args);
+    if (!cache.has(key)) cache.set(key, fn.apply(this, args));
+    const result = cache.get(key);
+    // 호출부에서 정렬해도 저장된 목록 순서에 영향을 주지 않습니다.
+    return Array.isArray(result) ? result.slice() : result;
+  };
+}
+function scopedCalculation(fn) {
+  return function (...args) { return withCalculationScope(() => fn.apply(this, args)); };
+}
+function installCalculationScopes() {
+  teamManagers = memoizeCalculation(teamManagers);
+  teamManagerNames = memoizeCalculation(teamManagerNames);
+  analyticsSettings = memoizeCalculation(analyticsSettings);
+  analyticsAutoStartMonth = memoizeCalculation(analyticsAutoStartMonth);
+  analyticsCanonicalPersonName = memoizeCalculation(analyticsCanonicalPersonName);
+  analyticsResolveAliasName = memoizeCalculation(analyticsResolveAliasName);
+  analyticsBaseRecordsForMonth = memoizeCalculation(analyticsBaseRecordsForMonth);
+  analyticsActualEntityNames = memoizeCalculation(analyticsActualEntityNames);
+  analyticsAliasSourcesForTarget = memoizeCalculation(analyticsAliasSourcesForTarget);
+  analyticsReportedRecords = memoizeCalculation(analyticsReportedRecords);
+  analyticsActualRecords = memoizeCalculation(analyticsActualRecords);
+  analyticsActivityRecords = memoizeCalculation(analyticsActivityRecords);
+  analyticsManualStat = memoizeCalculation(analyticsManualStat);
+  analyticsGoalFor = memoizeCalculation(analyticsGoalFor);
+  analyticsMonthHasData = memoizeCalculation(analyticsMonthHasData);
+  analyticsMonthStatus = memoizeCalculation(analyticsMonthStatus);
+  analyticsIsCompletedMonth = memoizeCalculation(analyticsIsCompletedMonth);
+  analyticsMonthlyMetrics = memoizeCalculation(analyticsMonthlyMetrics);
+  analyticsProductStats = memoizeCalculation(analyticsProductStats);
+  analyticsManagerSummary = memoizeCalculation(analyticsManagerSummary);
+  analyticsResolveSellerName = memoizeCalculation(analyticsResolveSellerName, true);
+  analyticsReportedManagerName = memoizeCalculation(analyticsReportedManagerName, true);
+  promoManagerStats = memoizeCalculation(promoManagerStats);
+  renderAnalytics = scopedCalculation(renderAnalytics);
+  drawAnalyticsTrendChart = scopedCalculation(drawAnalyticsTrendChart);
+  renderPromotions = scopedCalculation(renderPromotions);
+  renderPromotionDetail = scopedCalculation(renderPromotionDetail);
+  renderPromotionManagerDetail = scopedCalculation(renderPromotionManagerDetail);
+  printPromotionMonthlyReport = scopedCalculation(printPromotionMonthlyReport);
+}
+
+// 재직/소속의 적용월과 기본정보 수정을 분리합니다. 편집 중에는 state를 바꾸지 않습니다.
+function managerHistoryFields(manager) {
+  return { joinedMonth: manager.joinedMonth, status: manager.status, team: manager.team,
+    inactiveMonth: manager.inactiveMonth, statusHistory: manager.statusHistory,
+    teamHistory: manager.teamHistory, changeHistory: manager.changeHistory };
+}
+function managerHistoryStatusValue(manager, entry) {
+  if (entry.status !== "inactive") return "active";
+  return manager.changeHistory?.some((item) => item.month === entry.startMonth && item.type === "leave") ? "leave" : "pause";
+}
+function managerTimelineRowMarkup(kind, entry, value, teams, isBase = false) {
+  const options = kind === "team" ? [["", "소속팀 선택"], ...teams.map((team) => [team, team])] : [["", "변경할 상태 선택"], ["active", "재직·복귀"], ["pause", "휴직·비활성"], ["leave", "퇴사"]];
+  return `<div class="manager-timeline-entry">
+    <label>시작월<input class="history-start" type="month" value="${escapeHtml(entry.startMonth || "")}" aria-label="${kind === "team" ? "소속" : "재직"} 시작월"></label>
+    <label>${kind === "team" ? "소속팀" : "재직상태"}<select class="history-value">${options.map(([key, label]) => `<option value="${escapeHtml(key)}"${value === key ? " selected" : ""}>${escapeHtml(label)}</option>`).join("")}</select></label>
+    <span class="history-range">${escapeHtml(entry.startMonth ? `${entry.startMonth}-01부터` : "시작월 미상 · 이전부터")}<br>${escapeHtml(entry.endMonth ? `${entry.endMonth} 말일까지` : "이후 계속")}</span>
+    ${isBase ? `<span class="history-base">최초 이력</span>` : `<button type="button" class="ghost-button small history-remove">이력 삭제</button>`}
+  </div>`;
+}
+function managerTimelineMarkup(manager) {
+  const teams = [...new Set([...configuredTeamNames(), ...manager.teamHistory.map((item) => item.team)])];
+  return `<details class="manager-history-editor"><summary>재직·소속 이력 확인 / 수정</summary>
+    <p>시작월 <strong>1일</strong>부터 적용합니다. 다음 이력 전월 말일까지 이어지며, 이력을 삭제하면 앞 이력이 이어집니다. 최초 이력은 삭제 대신 수정하세요. 첫 이력의 빈 시작월은 ‘이전부터 적용(시작월 미상)’입니다.</p>
+    ${["status", "team"].map((kind) => `<section class="manager-timeline" data-history-kind="${kind}" data-dirty="false">
+      <h4>${kind === "team" ? "소속팀 이력" : "재직상태 이력"}</h4>
+      <div class="manager-timeline-rows">${manager[kind === "team" ? "teamHistory" : "statusHistory"].map((entry, index) => managerTimelineRowMarkup(kind, entry, kind === "team" ? entry.team : managerHistoryStatusValue(manager, entry), teams, index === 0)).join("")}</div>
+      <button type="button" class="ghost-button small history-add">${kind === "team" ? "팀 이동 추가" : "퇴사·휴직·복귀 추가"}</button>
+    </section>`).join("")}
+    <p class="manager-history-preview" aria-live="polite">저장된 이력입니다. 수정하려면 ‘매니저 설정 수정’을 누르세요.</p>
+    <small>접수일의 달력월로 소속을 판단하고, 실적은 목표산정기간으로 집계합니다. 예: 10월 목표기간이 9월 28일부터라면, 10월 퇴사여도 9월 28~30일 접수는 10월 실적에 남습니다. 과거 이력을 정정하면 해당 기간의 팀별 조회·통계·평가도 다시 계산됩니다.</small>
+    ${manager.historyEdits?.length ? `<details class="manager-history-audit"><summary>이력 정정 기록 (${manager.historyEdits.length}회)</summary>${manager.historyEdits.slice().reverse().map((edit) => `<p>${escapeHtml(new Date(edit.at).toLocaleString("ko-KR"))}<br>변경 전: ${escapeHtml(managerHistoryDescription(edit.before))}<br>변경 후: ${escapeHtml(managerHistoryDescription(edit.after))}</p>`).join("")}</details>` : ""}
+  </details>`;
+}
+function managerHistoryDescription(fields) {
+  return ["statusHistory", "teamHistory"].map((key) => (fields?.[key] || []).map((entry) => `${entry.startMonth || "이전부터"}~${entry.endMonth || "계속"} ${entry.team || (entry.status === "inactive" ? ((fields.changeHistory || []).some((reason) => reason.month === entry.startMonth && reason.type === "leave") ? "퇴사" : "휴직·비활성") : "재직")}`).join(", ")).join(" / ");
+}
+function compileManagerTimeline(entries, kind) {
+  if (!entries.length) throw new Error("첫 이력은 남겨 주세요. 잘못된 첫 이력은 시작월과 내용을 수정하세요.");
+  const sorted = entries.map((entry) => ({ startMonth: String(entry.startMonth || ""), value: String(entry.value || "") })).sort((a, b) => a.startMonth.localeCompare(b.startMonth));
+  const seen = new Set();
+  sorted.forEach((entry, index) => {
+    if (entry.startMonth && !/^\d{4}-(0[1-9]|1[0-2])$/.test(entry.startMonth)) throw new Error("시작월을 정확하게 입력해 주세요.");
+    if (seen.has(entry.startMonth)) throw new Error("같은 시작월의 이력이 중복됩니다. 기존 이력을 수정하거나 중복 행을 삭제하세요.");
+    if (!entry.startMonth && index !== 0) throw new Error("시작월 미상은 첫 이력에만 사용할 수 있습니다.");
+    if (!entry.value || (kind === "status" && !["active", "pause", "leave"].includes(entry.value))) throw new Error("이력의 상태 또는 소속팀을 선택해 주세요.");
+    seen.add(entry.startMonth);
+  });
+  return sorted.map((entry, index) => ({ startMonth: entry.startMonth,
+    endMonth: sorted[index + 1] ? shiftMonth(sorted[index + 1].startMonth, -1) : "",
+    [kind]: kind === "status" ? (entry.value === "active" ? "active" : "inactive") : entry.value }));
+}
+function managerTimelineDraft(existing, drafts) {
+  const next = { ...existing };
+  let reasons = (existing.changeHistory || []).slice();
+  for (const kind of ["status", "team"]) {
+    if (!drafts[kind]) continue;
+    const history = compileManagerTimeline(drafts[kind], kind);
+    if (drafts[kind][0].startMonth !== history[0].startMonth) throw new Error("최초 이력의 시작월은 이후 변경월보다 빨라야 합니다. 최초 이력부터 수정해 주세요.");
+    next[kind === "team" ? "teamHistory" : "statusHistory"] = history;
+    if (kind === "status") {
+      next.joinedMonth = history[0].startMonth;
+      reasons = reasons.filter((item) => !["leave", "pause", "return"].includes(item.type));
+      for (const entry of drafts.status) {
+        if (entry.startMonth) reasons.push({ month: entry.startMonth, type: entry.value === "active" ? "return" : entry.value, status: entry.value === "active" ? "active" : "inactive", team: "" });
+      }
+    } else {
+      reasons = reasons.filter((item) => item.type !== "move");
+      history.slice(1).forEach((entry) => reasons.push({ month: entry.startMonth, type: "move", team: entry.team, status: "active" }));
+    }
+  }
+  next.status = managerStatusForMonth(next, monthIso());
+  next.team = managerTeamForMonth(next, monthIso());
+  next.inactiveMonth = next.status === "inactive" ? (historyEntryForMonth(next.statusHistory, monthIso(), "status")?.startMonth || "") : "";
+  next.changeHistory = reasons.map((entry) => ({ ...entry, team: managerTeamForMonth(next, entry.month), status: managerStatusForMonth(next, entry.month) }));
+  return next;
+}
+function readManagerTimelineDraft(row, existing) {
+  const drafts = {};
+  row.querySelectorAll('.manager-timeline[data-dirty="true"]').forEach((section) => {
+    drafts[section.dataset.historyKind] = [...section.querySelectorAll(".manager-timeline-entry")].map((entry) => ({startMonth: entry.querySelector(".history-start").value, value: entry.querySelector(".history-value").value}));
+  });
+  return Object.keys(drafts).length ? managerTimelineDraft(existing, drafts) : existing;
+}
+function updateManagerTimelinePreview(row) {
+  const existing = managerById(row.dataset.managerId);
+  const preview = row.querySelector(".manager-history-preview");
+  if (!existing || !preview) return;
+  try {
+    const next = readManagerTimelineDraft(row, existing);
+    row.querySelectorAll('.manager-timeline[data-dirty="true"]').forEach((section) => {
+      const history = next[section.dataset.historyKind === "team" ? "teamHistory" : "statusHistory"];
+      section.querySelectorAll(".manager-timeline-entry").forEach((entry) => {
+        const start = entry.querySelector(".history-start").value;
+        const item = history.find((item) => item.startMonth === start);
+        entry.querySelector(".history-range").textContent = `${start ? start + "-01부터" : "시작월 미상 · 이전부터"} / ${item?.endMonth ? item.endMonth + " 말일까지" : "이후 계속"}`;
+      });
+    });
+    let affected = 0;
+    for (const record of state.records || []) {
+      if (record.managerId !== existing.id && record.manager !== existing.name && record.sellerId !== existing.id && record.seller !== existing.name) continue;
+      const month = organizationMonthForDate(record.receivedDate || record.installDate, currentDashboardMonth());
+      if (managerTeamForMonth(existing, month) !== managerTeamForMonth(next, month) || managerStatusForMonth(existing, month) !== managerStatusForMonth(next, month)) affected++;
+    }
+    preview.classList.remove("history-error");
+    preview.textContent = `저장 대기 · 적용 상태/소속이 달라지는 기존 접수 ${affected}건. 접수 원본은 보존됩니다. 아래 ‘매니저 설정 저장’을 누르면 확정됩니다.`;
+  } catch (error) { preview.classList.add("history-error"); preview.textContent = error.message; }
+}
+function managerHasStoredReferences(manager) {
+  return (state.records || []).some((record) => record.managerId === manager.id || record.sellerId === manager.id || record.manager === manager.name || record.seller === manager.name)
+    || Object.values(state.managerMonthlyGoals || {}).some((bucket) => toNumber(bucket?.[manager.name]) !== 0)
+    || Object.values(state.managerManualStats || {}).some((bucket) => Object.values(bucket?.[manager.name] || {}).some((value) => typeof value === "string" ? Boolean(value.trim()) && value.trim() !== "0" : Boolean(value)));
+}
+function attachManagerTimelineEvents() {
+  const list = $("#managerSettings");
+  if (!list) return;
+  list.addEventListener("change", (event) => {
+    const section = event.target.closest(".manager-timeline");
+    if (!section || !settingsEditMode.manager) return;
+    section.dataset.dirty = "true";
+    updateManagerTimelinePreview(section.closest(".manager-row"));
+  });
+  list.addEventListener("click", (event) => {
+    const button = event.target.closest(".history-add, .history-remove");
+    if (!button || !settingsEditMode.manager) return;
+    const section = button.closest(".manager-timeline");
+    const row = section.closest(".manager-row");
+    if (button.classList.contains("history-remove")) {
+      if (section.querySelectorAll(".manager-timeline-entry").length <= 1) { showToast("첫 이력은 삭제 대신 시작월과 내용을 수정하세요."); return; }
+      button.closest(".manager-timeline-entry").remove();
+    } else {
+      const kind = section.dataset.historyKind;
+      const values = [...section.querySelectorAll(".history-start")].map((input) => input.value).filter(Boolean).sort();
+      const last = values.at(-1);
+      const month = last && last >= monthIso() ? shiftMonth(last, 1) : monthIso();
+      const manager = managerById(row.dataset.managerId);
+      const teams = [...new Set([...configuredTeamNames(), ...manager.teamHistory.map((item) => item.team)])];
+      section.querySelector(".manager-timeline-rows").insertAdjacentHTML("beforeend", managerTimelineRowMarkup(kind, {startMonth: month, endMonth: ""}, "", teams));
+      section.querySelector(".manager-timeline-entry:last-child .history-start")?.focus();
+    }
+    section.dataset.dirty = "true";
+    updateManagerTimelinePreview(row);
+  });
+  $("#cancelManagerSettingsBtn")?.addEventListener("click", () => {
+    lockSettingsSection("manager");
+    managerSettingsDeletedIds.clear();
+    const month = $("#goalMonthInput")?.value || currentDashboardMonth();
+    list.innerHTML = sortManagersByDisplayOrder(state.managers).map((manager) => managerSettingsRowMarkup(manager, month)).join("");
+    refreshManagerOrderNumbers();
+    setSettingsSectionEditable("manager", false);
+    showToast("저장하지 않은 매니저 수정을 취소했습니다.");
+  });
+}
+
+installCalculationScopes();
 init();
 

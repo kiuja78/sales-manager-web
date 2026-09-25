@@ -1,14 +1,14 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta name="app-version" content="V11.24">
+  <meta name="app-version" content="V11.25">
   <meta charset="utf-8">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>영업관리 시스템</title>
-  <link rel="stylesheet" href="./styles.css?v=v1124">
+  <link rel="stylesheet" href="./styles.css?v=v1125">
   <link rel="icon" type="image/png" href="./assets/sales_manager_icon.png">
   <link rel="manifest" href="./manifest.webmanifest">
   <meta name="theme-color" content="#174c3b">
@@ -1660,16 +1660,17 @@
 
 <section class="panel settings-card manager-settings-card">
             <div class="panel-head">
-              <h2>매니저 등록</h2>
+              <h2>매니저 등록 · 재직/소속 이력</h2>
               <button class="ghost-button small" id="addManagerBtn" type="button">신규 매니저 추가</button>
             </div>
             <div class="manager-data-safety-guide">
-              <strong>수정·삭제</strong>
-              <span>▲▼ 버튼으로 노출순번을 변경할 수 있습니다. 삭제해도 기존 접수·목표·수기실적은 보존됩니다.</span>
+              <strong>수정 → 이력 확인 → 저장</strong>
+              <span>이름·지역·목표는 기본정보에서, 팀 이동·퇴사·복귀는 각 매니저의 이력에서 수정하세요. 이력 삭제도 설정 저장 후 반영됩니다. 기존 접수·목표가 있는 매니저는 등록 삭제 대신 퇴사 이력을 사용하세요.</span>
             </div>
             <div id="managerSettings" class="settings-list"></div>
             <div class="form-actions section-save-row">
               <button class="ghost-button" id="editManagerSettingsBtn" type="button">매니저 설정 수정</button>
+              <button class="ghost-button" id="cancelManagerSettingsBtn" type="button" disabled>수정 취소</button>
               <button class="primary-button" id="saveManagerSettingsBtn" type="button">매니저 설정 저장</button>
             </div>
           </section>
@@ -1862,7 +1863,7 @@
     }
   })();
 </script>
-  <script src="./app.js?v=v1124"></script>
+  <script src="./app.js?v=v1125"></script>
 
     
   <nav class="mobile-app-nav" id="mobileAppNav" aria-label="모바일 주요 메뉴">
